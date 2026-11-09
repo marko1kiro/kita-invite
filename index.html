@@ -2,7 +2,7 @@
 <html lang="id">
   <head>
     <meta charset="utf-8" />
-    <meta name="robots" content="noindex, nofollow" />
+<meta name="robots" content="noindex, nofollow" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="data:," />
@@ -181,8 +181,8 @@
       .step .n{font-family:var(--font-display);font-size:34px;color:var(--gold);line-height:1}
       .step b{display:block;margin:10px 0 6px;font-size:16px}
       .step p{margin:0;font-size:14px;color:var(--ink-2)}
-      .pkg-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;align-items:stretch}
-      .pkg{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);padding:26px;display:flex;flex-direction:column}
+      .pkg-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;align-items:stretch}
+      .pkg{background:var(--surface);border:1px solid var(--line-soft);border-radius:var(--r-lg);padding:26px;display:flex;flex-direction:column;min-width:0}
       .pkg.hot{border-color:var(--gold);box-shadow:var(--shadow-sm);position:relative}
       .pkg h3{font-size:21px}
       .pkg .amt{font-family:var(--font-display);font-size:32px;margin:8px 0 2px}
@@ -257,7 +257,7 @@
       #toast.err{background:var(--err);color:#FFF}
 
       @media (max-width:1023px){
-        .pkg-grid{grid-template-columns:repeat(2,1fr)}
+        .pkg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
         .steps{grid-template-columns:repeat(2,1fr)}
         .detail-grid{grid-template-columns:1fr 340px}
       }
@@ -278,6 +278,12 @@
         section.blk{padding:52px 0}
         .toolbar{top:64px}
         footer.site{padding-bottom:120px}
+      }
+      @media (max-width:600px){
+        /* Kartu paket ditumpuk satu kolom: dua kolom memaksa lebar minimum
+           ±413px (harga 32px + padding kartu) dan meluber di 360/375/390. */
+        .pkg-grid{grid-template-columns:1fr}
+        .pkg{padding:22px}
       }
       @media (prefers-reduced-motion: reduce){
         html{scroll-behavior:auto}
@@ -931,8 +937,16 @@
       if (!t.palettes.some(p => p.id === design.paletteId)) design.paletteId = t.palettes[0].id;
       if (!FONT_PAIRS.some(f => f.id === design.fontId)) design.fontId = t.fontId;
       if (!ORNAMENTS[design.ornament]) design.ornament = t.ornament;
+      /* Pilihan seksi draft adalah milik DRAFT, bukan milik template terbaru:
+         semua kunci boolean tersimpan dipertahankan apa adanya — termasuk
+         seksi yang sudah dihapus dari versi template baru — agar pilihan
+         yang sengaja dimatikan (mis. RSVP) tidak menyala lagi. Nilai bawaan
+         "menyala" hanya untuk seksi yang dikenal snapshot versi draft atau
+         template saat ini dan belum pernah dipilih pengguna. */
       const sections = {};
-      t.sections.forEach(s => { sections[s] = (raw.sections && typeof raw.sections[s] === 'boolean') ? raw.sections[s] : true; });
+      const snapT = (typeof raw.templateVersion === 'number' && TPL_VERSIONS[raw.templateId + '@' + raw.templateVersion]) || null;
+      (snapT ? snapT.sections : []).concat(t.sections).forEach(s => { if (!(s in sections)) sections[s] = true; });
+      if (raw.sections && typeof raw.sections === 'object') Object.keys(raw.sections).forEach(k => { if (typeof raw.sections[k] === 'boolean') sections[k] = raw.sections[k]; });
       return {
         id: raw.id, templateId: raw.templateId,
         templateVersion: typeof raw.templateVersion === 'number' ? raw.templateVersion : t.version,
@@ -1216,19 +1230,15 @@
       return (c.orgName || 'K').split(' ').map(w => w[0]).slice(0,2).join('');
     }
     function wishHTML(w){ return `<div class="wish"><b>${esc(w.name)}</b> <span class="st">· ${esc(w.status)}</span><p>${esc(w.msg)}</p></div>`; }
-    /* Buku ucapan publik: gabungan ucapan sesi (Stage 1) + RSVP termoderasi (Stage 2) */
+    /* Buku ucapan publik: SATU sumber kebenaran — record RSVP persisten
+       (Stage 2) yang moderasinya "approved" dan pesannya tidak kosong.
+       Salinan sesi lama (S.wishes) tidak lagi digabungkan: salinan itulah
+       yang membuat ucapan tersembunyi/terhapus muncul lagi setelah submit
+       atau navigasi SPA. Halaman demo template tetap memakai S.wishes
+       slug "demo" lewat jalurnya sendiri di viewDetail/viewDemo. */
     function publicWishesFor(inv){
-      const base = S.wishes.filter(w => w.slug === inv.slug);
-      let extra = [], blocked = new Set();
-      try {
-        if (typeof s2GuestbookWishes === 'function') extra = s2GuestbookWishes(inv);
-        if (typeof s2BlockedWishKeys === 'function') blocked = s2BlockedWishKeys(inv);
-      } catch(e){}
-      const key = w => (w.name||'') + '|' + (w.msg||'');
-      const seen = new Set(base.map(key));
-      /* Moderasi berlaku di semua jalur tampilan: ucapan sesi yang record
-         RSVP-nya disembunyikan/menunggu tidak ikut tampil dari jalur ini. */
-      return [...extra.filter(w => !seen.has(key(w))), ...base.filter(w => !blocked.has(key(w)))];
+      try { if (typeof s2GuestbookWishes === 'function') return s2GuestbookWishes(inv); } catch(e){}
+      return [];
     }
     /* Nama tamu dari kode pada tautan personal ?to= (data Stage 2). */
     function guestNameFor(inv, code){
@@ -1238,15 +1248,23 @@
     }
     function rsvpFormHTML(opts){
       if (opts.mode === 'preview') return `<div class="ok-box"><b>Formulir RSVP</b><p class="muted small" style="margin:4px 0 0">Formulir aktif di halaman publik setelah undangan diterbitkan. Di pratinjau, tampil sebagai contoh tampilan.</p></div>`;
+      const ex = opts.existingRsvp || null;
+      /* Tamu (lewat tautan personal ?to=) yang sudah punya respons melihat
+         status terkirimnya — bukan formulir kosong — setelah muat ulang,
+         dengan tombol ubah respons yang jelas. */
+      if (ex && !opts.rsvpEdit){
+        return `<div class="ok-box"><b>Respons Anda sudah terkirim</b><p class="muted small" style="margin:4px 0 12px">Atas nama <b>${esc(ex.name)}</b> — konfirmasi: <b>${esc(ex.status)}</b>${ex.status !== 'Tidak Hadir' ? ' · ' + (ex.count || 1) + ' orang' : ''}. Terima kasih! Bila ada perubahan, perbarui respons Anda lewat tombol di bawah.</p><button class="submit-btn" type="button" data-rsvp-edit>Ubah Respons</button></div>`;
+      }
+      const cur = ex ? ex.status : 'Hadir';
+      const nm = ex ? ex.name : (opts.mode === 'demo' ? '' : (opts.guest === 'Bapak/Ibu/Saudara/i' ? '' : opts.guest));
+      const cnt = ex ? Math.max(1, ex.count || 1) : 1;
       return `<form class="rsvp-form" data-rsvp-form>
-        <div><label>Nama Anda</label><input name="name" required maxlength="60" placeholder="Tulis nama Anda" value="${opts.mode==='demo' ? '' : esc(opts.guest === 'Bapak/Ibu/Saudara/i' ? '' : opts.guest)}"></div>
+        <div><label>Nama Anda</label><input name="name" required maxlength="60" placeholder="Tulis nama Anda" value="${esc(nm)}"></div>
         <div><label>Konfirmasi Kehadiran</label><div class="seg" data-seg>
-          <button type="button" class="on" data-val="Hadir">Hadir</button>
-          <button type="button" data-val="Masih Ragu">Masih Ragu</button>
-          <button type="button" data-val="Tidak Hadir">Tidak Hadir</button></div></div>
-        <div><label>Jumlah Tamu</label><select name="count"><option value="1">1 orang</option><option value="2">2 orang</option><option value="3">3 orang</option><option value="4">4 orang</option></select></div>
-        <div><label>Ucapan & Doa (opsional)</label><textarea name="message" rows="3" maxlength="300" placeholder="Tulis ucapan untuk yang berbahagia…"></textarea></div>
-        <button class="submit-btn" type="submit">Kirim Konfirmasi</button>
+          ${['Hadir','Masih Ragu','Tidak Hadir'].map(v => `<button type="button" class="${cur === v ? 'on' : ''}" data-val="${v}">${v}</button>`).join('')}</div></div>
+        <div><label>Jumlah Tamu</label><select name="count">${[1,2,3,4].map(n => `<option value="${n}" ${cnt === n ? 'selected' : ''}>${n} orang</option>`).join('')}</select></div>
+        <div><label>Ucapan & Doa (opsional)</label><textarea name="message" rows="3" maxlength="300" placeholder="Tulis ucapan untuk yang berbahagia…">${ex ? esc(ex.message || '') : ''}</textarea></div>
+        <button class="submit-btn" type="submit">${ex ? 'Kirim Pembaruan' : 'Kirim Konfirmasi'}</button>
       </form>`;
     }
 
@@ -1630,9 +1648,11 @@
     }
 
     /* ---------- View: Undangan publik ---------- */
-    function viewPublic(inv, guestName){
+    function viewPublic(inv, guestName, code){
       if (!inv) return `<div style="min-height:100vh;display:grid;place-items:center;padding:24px"><div class="empty" style="max-width:440px"><h3>Undangan tidak ditemukan</h3><p>Tautan ini belum diterbitkan atau sudah tidak tersedia.</p><a class="btn gold" href="#/">Ke Beranda Kita Invite</a></div></div>`;
-      const render = renderInvitation(inv, {mode:'public', envelope:true, guest: guestName || 'Bapak/Ibu/Saudara/i', wishes: publicWishesFor(inv)});
+      let existing = null;
+      try { if (typeof s2ExistingRsvp === 'function') existing = s2ExistingRsvp(inv, code); } catch(e){}
+      const render = renderInvitation(inv, {mode:'public', envelope:true, guest: guestName || 'Bapak/Ibu/Saudara/i', wishes: publicWishesFor(inv), existingRsvp: existing});
       return `<a href="#/" style="position:fixed;top:14px;left:14px;z-index:80;background:rgba(20,17,12,.72);color:#F8F5EF;padding:9px 15px;border-radius:999px;font-size:13px;font-weight:700;backdrop-filter:blur(6px)">← Kita Invite</a>
       <div style="background:var(--surface-2);min-height:100vh;padding:0">
         <div style="max-width:480px;margin:0 auto;box-shadow:var(--shadow);min-height:100vh">${render}</div>
@@ -1740,8 +1760,14 @@
           <div class="field"><label>Ornamen pemisah seksi</label><div style="display:flex;gap:8px;flex-wrap:wrap">${Object.entries(ORNAMENTS).map(([k, o]) => `<button type="button" class="chip ${inv.design.ornament===k?'on':''}" data-orn="${k}">${o.svg} ${esc(o.name)}</button>`).join('')}</div></div></div>`;
       }
       if (tab === 'seksi'){
-        return `<div class="b-panel"><h2>Visibilitas Seksi</h2><p class="sub">Sembunyikan seksi yang tidak relevan dengan acara Anda. Sampul selalu tampil.</p>
-          ${t.sections.filter(s => s !== 'cover').map(s => `<div class="vis-row"><div><b>${SECTION_META[s][0]}</b><span>${SECTION_META[s][1]}</span></div><label class="switch"><input type="checkbox" data-vis="${s}" ${inv.sections[s] !== false ? 'checked' : ''}><i></i></label></div>`).join('')}</div>
+        /* Daftar sakelar mengikuti snapshot versi template milik draft ini
+           (ditambah kunci seksi yang tersimpan di draft), BUKAN template
+           versi terbaru — seksi yang dihapus dari template baru tetap punya
+           kontrol edit di draft lama yang memakainya. */
+        const snapT = (inv.templateVersion && TPL_VERSIONS[inv.templateId + '@' + inv.templateVersion]) || t;
+        const secList = [...new Set([...(snapT.sections || []), ...Object.keys(inv.sections || {})])].filter(s => s !== 'cover' && SECTION_META[s]);
+        return `<div class="b-panel"><h2>Visibilitas Seksi</h2><p class="sub">Sembunyikan seksi yang tidak relevan dengan acara Anda. Sampul selalu tampil. Pilihan di sini milik draft Anda (template v${inv.templateVersion}.0) dan tidak berubah walau template diperbarui admin.</p>
+          ${secList.map(s => `<div class="vis-row"><div><b>${SECTION_META[s][0]}</b><span>${SECTION_META[s][1]}${t.sections.includes(s) ? '' : ' · Tidak ada di template versi terbaru — pilihan draft Anda tetap dipertahankan.'}</span></div><label class="switch"><input type="checkbox" data-vis="${s}" ${inv.sections[s] !== false ? 'checked' : ''}><i></i></label></div>`).join('')}</div>
           <div class="b-panel"><h2>Amplop Digital & Penutup</h2><p class="sub">Rekening tanda kasih dan kalimat terima kasih. Kosongkan nomor rekening untuk menyembunyikan kartu bank.</p>
           <div class="row2">${fld('Bank / e-wallet', 'content.gift.bank', c.gift.bank, {ph:'cth. BCA'})}${fld('Nomor rekening', 'content.gift.number', c.gift.number)}</div>
           ${fld('Atas nama', 'content.gift.holder', c.gift.holder)}
@@ -1842,7 +1868,7 @@
       else if (seg[0] === 'draft-saya') html = viewDrafts();
       else if (seg[0] === 'peta-jalan') html = viewRoadmap();
       else if (seg[0] === 'rencana-cloudflare') html = viewPlan();
-      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); const pub = inv && inv.status === 'published' ? inv : null; app.innerHTML = viewPublic(pub, pub ? guestNameFor(pub, params.to) : null); window.scrollTo(0,0); return; }
+      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); const pub = inv && inv.status === 'published' ? inv : null; app.innerHTML = viewPublic(pub, pub ? guestNameFor(pub, params.to) : null, params.to); window.scrollTo(0,0); return; }
       else html = notFound();
       app.innerHTML = html;
       if (seg[0] === 'template' && seg.length === 1) renderMktResults();
@@ -1875,6 +1901,20 @@
       if (openBtn){
         const inv = openBtn.closest('.inv'); const body = inv && inv.querySelector('.inv-body');
         if (body){ body.hidden = false; openBtn.closest('.guestbox').querySelector('.locked-note')?.remove(); openBtn.remove(); body.scrollIntoView({behavior:'smooth', block:'start'}); }
+        return;
+      }
+      /* "Ubah Respons": ganti kotak status terkirim dengan formulir yang
+         sudah terisi respons tersimpan tamu itu (dari record persisten). */
+      const rsvpEditBtn = e.target.closest('[data-rsvp-edit]');
+      if (rsvpEditBtn){
+        const zone = rsvpEditBtn.closest('[data-rsvp-zone]');
+        const slug = location.hash.slice(4).split('?')[0];
+        const inv = S.invitations.find(i => i.slug === slug);
+        if (zone && inv && typeof s2ExistingRsvp === 'function'){
+          const code = new URLSearchParams((location.hash.split('?')[1] || '')).get('to');
+          const ex = s2ExistingRsvp(inv, code);
+          if (ex) zone.innerHTML = rsvpFormHTML({mode:'public', guest: guestNameFor(inv, code) || 'Bapak/Ibu/Saudara/i', existingRsvp: ex, rsvpEdit: true});
+        }
         return;
       }
       const cp = e.target.closest('[data-copy]');
@@ -1964,22 +2004,21 @@
       const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
       const msg = (fd.get('message') || '').toString().trim();
       const isDemo = !location.hash.startsWith('#/u/');
-      const slug = isDemo ? 'demo' : location.hash.slice(4).split('?')[0];
-      S.rsvps.push({id:'rsvp-' + (S.seq++), invitationSlug: slug, name, status, count: +(fd.get('count') || 1), message: msg, at: Date.now()});
       const zone = form.closest('[data-rsvp-zone]');
-      const list = form.closest('.sec')?.querySelector('[data-wish-list]');
+      const demoList = isDemo ? form.closest('.sec')?.querySelector('[data-wish-list]') : null; /* ditangkap sebelum zona diganti (form terlepas dari dokumen sesudahnya) */
       if (zone) zone.innerHTML = `<div class="ok-box"><b>Terima kasih, ${esc(name)}!</b><p class="muted small" style="margin:4px 0 0">Konfirmasi Anda (${esc(status)}) sudah tercatat${isDemo ? ' pada data demo' : ''}. Sampai jumpa di hari acara!</p></div>`;
-      if (msg){
-        const w = {name, status, msg, slug};
-        /* Ucapan yang record RSVP-nya sedang disembunyikan moderator tidak
-           boleh muncul lagi lewat sisipan langsung ini — daftar publik
-           sesudah muat ulang memang menyaringnya, jalur ini menyamakan diri. */
-        let blockedNow = null;
-        if (!isDemo && typeof s2BlockedWishKeys === 'function'){ const invNow = S.invitations.find(i => i.slug === slug); if (invNow) blockedNow = s2BlockedWishKeys(invNow); }
-        if (!(blockedNow && blockedNow.has(name + '|' + msg))){
-          if (list){ if (list.querySelector('.muted.small') && list.children.length === 1) list.innerHTML = ''; list.insertAdjacentHTML('afterbegin', wishHTML(w)); }
+      /* SATU jalur RSVP: untuk undangan sungguhan, handler ini TIDAK menulis
+         salinan sesi (S.rsvps/S.wishes) dan TIDAK menyisipkan ucapan langsung
+         ke DOM — listener jembatan Stage 2 yang menulis record persisten dan
+         menggambar ulang buku ucapan dari sumber yang sama (termoderasi).
+         Jalur sesi di bawah hanya untuk halaman demo template. */
+      if (isDemo){
+        S.rsvps.push({id:'rsvp-' + (S.seq++), invitationSlug: 'demo', name, status, count: +(fd.get('count') || 1), message: msg, at: Date.now()});
+        if (msg){
+          const w = {name, status, msg, slug: 'demo'};
+          if (demoList){ if (demoList.querySelector('.muted.small') && demoList.children.length === 1) demoList.innerHTML = ''; demoList.insertAdjacentHTML('afterbegin', wishHTML(w)); }
+          S.wishes.push(w);
         }
-        if (!isDemo) S.wishes.push(w);
       }
       toast('RSVP terkirim. Terima kasih!');
     });
@@ -2163,11 +2202,24 @@
     }
 
     /* ---------- Status & helper undangan ---------- */
+    /* Masa akses undangan mengikuti masa aktif PAKET, bukan tanggal acara.
+       Durasi tiap paket dan titik mulainya BELUM ditetapkan (placeholder):
+       field accessDays pada paket sengaja belum diisi, jadi fungsi ini
+       mengembalikan null dan tidak ada undangan yang kedaluwarsa berbasis
+       tanggal. Tanggal acara tidak pernah menutup halaman publik. */
+    function invAccessEndsAt(inv){
+      const pkg = inv && inv.packageId ? pkgById(inv.packageId) : null;
+      const days = pkg && typeof pkg.accessDays === 'number' && isFinite(pkg.accessDays) ? pkg.accessDays : null;
+      if (days === null) return null; /* durasi paket belum ditetapkan — tanpa kedaluwarsa */
+      const start = inv.publishedAt || inv.createdAt;
+      if (!start) return null;
+      return start + days * 864e5;
+    }
     function invStatus(inv){
       if (inv.archived) return {key:'archived', label:'Arsip', cls:'arc'};
       if (inv.status !== 'published') return {key:'draft', label:'Draft', cls:'draft'};
-      const ev = inv.content.events && inv.content.events[0];
-      if (ev && ev.date && new Date(ev.date + 'T23:59:59') < new Date()) return {key:'expired', label:'Kedaluwarsa', cls:'exp'};
+      const end = invAccessEndsAt(inv);
+      if (end && Date.now() > end) return {key:'expired', label:'Kedaluwarsa', cls:'exp'};
       return {key:'published', label:'Terbit', cls:'pub'};
     }
     function myInvitations(){ return S.invitations.filter(i => !i.ownerId || i.ownerId === CURRENT_USER); }
@@ -2204,6 +2256,17 @@
     function s2GuestByCode(invId, code){
       const g = S2.guests.find(x => x.invitationId === invId && x.code === code);
       return g ? g.name : null;
+    }
+    /* Respons tersimpan milik tamu pemilik tautan ?to= — dipakai halaman
+       publik untuk menampilkan status "sudah terkirim" setelah muat ulang
+       alih-alih formulir kosong. */
+    function s2ExistingRsvp(inv, code){
+      if (!inv || !code) return null;
+      const g = S2.guests.find(x => x.invitationId === inv.id && x.code === code);
+      if (!g) return null;
+      const r = S2.rsvps.find(x => x.guestId === g.id);
+      if (!r) return null;
+      return {name: g.name, status: r.status, count: r.count || 0, message: r.message || ''};
     }
 
     /* ---------- Seed demo Stage 2 (sekali, tidak menimpa data Stage 1 yang valid) ---------- */
@@ -2303,20 +2366,33 @@
       S2.services[2].invitationId = invD.id; S2.services[2].orderId = null;
       saveColl('services');
       S2.notifications = [
-        {id:'seed-ntf-1', title:'RSVP baru masuk', body:'Keluarga Wijaya mengonfirmasi hadir (2 orang) untuk Nadia & Reza.', scope:'customer', at:Date.now() - 36e5 * 5, read:false},
-        {id:'seed-ntf-2', title:'Pembayaran simulasi berhasil', body:'Pesanan KI-2026-1007 (Signature) berstatus Success.', scope:'customer', at:Date.now() - 864e5, read:false},
-        {id:'seed-ntf-3', title:'Permintaan desain baru', body:'REQ-2026-204 menunggu penugasan desainer.', scope:'admin', at:Date.now() - 864e5, read:false},
-        {id:'seed-ntf-4', title:'Desain menunggu ulasan Anda', body:'Proyek Pernikahan Nadia & Reza masuk tahap Review.', scope:'customer', at:Date.now() - 864e5 * 2, read:true}
+        {id:'seed-ntf-1', title:'RSVP baru masuk', body:'Keluarga Wijaya mengonfirmasi hadir (2 orang) untuk Nadia & Reza.', scope:'customer', owner:'cust-1', at:Date.now() - 36e5 * 5, read:false},
+        {id:'seed-ntf-2', title:'Pembayaran simulasi berhasil', body:'Pesanan KI-2026-1007 (Signature) berstatus Success.', scope:'customer', owner:'cust-1', at:Date.now() - 864e5, read:false},
+        {id:'seed-ntf-3', title:'Permintaan desain baru', body:'REQ-2026-204 menunggu penugasan desainer.', scope:'admin', owner:null, at:Date.now() - 864e5, read:false},
+        {id:'seed-ntf-4', title:'Desain menunggu ulasan Anda', body:'Proyek Pernikahan Nadia & Reza masuk tahap Review.', scope:'customer', owner:'cust-1', at:Date.now() - 864e5 * 2, read:true}
       ]; saveColl('notifications');
       S2.activity = [
-        {id:'seed-act-2', text:'RSVP baru dari Keluarga Wijaya untuk Nadia & Reza.', scope:'customer', at:Date.now() - 36e5 * 5},
-        {id:'seed-act-1', text:'Pembayaran simulasi KI-2026-1007 berhasil (Signature).', scope:'customer', at:Date.now() - 864e5},
-        {id:'seed-act-4', text:'Permintaan desain REQ-2026-204 dibuat.', scope:'customer', at:Date.now() - 864e5},
-        {id:'seed-act-3', text:'Undangan Nadia & Reza diterbitkan.', scope:'customer', at:Date.now() - 864e5 * 10}
+        {id:'seed-act-2', text:'RSVP baru dari Keluarga Wijaya untuk Nadia & Reza.', scope:'customer', owner:'cust-1', at:Date.now() - 36e5 * 5},
+        {id:'seed-act-1', text:'Pembayaran simulasi KI-2026-1007 berhasil (Signature).', scope:'customer', owner:'cust-1', at:Date.now() - 864e5},
+        {id:'seed-act-4', text:'Permintaan desain REQ-2026-204 dibuat.', scope:'customer', owner:'cust-1', at:Date.now() - 864e5},
+        {id:'seed-act-3', text:'Undangan Nadia & Reza diterbitkan.', scope:'customer', owner:'cust-1', at:Date.now() - 864e5 * 10}
       ]; saveColl('activity');
       save2(K2.seeded, true);
     }
     seedStage2();
+
+    /* Pemilik untuk event seed lama: record aktivitas/notifikasi seed yang
+       tersimpan dari build sebelumnya belum punya field owner. Semuanya
+       adalah event milik Nadia (cust-1) — beri owner yang benar agar tetap
+       tampil di dashboard pemiliknya dan tidak bocor ke pelanggan lain.
+       Idempoten: hanya mengisi owner yang masih kosong pada ID seed. */
+    (function assignSeedOwners(){
+      let ac = false, nc = false;
+      S2.activity.forEach(a => { if (!a.owner && /^seed-act-/.test(a.id || '')){ a.owner = 'cust-1'; ac = true; } });
+      S2.notifications.forEach(n => { if (!n.owner && /^seed-ntf-/.test(n.id || '') && n.scope === 'customer'){ n.owner = 'cust-1'; nc = true; } });
+      if (ac) saveColl('activity');
+      if (nc) saveColl('notifications');
+    })();
 
     /* Perbaikan record lama (jaring pengaman kedua setelah seed; migrasi utama
        repairSeedDemoLeak sudah jalan sebelum render pertama): seed-inv-1
@@ -2368,6 +2444,19 @@
         if (s.invitationId) return;
         if (s.id === 'seed-svc-1'){ s.invitationId = 'seed-inv-1'; const o = S2.orders.find(x => x.invitationId === 'seed-inv-1' && x.paymentStatus === 'Success'); s.orderId = o ? o.id : null; changed = true; }
         else if (s.id === 'seed-svc-3'){ s.invitationId = 'seed-inv-4'; s.orderId = s.orderId || null; changed = true; }
+      });
+      if (changed) saveColl('services');
+    })();
+    /* Penyelaras alur layanan (idempoten): proyek yang punya pesanan terkait
+       berstatus Success tetapi masih "New" berarti pembayarannya sudah lunas
+       — majukan ke "Paid" agar alur New → Paid → Assigned tidak pernah
+       melompat. Proyek tanpa pesanan terkait tidak diwajibkan melewati Paid. */
+    (function alignServicePaid(){
+      let changed = false;
+      S2.services.forEach(s => {
+        if (s.status !== 'New' || !s.orderId) return;
+        const o = S2.orders.find(x => x.id === s.orderId);
+        if (o && o.paymentStatus === 'Success'){ s.status = 'Paid'; changed = true; }
       });
       if (changed) saveColl('services');
     })();
@@ -2432,7 +2521,10 @@
       const gCount = mine.reduce((a, i) => a + guestsOf(i.id).length, 0);
       const rCount = mine.reduce((a, i) => a + rsvpsOf(i.id).length, 0);
       const pend = S2.orders.filter(o => o.customerId === CURRENT_USER && o.paymentStatus === 'Pending').length;
-      const recent = S2.activity.filter(a => a.scope === 'customer' && (!a.owner || a.owner === CURRENT_USER)).slice().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 6);
+      /* Scope ketat per pemilik: hanya aktivitas milik pelanggan ini yang
+         tampil. Event tanpa owner TIDAK ditampilkan ke pelanggan mana pun
+         (tidak bocor lintas akun); admin tetap melihat semuanya di panelnya. */
+      const recent = S2.activity.filter(a => a.scope === 'customer' && a.owner === CURRENT_USER).slice().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 6);
       return `<div class="stat-grid">
         <div class="stat"><b>${mine.length}</b><span>Total undangan</span><small>${mine.filter(i => invStatus(i).key==='draft').length} draft · ${mine.filter(i => invStatus(i).key==='published').length} terbit</small></div>
         <div class="stat"><b>${gCount}</b><span>Total tamu</span><small>dari semua undangan Anda</small></div>
@@ -2697,7 +2789,7 @@
       <p style="font-size:13.5px;color:var(--ink-3);margin:14px 0 0">Grup terbesar: ${esc((() => { const m = {}; gs.forEach(g => m[g.group] = (m[g.group]||0) + 1); const top = Object.entries(m).sort((a,b) => b[1] - a[1])[0]; return top ? top[0] + ' (' + top[1] + ' tamu)' : '—'; })())}</p></div>`;
     }
     function dashNotifications(){
-      const list = S2.notifications.filter(n => n.scope === 'customer' && (!n.owner || n.owner === CURRENT_USER));
+      const list = S2.notifications.filter(n => n.scope === 'customer' && n.owner === CURRENT_USER);
       return `<div class="card"><h2>Notifikasi</h2><p class="sub">Pembaruan dari RSVP, pembayaran simulasi, dan proyek desain Anda.</p>
       ${list.length ? `<div class="list-rows">${list.map(n => `<div class="lrow"><div class="grow"><b>${esc(n.title)}</b><div style="font-size:14.5px">${esc(n.body)}</div><div class="mut">${new Date(n.at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>${n.read ? '' : '<span class="pill exp">Baru</span>'}</div>`).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada notifikasi.</p>'}
       ${list.some(n => !n.read) ? '<button class="btn ghost sm" data-s2="notif-read" style="margin-top:14px">Tandai Semua Dibaca</button>' : ''}</div>`;
@@ -2710,7 +2802,7 @@
       <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div></div>`;
     }
     function dashSettings(){
-      return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus.</p>
+      return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
       <p style="background:#F9E9E4;border:1px solid #EBC5B8;color:var(--err);border-radius:var(--r-md);padding:13px 16px;font-size:14px;font-weight:600">Perhatian: reset juga <b>menghapus draft undangan yang Anda buat sendiri</b> selama sesi demo ini, karena semuanya tersimpan di perangkat yang sama. Reset tidak pernah berjalan tanpa konfirmasi.</p>
       <button class="btn" data-s2="reset-demo" style="background:var(--err);color:#FFF">Reset Data Demo…</button></div>
       <div class="card"><h2>Tentang Penyimpanan</h2><p class="sub">Undangan tersimpan per record dengan key <b>vowora:v1:invitation:&lt;id&gt;</b>; tamu, RSVP, pesanan, pembayaran, layanan, dan notifikasi tersimpan per koleksi (vowora:v1:guests, vowora:v1:rsvps, vowora:v1:orders, vowora:v1:payments, vowora:v1:service-requests, vowora:v1:notifications) di localStorage perangkat ini.</p></div>`;
@@ -2914,7 +3006,7 @@
       if (st){ try { st.removeItem(INV_KEY_PREFIX + inv.id); st.setItem(INV_INDEX_KEY, JSON.stringify(S.invitations.map(i => i.id))); } catch(e){} }
       S2.guests = S2.guests.filter(g => g.invitationId !== inv.id); saveColl('guests');
       S2.rsvps = S2.rsvps.filter(r => r.invitationId !== inv.id); saveColl('rsvps');
-      logAct('Undangan “' + inv.title + '” dihapus beserta tamu & RSVP-nya.');
+      logAct('Undangan “' + inv.title + '” dihapus beserta tamu & RSVP-nya.', 'customer', inv.ownerId || CURRENT_USER);
     }
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-s2]');
@@ -2926,12 +3018,12 @@
         const src = S.invitations.find(i => i.id === id); if (!src) return;
         const copy = structuredClone(src);
         copy.id = 'inv-' + (S.seq++); copy.title = src.title + ' (Salinan)'; copy.status = 'draft'; copy.slug = null; copy.publishedAt = null; copy.archived = false; copy.createdAt = Date.now(); copy.updatedAt = Date.now();
-        S.invitations.unshift(copy); persistInvitationNow(copy); logAct('Undangan diduplikat: ' + copy.title); toast('Duplikat dibuat: ' + copy.title); rerender2(); return;
+        S.invitations.unshift(copy); persistInvitationNow(copy); logAct('Undangan diduplikat: ' + copy.title, 'customer', copy.ownerId || CURRENT_USER); toast('Duplikat dibuat: ' + copy.title); rerender2(); return;
       }
       if (act === 'inv-archive' || act === 'inv-unarchive'){
         const inv = S.invitations.find(i => i.id === id); if (!inv) return;
         inv.archived = act === 'inv-archive'; inv.updatedAt = Date.now(); persistInvitationNow(inv);
-        logAct('Undangan “' + inv.title + '” ' + (inv.archived ? 'diarsipkan.' : 'dikeluarkan dari arsip.')); toast(inv.archived ? 'Undangan diarsipkan' : 'Arsip dibatalkan'); rerender2(); return;
+        logAct('Undangan “' + inv.title + '” ' + (inv.archived ? 'diarsipkan.' : 'dikeluarkan dari arsip.'), 'customer', inv.ownerId || CURRENT_USER); toast(inv.archived ? 'Undangan diarsipkan' : 'Arsip dibatalkan'); rerender2(); return;
       }
       if (act === 'inv-delete'){
         const inv = S.invitations.find(i => i.id === id); if (!inv) return;
@@ -2975,7 +3067,7 @@
         const inv = S.invitations.find(i => i.id === D2.guestInv); if (!inv || !D2.bulkPreview) return;
         D2.bulkPreview.valid.forEach(v => S2.guests.push({id:uid2('guest'), invitationId:inv.id, name:v.name, group:v.group, contact:v.contact, rsvpStatus:'Belum Menjawab', attendees:1, code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()}));
         saveColl('guests'); const n = D2.bulkPreview.valid.length; D2.bulkPreview = null;
-        logAct(n + ' tamu diimpor massal ke “' + inv.title + '”.'); toast(n + ' tamu berhasil diimpor'); rerender2(); return;
+        logAct(n + ' tamu diimpor massal ke “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER); toast(n + ' tamu berhasil diimpor'); rerender2(); return;
       }
       /* Moderasi ucapan — "Hapus Ucapan" hanya mengosongkan pesan; record
          RSVP dan jawaban kehadiran tamu tetap tersimpan. */
@@ -2988,7 +3080,7 @@
       /* Pesanan & checkout */
       if (act === 'order-cancel'){
         const o = S2.orders.find(x => x.id === id); if (!o) return;
-        showModal({title:'Batalkan pesanan ' + o.number + '?', danger:true, confirmLabel:'Ya, Batalkan Pesanan', body:'Status pesanan berubah menjadi <b>Dibatalkan</b>. Record pembayaran simulasi tetap tersimpan sebagai riwayat.', onConfirm:() => { o.status = 'Dibatalkan'; saveColl('orders'); logAct('Pesanan ' + o.number + ' dibatalkan.'); toast('Pesanan dibatalkan'); rerender2(); }});
+        showModal({title:'Batalkan pesanan ' + o.number + '?', danger:true, confirmLabel:'Ya, Batalkan Pesanan', body:'Status pesanan berubah menjadi <b>Dibatalkan</b>. Record pembayaran simulasi tetap tersimpan sebagai riwayat.', onConfirm:() => { o.status = 'Dibatalkan'; saveColl('orders'); logAct('Pesanan ' + o.number + ' dibatalkan.', 'customer', o.customerId); toast('Pesanan dibatalkan'); rerender2(); }});
         return;
       }
       if (act === 'order-done'){ const o = S2.orders.find(x => x.id === id); if (o){ o.status = 'Selesai'; saveColl('orders'); toast('Pesanan ' + o.number + ' ditandai selesai'); rerender2(); } return; }
@@ -3010,8 +3102,8 @@
         S2.orders.unshift(o);
         S2.payments.push({id:uid2('pay'), orderId:o.id, method:CO.method, status:'Pending', amount:o.total, code: CO.method === 'QRIS' ? 'QRIS-SIM-' + num : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null});
         saveColl('orders'); saveColl('payments');
-        logAct('Pesanan ' + num + ' dibuat: paket ' + pkg.name + ' untuk “' + inv.title + '” (' + rp(o.total) + ', simulasi).');
-        notify2('Pesanan dibuat', num + ' menunggu pembayaran simulasi sebesar ' + rp(o.total) + '.', 'customer');
+        logAct('Pesanan ' + num + ' dibuat: paket ' + pkg.name + ' untuk “' + inv.title + '” (' + rp(o.total) + ', simulasi).', 'customer', inv.ownerId || CURRENT_USER);
+        notify2('Pesanan dibuat', num + ' menunggu pembayaran simulasi sebesar ' + rp(o.total) + '.', 'customer', inv.ownerId || CURRENT_USER);
         toast('Pesanan ' + num + ' dibuat — lanjutkan pembayaran simulasi');
         go('#/bayar/' + o.id); return;
       }
@@ -3025,11 +3117,16 @@
           o.status = 'Diproses';
           const inv = S.invitations.find(i => i.id === o.invitationId);
           if (inv){ inv.packageId = o.packageId; persistInvitationNow(inv); }
-          logAct('Pembayaran simulasi ' + o.number + ' BERHASIL — paket ' + o.packageName + ' aktif.');
-          notify2('Pembayaran simulasi berhasil', o.number + ' — paket ' + o.packageName + ' aktif untuk undangan Anda.', 'customer');
+          const payOwner = (inv && inv.ownerId) || o.customerId;
+          /* Proyek desain yang pesanannya baru lunas melewati status Paid
+             sebelum boleh ditugaskan (Assigned). */
+          S2.services.forEach(sv => { if (sv.orderId === o.id && sv.status === 'New') sv.status = 'Paid'; });
+          saveColl('services');
+          logAct('Pembayaran simulasi ' + o.number + ' BERHASIL — paket ' + o.packageName + ' aktif.', 'customer', payOwner);
+          notify2('Pembayaran simulasi berhasil', o.number + ' — paket ' + o.packageName + ' aktif untuk undangan Anda.', 'customer', payOwner);
           toast('Pembayaran simulasi berhasil');
         } else {
-          logAct('Pembayaran simulasi ' + o.number + ' berakhir ' + res + ' — undangan tidak diterbitkan.');
+          logAct('Pembayaran simulasi ' + o.number + ' berakhir ' + res + ' — undangan tidak diterbitkan.', 'customer', o.customerId);
           toast('Pembayaran simulasi ' + (res === 'Failed' ? 'gagal' : 'kedaluwarsa') + ' — tidak ada perubahan pada undangan', true);
         }
         saveColl('orders'); rerender2(); return;
@@ -3040,16 +3137,16 @@
         const blk = publishBlockedByGate(inv); if (blk){ toast(gateBlockText(blk), true); return; }
         flushAutosave(inv);
         const slug = publishInvitation(inv);
-        logAct('Undangan “' + inv.title + '” diterbitkan setelah pembayaran ' + o.number + ' berhasil.');
+        logAct('Undangan “' + inv.title + '” diterbitkan setelah pembayaran ' + o.number + ' berhasil.', 'customer', inv.ownerId || CURRENT_USER);
         toast('Undangan terbit di /u/' + slug); go('#/u/' + slug); return;
       }
       /* Notifikasi */
-      if (act === 'notif-read'){ S2.notifications.forEach(n => { if (n.scope === 'customer' && (!n.owner || n.owner === CURRENT_USER)) n.read = true; }); saveColl('notifications'); rerender2(); return; }
+      if (act === 'notif-read'){ S2.notifications.forEach(n => { if (n.scope === 'customer' && n.owner === CURRENT_USER) n.read = true; }); saveColl('notifications'); rerender2(); return; }
       /* Layanan bantuan */
       if (act === 'svc-approve'){
         const s = S2.services.find(x => x.id === id); if (!s) return;
         s.status = 'Approved'; s.updatedAt = Date.now(); saveColl('services');
-        logAct('Desain proyek ' + s.number + ' disetujui pelanggan.'); notify2('Desain disetujui', 'Proyek ' + s.number + ' disetujui pelanggan dan siap diterbitkan.', 'admin');
+        logAct('Desain proyek ' + s.number + ' disetujui pelanggan.', 'customer', s.customerId); notify2('Desain disetujui', 'Proyek ' + s.number + ' disetujui pelanggan dan siap diterbitkan.', 'admin');
         toast('Desain disetujui — terima kasih!'); rerender2(); return;
       }
       if (act === 'svc-revision'){
@@ -3057,19 +3154,19 @@
         showModal({title:'Minta revisi desain', textarea:true, textareaLabel:'Catatan revisi untuk desainer', textareaPh:'Jelaskan bagian yang perlu diubah…', confirmLabel:'Kirim Permintaan Revisi', onConfirm:(note) => {
           if (!note){ toast('Catatan revisi wajib diisi', true); return; }
           s.revisions.push({note, at:Date.now(), by:'customer'}); s.status = 'Revision'; s.updatedAt = Date.now(); saveColl('services');
-          logAct('Revisi diminta untuk proyek ' + s.number + '.'); toast('Permintaan revisi terkirim ke desainer'); rerender2();
+          logAct('Revisi diminta untuk proyek ' + s.number + '.', 'customer', s.customerId); toast('Permintaan revisi terkirim ke desainer'); rerender2();
         }}); return;
       }
       if (act === 'svc-progress'){
         const s = S2.services.find(x => x.id === id); if (!s) return;
         s.status = el.dataset.to; s.updatedAt = Date.now(); saveColl('services');
-        logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.');
-        if (s.status === 'Review') notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer');
+        logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.', 'customer', s.customerId);
+        if (s.status === 'Review') notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer', s.customerId);
         if (s.status === 'Published'){
           /* Status layanan "Published" TIDAK menerbitkan undangan terkait —
              publikasi undangan adalah tindakan terpisah dan eksplisit. */
           const linked = s.invitationId ? S.invitations.find(i => i.id === s.invitationId) : null;
-          if (linked && linked.status !== 'published'){ notify2('Hasil desain diterbitkan', 'Proyek ' + s.number + ' selesai di sisi desain. Undangan “' + linked.title + '” masih draft — terbitkan dari kartu proyek di Dashboard → Layanan.', 'customer'); toast('Status proyek: Published — undangan terkait masih draft dan perlu diterbitkan terpisah'); rerender2(); return; }
+          if (linked && linked.status !== 'published'){ notify2('Hasil desain diterbitkan', 'Proyek ' + s.number + ' selesai di sisi desain. Undangan “' + linked.title + '” masih draft — terbitkan dari kartu proyek di Dashboard → Layanan.', 'customer', s.customerId); toast('Status proyek: Published — undangan terkait masih draft dan perlu diterbitkan terpisah'); rerender2(); return; }
         }
         toast('Status proyek diperbarui: ' + s.status); rerender2(); return;
       }
@@ -3079,7 +3176,7 @@
         const blk = publishBlockedByGate(inv); if (blk){ toast(gateBlockText(blk), true); return; }
         flushAutosave(inv);
         const slug = publishInvitation(inv);
-        logAct('Undangan “' + inv.title + '” diterbitkan dari proyek desain ' + s.number + ' (status layanan tetap ' + s.status + ').');
+        logAct('Undangan “' + inv.title + '” diterbitkan dari proyek desain ' + s.number + ' (status layanan tetap ' + s.status + ').', 'customer', inv.ownerId || CURRENT_USER);
         toast('Undangan terbit di /u/' + slug); go('#/u/' + slug); return;
       }
       /* Admin: template */
@@ -3122,20 +3219,34 @@
          pemulihan. Semua koleksi lain dihapus dalam satu paket lalu seed
          dibangun ulang saat muat ulang, jadi tidak ada referensi yatim. */
       if (act === 'reset-demo'){
-        showModal({title:'Reset seluruh data demo?', danger:true, confirmLabel:'Ya, Reset Semua Data Demo', body:'Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan (menimpa cadangan sebelumnya) dan record karantina dipertahankan. Lalu semua record lain dikembalikan ke seed awal Stage 2 (undangan demo, tamu, RSVP, pesanan, pembayaran, proyek desain, kupon, notifikasi) dalam satu paket yang konsisten. <b>Draft undangan buatan Anda sendiri ikut terhapus.</b> Halaman akan dimuat ulang setelah reset.', onConfirm:() => {
+        showModal({title:'Reset seluruh data demo?', danger:true, confirmLabel:'Ya, Reset Semua Data Demo', body:'Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan (menimpa cadangan sebelumnya) dan record karantina dipertahankan. Lalu semua record lain dikembalikan ke seed awal Stage 2 (undangan demo, tamu, RSVP, pesanan, pembayaran, proyek desain, kupon, notifikasi) dalam satu paket yang konsisten. <b>Draft undangan buatan Anda sendiri ikut terhapus.</b> Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset <b>berhenti dan tidak ada data yang dihapus</b>. Halaman akan dimuat ulang setelah reset.', onConfirm:() => {
           const st = storageBackend();
-          let snapOk = false;
           if (st){
-            try { const snap = {}; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) snap[k] = st.getItem(k); }
-              if (Object.keys(snap).length){ const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
-                try { st.setItem(K2.backup, payload); snapOk = true; }
-                catch(e1){ /* Kuota penuh (profil lama menumpuk): bebaskan slot
-                     cadangan lama — yang memang akan ditimpa — lalu coba lagi. */
-                  try { st.removeItem(K2.backup); st.setItem(K2.backup, payload); snapOk = true; } catch(e2){ snapOk = false; } } }
-            } catch(e){}
+            /* Langkah 1 — cadangan pra-reset. Reset TIDAK boleh berjalan
+               tanpa cadangan: bila penulisan gagal (termasuk setelah retry
+               dengan membebaskan slot cadangan lama), reset dibatalkan
+               utuh dan tidak satu pun record dihapus. Karantina tidak pernah
+               dilepas oleh reset; pemulihan karantina hanya selesai lewat
+               jalur pulih yang terverifikasi baca-balik. */
+            let snap = null;
+            try { snap = {}; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) snap[k] = st.getItem(k); } } catch(e){ snap = null; }
+            const hadData = !!(snap && Object.keys(snap).length);
+            let snapOk = !hadData; /* tidak ada data = tidak ada yang perlu dicadangkan */
+            if (hadData){
+              const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
+              try { st.setItem(K2.backup, payload); snapOk = st.getItem(K2.backup) === payload; }
+              catch(e1){ /* Kuota penuh (profil lama menumpuk): bebaskan slot
+                   cadangan lama — yang memang akan ditimpa — lalu coba lagi. */
+                try { st.removeItem(K2.backup); st.setItem(K2.backup, payload); snapOk = st.getItem(K2.backup) === payload; } catch(e2){ snapOk = false; } }
+            }
+            if (!snapOk){
+              toast('Reset DIBATALKAN: cadangan pra-reset gagal ditulis di perangkat ini (penyimpanan penuh?). Tidak ada data yang dihapus — unduh cadangan atau kosongkan ruang, lalu coba lagi.', true);
+              return;
+            }
+            /* Langkah 2 — cadangan terverifikasi tersimpan; baru hapus. */
             const keys = []; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) keys.push(k); } keys.forEach(k => { try { st.removeItem(k); } catch(e){} });
           }
-          toast(snapOk ? 'Cadangan disimpan, data demo direset — memuat ulang…' : 'Data demo direset — memuat ulang… (peringatan: cadangan pra-reset gagal ditulis di perangkat ini)', !snapOk); setTimeout(() => location.reload(), 500);
+          toast('Cadangan disimpan, data demo direset — memuat ulang…'); setTimeout(() => location.reload(), 500);
         }}); return;
       }
     });
@@ -3157,8 +3268,24 @@
       const asg = e.target.closest && e.target.closest('[data-s2-assign]');
       if (asg){
         const s = S2.services.find(x => x.id === asg.dataset.s2Assign); if (!s) return;
-        s.designerId = asg.value || null;
-        if (asg.value && (s.status === 'New' || s.status === 'Paid')) s.status = 'Assigned';
+        if (asg.value){
+          /* Gerbang alur: bila proyek punya pembayaran wajib (pesanan
+             terkait), status harus melewati Paid sebelum Assigned. Pesanan
+             terkait yang belum Success menahan penugasan — tidak ada lompat
+             New → Assigned. Proyek tanpa pesanan terkait boleh langsung
+             ditugaskan dari New. */
+          const linkedOrder = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null;
+          const mustPay = !!linkedOrder;
+          const isPaid = !!(linkedOrder && linkedOrder.paymentStatus === 'Success');
+          if (mustPay && !isPaid && s.status !== 'Assigned'){
+            toast('Proyek ' + s.number + ' belum dapat ditugaskan: pembayaran pesanan terkait (' + linkedOrder.number + ' · ' + linkedOrder.paymentStatus + ') belum Success — alur wajib melewati Paid sebelum Assigned.', true);
+            rerender2(); return;
+          }
+          s.designerId = asg.value;
+          if (s.status === 'Paid' || (s.status === 'New' && (!mustPay || isPaid))) s.status = 'Assigned';
+        } else {
+          s.designerId = null;
+        }
         s.updatedAt = Date.now(); saveColl('services');
         logAct('Proyek ' + s.number + ' ditugaskan ke ' + (asg.value ? userById(asg.value).name : '—') + '.', 'admin');
         toast(asg.value ? 'Desainer ditugaskan: ' + userById(asg.value).name : 'Penugasan dilepas'); rerender2(); return;
@@ -3181,7 +3308,7 @@
           D2.guestEdit = null; toast('Tamu diperbarui');
         } else {
           S2.guests.push(Object.assign({id:uid2('guest'), invitationId:inv.id, rsvpStatus:'Belum Menjawab', code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()}, data));
-          logAct('Tamu ' + name + ' ditambahkan ke “' + inv.title + '”.'); toast('Tamu ditambahkan');
+          logAct('Tamu ' + name + ' ditambahkan ke “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER); toast('Tamu ditambahkan');
         }
         saveColl('guests'); rerender2(); return;
       }
@@ -3194,7 +3321,7 @@
         const linkOrder = linkInvId ? S2.orders.filter(o => o.invitationId === linkInvId).slice().sort((a, b) => b.createdAt - a.createdAt)[0] : null;
         const s = {id:uid2('svc'), number:'REQ-2026-' + (200 + S2.services.length + 1), customerId:CURRENT_USER, title:name, category:$('#sv-cat').value, eventName:name, eventDate:$('#sv-date').value || '', style:$('#sv-style').value, features:feats, reference:$('#sv-ref').value, notes:$('#sv-notes').value.trim(), status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:linkInvId, orderId:linkOrder ? linkOrder.id : null, createdAt:Date.now(), updatedAt:Date.now()};
         S2.services.unshift(s); saveColl('services');
-        logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.');
+        logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.', 'customer', CURRENT_USER);
         notify2('Permintaan desain baru', s.number + ' — ' + name + ' menunggu penugasan desainer.', 'admin');
         toast('Permintaan ' + s.number + ' terkirim — tim kami akan menugaskan desainer'); rerender2(); return;
       }
@@ -3294,6 +3421,8 @@
       saveColl('guests');
       const name = g.name; /* nama kanonis dari record tamu yang stabil */
       let r = S2.rsvps.find(x => x.guestId === g.id);
+      const prev = r ? {status:r.status, count:r.count, message:r.message || ''} : null;
+      const nextMessage = message ? message : (prev ? prev.message : '');
       if (r){
         r.status = status; r.count = count; r.name = name; r.at = Date.now();
         if (message) r.message = message;
@@ -3303,15 +3432,29 @@
       }
       else { r = {id:uid2('rsvp'), guestId:g.id, invitationId:inv.id, name, status, count, message, at:Date.now(), moderation:'approved'}; S2.rsvps.push(r); }
       saveColl('rsvps');
-      logAct('RSVP publik: ' + name + ' → ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || null);
-      notify2('RSVP baru masuk', name + ' merespons ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || null);
+      /* Idempotensi penuh: submit ulang dengan isi yang sama persis tidak
+         menambah record (record memang satu per tamu), tidak mencatat
+         aktivitas kedua, dan tidak mengirim notifikasi kedua. Aktivitas &
+         notifikasi hanya ditulis bila responsnya benar-benar baru/berubah. */
+      const changed = !prev || prev.status !== status || prev.count !== count || prev.message !== nextMessage;
+      if (changed){
+        logAct('RSVP publik: ' + name + ' → ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER);
+        notify2('RSVP baru masuk', name + ' merespons ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER);
+      }
+      /* Gambar ulang buku ucapan dari sumber kebenaran yang sama, supaya
+         tampilan sesi ini selalu sama dengan hasil muat ulang — ucapan
+         termoderasi tidak bocor lewat sisa tampilan lama. */
+      const wl = document.querySelector('[data-wish-list]');
+      if (wl){ const ws = publicWishesFor(inv); wl.innerHTML = ws.length ? ws.map(wishHTML).join('') : '<p class="muted small">Belum ada ucapan. Jadilah yang pertama!</p>'; }
     });
 
     s2Render();
-    /* Halaman publik dirender sekali lagi setelah data Stage 2 siap, agar buku
-       ucapan termoderasi, nama tamu dari tautan ?to=, dan template CMS tampil
-       sejak muatan pertama — render awal Stage 1 berjalan sebelum Stage 2. */
-    if (location.hash.startsWith('#/u/')) render();
+    /* Rute Stage 1 yang bergantung pada data Stage 2 dirender sekali lagi
+       setelah data siap: render awal Stage 1 berjalan SEBELUM seed Stage 2,
+       jadi pada profil baru rute publik (#/u/) dan rute Builder langsung
+       (#/studio/<id>, #/buat/<slug>) sempat "tidak ditemukan"/kosong sampai
+       muat ulang kedua. Render ulang ini membuatnya benar sejak buka pertama. */
+    if (location.hash.startsWith('#/u/') || location.hash.startsWith('#/studio/') || location.hash.startsWith('#/buat/')) render();
     </script>
   </body>
 </html>

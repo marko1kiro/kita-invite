@@ -858,6 +858,31 @@
         else if (status === 'saved' && SAVE_STATE.at) note.textContent = 'Tersimpan otomatis · ' + new Date(SAVE_STATE.at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
       }
     }
+    /* ---------- Pengaman startup: backup sekali + karantina record rusak ----------
+       backupStorageOnce menyalin seluruh key "vowora:" ke satu snapshot sebelum
+       migrasi apa pun berjalan (idempoten: hanya snapshot pertama yang disimpan).
+       Record JSON rusak tidak lagi dihapus: isinya dipindah ke karantina dan
+       dapat dipulihkan dari Dashboard → Pengaturan. */
+    const QUARANTINE_KEY = 'vowora:v1:quarantine';
+    const BACKUP_KEY = 'vowora:v1:backup:pre-stage2-fix';
+    function quarantineRaw(key, raw, reason){
+      const store = storageBackend(); if (!store) return;
+      try {
+        let q = [];
+        try { const p = JSON.parse(store.getItem(QUARANTINE_KEY) || '[]'); if (Array.isArray(p)) q = p; } catch(e){}
+        q.push({key, raw: String(raw == null ? '' : raw), reason: reason || 'parse-error', at: Date.now()});
+        store.setItem(QUARANTINE_KEY, JSON.stringify(q.slice(-50)));
+      } catch(e){}
+    }
+    function backupStorageOnce(){
+      const store = storageBackend(); if (!store) return;
+      try {
+        if (store.getItem(BACKUP_KEY)) return;
+        const snap = {};
+        for (let i = 0; i < store.length; i++){ const k = store.key(i); if (k && k.indexOf('vowora:') === 0 && k !== BACKUP_KEY && k !== QUARANTINE_KEY) snap[k] = store.getItem(k); }
+        if (Object.keys(snap).length) store.setItem(BACKUP_KEY, JSON.stringify({at: Date.now(), keys: snap}));
+      } catch(e){}
+    }
     function persistInvitationNow(inv){
       if (!inv) return false;
       const store = storageBackend();
@@ -881,6 +906,10 @@
       clearTimeout(_saveTimers[inv.id]);
       return persistInvitationNow(inv);
     }
+    /* Registrasi snapshot versi template (diisi Stage 2 dari data CMS):
+       undangan dirender dengan snapshot versi saat ia dibuat, bukan versi
+       template terbaru — versi lama bersifat immutable. */
+    const TPL_VERSIONS = {};
     function sanitizeStoredInvitation(raw){
       if (!raw || typeof raw !== 'object') return null;
       if (typeof raw.id !== 'string' || !raw.id) return null;
@@ -931,7 +960,7 @@
             if (!parsed || parsed.version !== STORAGE_VERSION) return; /* format tidak kompatibel: lewati */
             const inv = sanitizeStoredInvitation(parsed.invitation);
             if (inv) found.push(inv);
-          } catch(e){ try { store.removeItem(k); } catch(_){} } /* record rusak: buang, jangan crash */
+          } catch(e){ quarantineRaw(k, store.getItem(k), 'json-rusak'); try { store.removeItem(k); } catch(_){} } /* record rusak: pindah ke karantina agar bisa dipulihkan, jangan crash */
         });
         found.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
         S.invitations = found;
@@ -941,6 +970,7 @@
         if (found.length){ SAVE_STATE.status = 'saved'; SAVE_STATE.at = Date.now(); }
       } catch(e){ S.invitations = []; }
     }
+    backupStorageOnce();
     hydrateInvitationsFromStorage();
 
     /* Perbaikan record seed lama (jalan sebelum render pertama): undangan seed
@@ -1053,6 +1083,10 @@
       return checks;
     }
     function slugify(s){ return s.toLowerCase().replace(/&/g,' dan ').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40) || 'undangan'; }
+    /* URL publik lengkap dengan rute hash — satu-satunya format tautan yang
+       disalin/dibagikan, karena router aplikasi memakai hash. Tautan path
+       /u/<slug> tanpa hash diarahkan ke format ini saat dibuka (lihat boot). */
+    function publicUrl(slug){ return location.href.split('#')[0] + '#/u/' + slug; }
     function publishInvitation(inv){
       let base = slugify(inv.title), slug = base, n = 2;
       while (S.invitations.some(i => i.slug === slug && i.id !== inv.id)) slug = base + '-' + (n++);
@@ -1078,7 +1112,7 @@
     }
     function renderInvitation(inv, opts){
       opts = Object.assign({mode:'public', guest:'Bapak/Ibu/Saudara/i', envelope:true}, opts||{});
-      const t = TEMPLATES.find(x => x.id === inv.templateId);
+      const t = (inv.templateVersion && TPL_VERSIONS[inv.templateId + '@' + inv.templateVersion]) || TEMPLATES.find(x => x.id === inv.templateId);
       const c = inv.content, sec = inv.sections, d = inv.design;
       const on = k => sec[k] !== false && t.sections.includes(k);
       const H = [];
@@ -1185,10 +1219,22 @@
     /* Buku ucapan publik: gabungan ucapan sesi (Stage 1) + RSVP termoderasi (Stage 2) */
     function publicWishesFor(inv){
       const base = S.wishes.filter(w => w.slug === inv.slug);
-      let extra = [];
-      try { if (typeof s2GuestbookWishes === 'function') extra = s2GuestbookWishes(inv); } catch(e){}
-      const seen = new Set(base.map(w => (w.name||'') + '|' + (w.msg||'')));
-      return [...extra.filter(w => !seen.has((w.name||'') + '|' + (w.msg||''))), ...base];
+      let extra = [], blocked = new Set();
+      try {
+        if (typeof s2GuestbookWishes === 'function') extra = s2GuestbookWishes(inv);
+        if (typeof s2BlockedWishKeys === 'function') blocked = s2BlockedWishKeys(inv);
+      } catch(e){}
+      const key = w => (w.name||'') + '|' + (w.msg||'');
+      const seen = new Set(base.map(key));
+      /* Moderasi berlaku di semua jalur tampilan: ucapan sesi yang record
+         RSVP-nya disembunyikan/menunggu tidak ikut tampil dari jalur ini. */
+      return [...extra.filter(w => !seen.has(key(w))), ...base.filter(w => !blocked.has(key(w)))];
+    }
+    /* Nama tamu dari kode pada tautan personal ?to= (data Stage 2). */
+    function guestNameFor(inv, code){
+      if (!inv || !code) return null;
+      try { if (typeof s2GuestByCode === 'function') return s2GuestByCode(inv.id, code); } catch(e){}
+      return null;
     }
     function rsvpFormHTML(opts){
       if (opts.mode === 'preview') return `<div class="ok-box"><b>Formulir RSVP</b><p class="muted small" style="margin:4px 0 0">Formulir aktif di halaman publik setelah undangan diterbitkan. Di pratinjau, tampil sebagai contoh tampilan.</p></div>`;
@@ -1218,6 +1264,15 @@
 
     <script>
     /* ---------- Shell & navigasi ---------- */
+    /* Tautan path /u/<slug> (format lama yang terlanjur tersebar) diarahkan ke
+       rute hash yang benar, mempertahankan parameter tamu ?to=. */
+    (function redirectPathInvitation(){
+      try {
+        if (location.hash) return;
+        const m = location.pathname.match(/\/u\/([a-z0-9-]+)\/?$/i);
+        if (m) location.replace(location.pathname.replace(/\/u\/[a-z0-9-]+\/?$/i, '/') + '#/u/' + m[1] + (location.search || ''));
+      } catch(e){}
+    })();
     const app = document.getElementById('app');
     let toastTimer;
     function toast(msg, err){
@@ -1575,9 +1630,9 @@
     }
 
     /* ---------- View: Undangan publik ---------- */
-    function viewPublic(inv){
+    function viewPublic(inv, guestName){
       if (!inv) return `<div style="min-height:100vh;display:grid;place-items:center;padding:24px"><div class="empty" style="max-width:440px"><h3>Undangan tidak ditemukan</h3><p>Tautan ini belum diterbitkan atau sudah tidak tersedia.</p><a class="btn gold" href="#/">Ke Beranda Kita Invite</a></div></div>`;
-      const render = renderInvitation(inv, {mode:'public', envelope:true, wishes: publicWishesFor(inv)});
+      const render = renderInvitation(inv, {mode:'public', envelope:true, guest: guestName || 'Bapak/Ibu/Saudara/i', wishes: publicWishesFor(inv)});
       return `<a href="#/" style="position:fixed;top:14px;left:14px;z-index:80;background:rgba(20,17,12,.72);color:#F8F5EF;padding:9px 15px;border-radius:999px;font-size:13px;font-weight:700;backdrop-filter:blur(6px)">← Kita Invite</a>
       <div style="background:var(--surface-2);min-height:100vh;padding:0">
         <div style="max-width:480px;margin:0 auto;box-shadow:var(--shadow);min-height:100vh">${render}</div>
@@ -1697,12 +1752,13 @@
         const checks = validateInvitation(inv);
         const allOk = checks.every(x => x.ok);
         const pub = inv.status === 'published';
+        const gateBlock = !pub && typeof publishBlockedByGate === 'function' ? publishBlockedByGate(inv) : null;
         return `<div class="b-panel"><h2>Terbitkan Undangan</h2><p class="sub">Pastikan semua kebutuhan dasar terpenuhi. Undangan terbit mendapat tautan unik yang membuka renderer publik di aplikasi ini.</p>
           <div class="check-list">${checks.map(x => `<div>${x.ok ? `<span class="ic-ok">${ICONS.check}</span>` : `<span class="ic-no">${ICONS.warn}</span>`}<span>${esc(x.label)}</span>${x.ok ? '' : `<button class="fix" data-goto-tab="${x.tab}">Perbaiki</button>`}</div>`).join('')}</div>
-          ${pub ? `<div class="slug-box"><div class="url">/u/${esc(inv.slug)}</div><button class="btn soft sm" data-copy="/u/${esc(inv.slug)}">${ICONS.copy} Salin</button><a class="btn gold sm" href="#/u/${inv.slug}">${ICONS.eye} Buka Undangan</a></div>
+          ${pub ? `<div class="slug-box"><div class="url">${esc(publicUrl(inv.slug))}</div><button class="btn soft sm" data-copy="${esc(publicUrl(inv.slug))}">${ICONS.copy} Salin</button><a class="btn gold sm" href="#/u/${inv.slug}">${ICONS.eye} Buka Undangan</a></div>
           <p class="hint" style="margin-top:12px">Undangan sudah terbit sejak ${new Date(inv.publishedAt).toLocaleString('id-ID')}. Perubahan konten yang Anda simpan akan tampil di tautan yang sama.</p>`
-          : `<button class="btn gold block" data-publish ${allOk ? '' : 'disabled'}>${ICONS.send} Terbitkan Undangan</button>
-          ${allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
+          : `<button class="btn gold block" data-publish ${allOk && !gateBlock ? '' : 'disabled'}>${ICONS.send} Terbitkan Undangan</button>
+          ${gateBlock ? `<p class="hint" style="margin-top:10px;color:var(--err)">Publikasi ditahan oleh pengaturan <b>“Publikasi wajib pembayaran”</b>: pesanan ${esc(gateBlock.number)} untuk undangan ini belum berstatus pembayaran <b>Success</b>. Selesaikan pembayaran simulasinya dari Dashboard → Pesanan, lalu kembali ke sini.</p>` : allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
           </div>
           <div class="b-panel"><h2>Paket Undangan</h2><p class="sub">Template ini berada di paket <b>${esc(t.tier)}</b> (${rp(t.price)}). Pesan paketnya lewat checkout simulasi — pembayaran yang berhasil mengaktifkan paket untuk undangan ini dan tercatat di Dashboard.</p>
           <a class="btn gold sm" href="#/checkout">Pesan Paket Ini (Simulasi)</a> <a class="btn ghost sm" href="#/dashboard?tab=pesanan">Lihat Pesanan Saya</a></div>`;
@@ -1786,7 +1842,7 @@
       else if (seg[0] === 'draft-saya') html = viewDrafts();
       else if (seg[0] === 'peta-jalan') html = viewRoadmap();
       else if (seg[0] === 'rencana-cloudflare') html = viewPlan();
-      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); app.innerHTML = viewPublic(inv && inv.status === 'published' ? inv : null); window.scrollTo(0,0); return; }
+      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); const pub = inv && inv.status === 'published' ? inv : null; app.innerHTML = viewPublic(pub, pub ? guestNameFor(pub, params.to) : null); window.scrollTo(0,0); return; }
       else html = notFound();
       app.innerHTML = html;
       if (seg[0] === 'template' && seg.length === 1) renderMktResults();
@@ -1856,6 +1912,7 @@
       if (gt && B.inv){ B.tab = ({konten:'sampul', acara:'acara', media:'media', penutup:'seksi'})[gt.dataset.gotoTab] || 'sampul'; render(); return; }
       if (e.target.closest('[data-publish]') && B.inv){
         flushAutosave(B.inv); /* terbitkan selalu dari versi draft terakhir yang tersimpan */
+        if (typeof publishBlockedByGate === 'function'){ const blk = publishBlockedByGate(B.inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); render(); return; } }
         const slug = publishInvitation(B.inv); render(); toast('Undangan terbit di /u/' + slug); return;
       }
       /* Builder: struktur konten */
@@ -1904,7 +1961,7 @@
       const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
       const msg = (fd.get('message') || '').toString().trim();
       const isDemo = !location.hash.startsWith('#/u/');
-      const slug = isDemo ? 'demo' : location.hash.slice(4);
+      const slug = isDemo ? 'demo' : location.hash.slice(4).split('?')[0];
       S.rsvps.push({id:'rsvp-' + (S.seq++), invitationSlug: slug, name, status, count: +(fd.get('count') || 1), message: msg, at: Date.now()});
       const zone = form.closest('[data-rsvp-zone]');
       const list = form.closest('.sec')?.querySelector('[data-wish-list]');
@@ -2026,9 +2083,9 @@
        per koleksi dengan key "vowora:v1:<koleksi>" dan selalu
        merujuk invitationId / orderId yang sama.
        ================================================================ */
-    const K2 = { users:'vowora:v1:users', guests:'vowora:v1:guests', rsvps:'vowora:v1:rsvps', orders:'vowora:v1:orders', payments:'vowora:v1:payments', services:'vowora:v1:service-requests', notifications:'vowora:v1:notifications', activity:'vowora:v1:activity', coupons:'vowora:v1:coupons', settings:'vowora:v1:settings', templates:'vowora:v1:templates-cms', taxonomy:'vowora:v1:taxonomy', packages:'vowora:v1:packages', role:'vowora:v1:role', seeded:'vowora:v1:seeded2' };
+    const K2 = { users:'vowora:v1:users', guests:'vowora:v1:guests', rsvps:'vowora:v1:rsvps', orders:'vowora:v1:orders', payments:'vowora:v1:payments', services:'vowora:v1:service-requests', notifications:'vowora:v1:notifications', activity:'vowora:v1:activity', coupons:'vowora:v1:coupons', settings:'vowora:v1:settings', templates:'vowora:v1:templates-cms', tplHistory:'vowora:v1:templates-history', taxonomy:'vowora:v1:taxonomy', packages:'vowora:v1:packages', role:'vowora:v1:role', seeded:'vowora:v1:seeded2', quarantine:'vowora:v1:quarantine', backup:'vowora:v1:backup:pre-stage2-fix' };
     const CURRENT_USER = 'cust-1';
-    function load2(key, fb){ const st = storageBackend(); if (!st) return fb; try { const v = st.getItem(key); if (v == null) return fb; const p = JSON.parse(v); return (p === null || p === undefined) ? fb : p; } catch(e){ return fb; } }
+    function load2(key, fb){ const st = storageBackend(); if (!st) return fb; let v = null; try { v = st.getItem(key); } catch(e){ return fb; } if (v == null) return fb; try { const p = JSON.parse(v); return (p === null || p === undefined) ? fb : p; } catch(e){ /* JSON rusak: karantina isinya (jalur pemulihan), jangan diam-diam hilang */ try { quarantineRaw(key, v, 'json-rusak'); } catch(_){} return fb; } }
     function save2(key, val){ const st = storageBackend(); if (!st) return false; try { st.setItem(key, JSON.stringify(val)); return true; } catch(e){ return false; } }
     function uid2(p){ return p + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
@@ -2057,6 +2114,9 @@
       (tax.styles||[]).forEach(s => { if (!DB.styles.some(x => x.id === s.id)) DB.styles.push(s); });
       const pkgOv = load2(K2.packages, {});
       DB.packages.forEach(p => { if (pkgOv[p.id]) { p.price = pkgOv[p.id].price; p.features = pkgOv[p.id].features || p.features; } });
+      /* Snapshot versi bawaan sebelum override CMS: inilah versi immutable
+         yang terus dipakai undangan lama (lihat TPL_VERSIONS). */
+      const PRISTINE = {}; TEMPLATES.forEach(t => { PRISTINE[t.id] = t; TPL_VERSIONS[t.id + '@' + t.version] = t; });
       const cms = load2(K2.templates, []);
       cms.forEach(rec => {
         const ix = TEMPLATES.findIndex(t => t.id === rec.id);
@@ -2068,8 +2128,23 @@
           TEMPLATES.push(tpl({id:rec.id, slug:rec.slug, name:rec.name, categoryId:rec.categoryId, styleId:rec.styleId, tier:rec.tier, price:rec.price, thumb:rec.thumb || base.thumb, ornament:base.ornament, fontId:base.fontId, desc:rec.desc, palettes:base.palettes, sections:rec.sections && rec.sections.length ? rec.sections : base.sections, features:rec.features && rec.features.length ? rec.features : base.features, version:rec.version, status:rec.status}));
         }
       });
+      TEMPLATES.forEach(t => { TPL_VERSIONS[t.id + '@' + t.version] = t; });
+      /* Snapshot riwayat versi dari CMS (tersimpan saat admin menyimpan versi
+         baru) didaftarkan di atas template bawaan asal, agar undangan yang
+         menunjuk versi itu dirender persis seperti saat dibuat. */
+      const hist = load2(K2.tplHistory, {});
+      Object.keys(hist).forEach(tid => {
+        const rec = cms.find(x => x.id === tid);
+        const base = PRISTINE[tid] || PRISTINE[rec && rec.baseId] || TEMPLATES[0];
+        Object.keys(hist[tid] || {}).forEach(vn => { TPL_VERSIONS[tid + '@' + vn] = Object.assign({}, base, hist[tid][vn]); });
+      });
       DB.categories.forEach(c => c.count = TEMPLATES.filter(t => t.categoryId === c.id && t.status === 'published').length);
     })();
+    /* Template CMS kini sudah diterapkan — muat ulang undangan dari storage.
+       Hydration Stage 1 berjalan sebelum CMS, jadi undangan yang template-nya
+       dibuat dari CMS akan terlewat tanpa langkah ini. Idempoten: sumbernya
+       record persisten yang sama. */
+    hydrateInvitationsFromStorage();
     function persistCmsTemplate(rec){
       const all = load2(K2.templates, []);
       const ix = all.findIndex(x => x.id === rec.id);
@@ -2090,9 +2165,28 @@
     function rsvpsOf(invId){ return S2.rsvps.filter(r => r.invitationId === invId); }
     function ordersOf(invId){ return S2.orders.filter(o => !invId || o.invitationId === invId); }
     function tplOf(inv){ return TEMPLATES.find(t => t.id === inv.templateId) || TEMPLATES[0]; }
-    function guestLink(inv, g){ return '/u/' + (inv.slug || inv.id) + '?to=' + g.code; }
+    function guestLink(inv, g){ return publicUrl(inv.slug || inv.id) + '?to=' + g.code; }
+    /* Payment gate: bila pengaturan aktif, undangan yang terhubung ke pesanan
+       berbayar hanya boleh terbit setelah ada pembayaran Success untuknya.
+       Mengembalikan record pesanan penghambat, atau null bila boleh terbit. */
+    function publishBlockedByGate(inv){
+      if (!inv || !S2.settings.publishNeedsPayment) return null;
+      const os = ordersOf(inv.id);
+      if (!os.length) return null;
+      if (os.some(o => o.paymentStatus === 'Success')) return null;
+      return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
+    }
     function s2GuestbookWishes(inv){
       return rsvpsOf(inv.id).filter(r => r.moderation === 'approved' && r.message).map(r => ({name:r.name, status:r.status, msg:r.message}));
+    }
+    /* Kunci ucapan yang termoderasi BUKAN approved — dipakai jalur tampilan
+       publik lain agar ucapan tersembunyi tidak bocor lewat jalur mana pun. */
+    function s2BlockedWishKeys(inv){
+      return new Set(rsvpsOf(inv.id).filter(r => r.message && r.moderation !== 'approved').map(r => r.name + '|' + r.message));
+    }
+    function s2GuestByCode(invId, code){
+      const g = S2.guests.find(x => x.invitationId === invId && x.code === code);
+      return g ? g.name : null;
     }
 
     /* ---------- Seed demo Stage 2 (sekali, tidak menimpa data Stage 1 yang valid) ---------- */
@@ -2115,7 +2209,7 @@
         {id:'des-1', name:'Rani Kirana', email:'rani@contoh.id', role:'designer', joined:Date.now() - 864e5 * 60},
         {id:'des-2', name:'Dewa Prasetyo', email:'dewa@contoh.id', role:'designer', joined:Date.now() - 864e5 * 55}
       ]; saveColl('users');
-      const invA = seedInvitation('seed-inv-1', 'luxury-ivory', 'cust-1', 'published', 'nadia-dan-reza', c => { c.subjects[0].nick = 'Nadia'; c.subjects[0].name = 'Nadia Prameswari, S.E.'; c.subjects[0].detail = ''; c.subjects[1].nick = 'Reza'; c.subjects[1].name = 'Reza Mahendra, S.T.'; c.subjects[1].detail = ''; c.story = NADIA_STORY; /* Amplop digital Nadia & Reza: belum ada data rekening milik undangan ini di seed, jadi dikosongkan. Jangan tampilkan rekening undangan lain (demo Luxury Ivory memakai data Aurelia). */ c.gift = {bank:'', number:'', holder:'', address:''}; });
+      const invA = seedInvitation('seed-inv-1', 'luxury-ivory', 'cust-1', 'published', 'nadia-dan-reza', c => { c.subjects[0].nick = 'Nadia'; c.subjects[0].name = 'Nadia Prameswari, S.E.'; c.subjects[0].detail = ''; c.subjects[1].nick = 'Reza'; c.subjects[1].name = 'Reza Mahendra, S.T.'; c.subjects[1].detail = ''; c.events.forEach(e => { e.date = '2027-02-14'; }); c.story = NADIA_STORY; /* Amplop digital Nadia & Reza: belum ada data rekening milik undangan ini di seed, jadi dikosongkan. Jangan tampilkan rekening undangan lain (demo Luxury Ivory memakai data Aurelia). */ c.gift = {bank:'', number:'', holder:'', address:''}; });
       const invB = seedInvitation('seed-inv-2', 'confetti-pop', 'cust-1', 'draft', null, null);
       const invC = seedInvitation('seed-inv-3', 'summit-prime', 'cust-2', 'published', 'nusantara-tech-summit', null);
       const invD = seedInvitation('seed-inv-4', 'champagne-vow', 'cust-3', 'published', 'salsa-dan-fikri', c => { c.events[0].date = '2026-01-17'; c.subjects[0].nick = 'Salsa'; c.subjects[0].name = 'Salsabila Zahra'; c.subjects[0].detail = ''; c.subjects[1].nick = 'Fikri'; c.subjects[1].name = 'Fikri Ramadhan'; c.subjects[1].detail = ''; c.story = SALSA_STORY; c.gift = {bank:'', number:'', holder:'', address:''}; });
@@ -2151,7 +2245,7 @@
       B.forEach((g, i) => S2.guests.push({id:'seed-guest-b' + (i + 1), invitationId: invB.id, name:g[0], group:g[1], contact:g[2], rsvpStatus:g[3], attendees:g[4], code:'U' + (2001 + i), createdAt:Date.now() - 864e5 * 3}));
       saveColl('guests');
       S2.rsvps = [];
-      S2.guests.filter(g => g.rsvpStatus !== 'Belum Menjawab').slice(0, 14).forEach((g, i) => {
+      S2.guests.filter(g => g.rsvpStatus !== 'Belum Menjawab').forEach((g, i) => {
         const src = G.concat(B).find(x => x[0] === g.name);
         S2.rsvps.push({id:'seed-rsvp-' + (i + 1), guestId:g.id, invitationId:g.invitationId, name:g.name, status:g.rsvpStatus, count:g.attendees, message:(src && src[5]) || '', at:Date.now() - 864e5 * (5 - (i % 5)), moderation: (src && src[5]) ? (i === 6 ? 'hidden' : 'approved') : 'approved'});
       });
@@ -2186,6 +2280,10 @@
         svc(3, 'cust-3', 'Lamaran Salsa & Fikri', 'Lamaran', 'Assigned', 'des-1', 3, []),
         svc(4, 'cust-1', 'Aqiqah Arkan — Konsep Sage', 'Aqiqah', 'New', null, 1, [])
       ];
+      /* Tautan proyek ↔ undangan/pesanan: status layanan dan publikasi
+         undangan adalah dua hal berbeda yang terhubung, bukan disamakan. */
+      S2.services[0].invitationId = invA.id; S2.services[0].orderId = 'seed-order-1';
+      S2.services[2].invitationId = invD.id; S2.services[2].orderId = null;
       saveColl('services');
       S2.notifications = [
         {id:'seed-ntf-1', title:'RSVP baru masuk', body:'Keluarga Wijaya mengonfirmasi hadir (2 orang) untuk Nadia & Reza.', scope:'customer', at:Date.now() - 36e5 * 5, read:false},
@@ -2216,8 +2314,51 @@
        Fikri oleh repairSalsaSlugCollision (definisi & guard ketat di Stage 1,
        sudah jalan sebelum render pertama; pemanggilan ini idempoten). */
     (function repairSalsaSlug(){ repairSalsaSlugCollision(); })();
-    /* Aktivitas selalu ditampilkan terbaru dulu berdasarkan timestamp asli. */
-    S2.activity.sort((a, b) => (b.at || 0) - (a.at || 0)); saveColl('activity');
+    /* Penyelaras Guest–RSVP (idempoten): setiap tamu yang statusnya sudah
+       menjawab WAJIB punya tepat satu record RSVP. Seed lama hanya membuat
+       14 record untuk 18 tamu yang menjawab — record yang hilang dibuat di
+       sini (pesan seed yang dikenal dipulihkan dari peta di bawah), tanpa
+       pernah mengubah/menghapus record yang sudah ada. */
+    (function alignGuestRsvp(){
+      const SEED_MSG = {'seed-guest-b4':'Sampai jumpa di pesta, Kirana sayang.', 'seed-guest-b8':'Maaf, kami sedang di luar kota.'};
+      let changed = false;
+      S2.guests.forEach(g => {
+        if (g.rsvpStatus === 'Belum Menjawab') return;
+        if (S2.rsvps.some(r => r.guestId === g.id)) return;
+        S2.rsvps.push({id:'rsvp-align-' + g.id, guestId:g.id, invitationId:g.invitationId, name:g.name, status:g.rsvpStatus, count:g.attendees, message:SEED_MSG[g.id] || '', at:(g.createdAt || Date.now()) + 864e5, moderation:'approved'});
+        changed = true;
+      });
+      if (changed) saveColl('rsvps');
+    })();
+    /* Koreksi tanggal Nadia & Reza atas arahan pemilik (14 Feb 2027 yang
+       benar). Guard ketat: hanya record seed-inv-1 berpasangan Nadia/Reza
+       yang SELURUH tanggal acaranya masih tanggal seed lama 2026-12-12;
+       tanggal lain dianggap edit pengguna dan tidak disentuh. */
+    (function fixNadiaEventDate(){
+      const inv = S.invitations.find(i => i.id === 'seed-inv-1');
+      if (!inv || !inv.content || !Array.isArray(inv.content.events) || !inv.content.events.length) return;
+      const subs = inv.content.subjects || [];
+      if (!(subs[0] && subs[0].nick === 'Nadia' && subs[1] && subs[1].nick === 'Reza')) return;
+      if (!inv.content.events.every(e => e.date === '2026-12-12')) return;
+      inv.content.events.forEach(e => { e.date = '2027-02-14'; });
+      persistInvitationNow(inv);
+    })();
+    /* Tautan layanan untuk profil lama: isi invitationId/orderId yang belum
+       ada pada proyek seed yang dikenal; field yang sudah terisi tidak diubah. */
+    (function alignServiceLinks(){
+      let changed = false;
+      S2.services.forEach(s => {
+        if (s.invitationId) return;
+        if (s.id === 'seed-svc-1'){ s.invitationId = 'seed-inv-1'; const o = S2.orders.find(x => x.invitationId === 'seed-inv-1' && x.paymentStatus === 'Success'); s.orderId = o ? o.id : null; changed = true; }
+        else if (s.id === 'seed-svc-3'){ s.invitationId = 'seed-inv-4'; s.orderId = s.orderId || null; changed = true; }
+      });
+      if (changed) saveColl('services');
+    })();
+    /* Aktivitas selalu ditampilkan terbaru dulu berdasarkan timestamp asli;
+       tulis balik hanya bila urutannya benar-benar berubah. */
+    const _actOrder = S2.activity.map(a => a.id).join(',');
+    S2.activity.sort((a, b) => (b.at || 0) - (a.at || 0));
+    if (S2.activity.map(a => a.id).join(',') !== _actOrder) saveColl('activity');
     /* Migrasi tampilan rebrand untuk data lama: nama/email bawaan lama diganti
        ke brand baru; ID, peran, dan relasi record tidak berubah. */
     (function migrateBrandDisplay(){
@@ -2414,7 +2555,7 @@
       </div>
       <div class="card"><h2>Moderasi Buku Ucapan</h2><p class="sub">Hanya ucapan berstatus <b>Disetujui</b> yang tampil di buku ucapan halaman publik undangan.</p>
       ${modList.length ? `<div class="list-rows">${modList.map(r => `<div class="lrow"><div class="grow"><b>${esc(r.name)}</b> <span class="pill ${r.moderation==='approved'?'pub':r.moderation==='hidden'?'arc':'exp'}">${r.moderation==='approved'?'Disetujui':r.moderation==='hidden'?'Disembunyikan':'Menunggu'}</span><div style="font-size:14.5px;margin-top:3px">“${esc(r.message)}”</div><div class="mut">${esc(r.status)} · ${new Date(r.at).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</div></div>
-        <span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="mod" data-act="approved" data-id="${r.id}">Setujui</button><button class="btn ghost sm" data-s2="mod" data-act="hidden" data-id="${r.id}">Sembunyikan</button><button class="btn ghost sm" data-s2="mod" data-act="delete" data-id="${r.id}" style="color:var(--err)">Hapus</button></span></div>`).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada ucapan untuk dimoderasi.</p>'}
+        <span style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="mod" data-act="approved" data-id="${r.id}">Setujui</button><button class="btn ghost sm" data-s2="mod" data-act="hidden" data-id="${r.id}">Sembunyikan</button><button class="btn ghost sm" data-s2="mod" data-act="delete" data-id="${r.id}" style="color:var(--err)">Hapus Ucapan</button></span></div>`).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada ucapan untuk dimoderasi.</p>'}
       </div>`;
     }
     /* ---------- 2C: Pesanan, Checkout, Pembayaran, Faktur ---------- */
@@ -2544,8 +2685,15 @@
       ${list.length ? `<div class="list-rows">${list.map(n => `<div class="lrow"><div class="grow"><b>${esc(n.title)}</b><div style="font-size:14.5px">${esc(n.body)}</div><div class="mut">${new Date(n.at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>${n.read ? '' : '<span class="pill exp">Baru</span>'}</div>`).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada notifikasi.</p>'}
       ${list.some(n => !n.read) ? '<button class="btn ghost sm" data-s2="notif-read" style="margin-top:14px">Tandai Semua Dibaca</button>' : ''}</div>`;
     }
+    function storageHealthHTML(){
+      const q = load2(K2.quarantine, []);
+      const bk = load2(K2.backup, null);
+      return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
+      <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div></div>`;
+    }
     function dashSettings(){
-      return `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas.</p>
+      return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas.</p>
       <p style="background:#F9E9E4;border:1px solid #EBC5B8;color:var(--err);border-radius:var(--r-md);padding:13px 16px;font-size:14px;font-weight:600">Perhatian: reset juga <b>menghapus draft undangan yang Anda buat sendiri</b> selama sesi demo ini, karena semuanya tersimpan di perangkat yang sama. Reset tidak pernah berjalan tanpa konfirmasi.</p>
       <button class="btn" data-s2="reset-demo" style="background:var(--err);color:#FFF">Reset Data Demo…</button></div>
       <div class="card"><h2>Tentang Penyimpanan</h2><p class="sub">Undangan tersimpan per record dengan key <b>vowora:v1:invitation:&lt;id&gt;</b>; tamu, RSVP, pesanan, pembayaran, layanan, dan notifikasi tersimpan per koleksi (vowora:v1:guests, vowora:v1:rsvps, vowora:v1:orders, vowora:v1:payments, vowora:v1:service-requests, vowora:v1:notifications) di localStorage perangkat ini.</p></div>`;
@@ -2570,6 +2718,7 @@
           <div class="field"><label for="sv-style">Gaya yang diinginkan</label><select class="input" id="sv-style">${DB.styles.map(s => `<option>${esc(s.name)}</option>`).join('')}</select></div>
         </div>
         <div class="field"><label>Fitur yang diinginkan</label><div style="display:flex;gap:8px;flex-wrap:wrap">${['Countdown','Galeri','Amplop Digital','RSVP & Buku Ucapan','Musik Latar','Dress Code','Timeline Acara'].map(f => `<label class="checkline" style="border:1px solid var(--line);border-radius:999px;padding:8px 13px"><input type="checkbox" name="sv-feat" value="${f}"> ${f}</label>`).join('')}</div></div>
+        <div class="field"><label for="sv-inv">Tautkan ke undangan saya (opsional)</label><select class="input" id="sv-inv"><option value="">— Tidak ditautkan —</option>${myInvitations().map(i => `<option value="${i.id}">${esc(i.title)} (${invStatus(i).label})</option>`).join('')}</select><p class="hint">Proyek tertaut berbagi record yang sama dengan undangan & pesanannya. Status proyek dan publikasi undangan tetap dua hal terpisah.</p></div>
         <div class="field"><label for="sv-ref">Referensi visual (dari pustaka media demo)</label><select class="input" id="sv-ref">${DB.media.map(m => `<option value="${m.id}">${esc(m.name)} — ${esc(m.tag)}</option>`).join('')}</select></div>
         <div class="field"><label for="sv-notes">Catatan tambahan</label><textarea class="textarea input" id="sv-notes" rows="3" placeholder="Warna favorit, hal yang dihindari, tenggat, dan sebagainya"></textarea></div>
         <button class="btn gold" type="submit">Kirim Permintaan Desain</button>
@@ -2580,9 +2729,12 @@
     }
     function svcCardCustomer(s){
       const des = s.designerId ? userById(s.designerId).name : 'Belum ditugaskan';
+      const linked = s.invitationId ? S.invitations.find(i => i.id === s.invitationId) : null;
+      const linkedOrder = s.orderId ? S2.orders.find(o => o.id === s.orderId) : null;
       return `<div style="border:1px solid var(--line-soft);border-radius:var(--r-md);padding:18px;margin-bottom:14px">
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline"><b style="font-size:16.5px">${esc(s.title)}</b><span class="pill gold" style="background:var(--champagne);color:var(--gold-ink)">${esc(s.number)}</span><span class="pill ${s.status==='Completed'?'pub':s.status==='Review'?'exp':'draft'}">${esc(s.status)}</span></div>
         <div style="font-size:13.5px;color:var(--ink-3);margin:5px 0 12px">Desainer: ${esc(des)} · Revisi: ${s.revisions.length} · Diperbarui ${new Date(s.updatedAt).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})} · Acara: ${esc(s.eventDate || '—')}</div>
+        ${linked ? `<div style="font-size:13.5px;margin:0 0 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="color:var(--ink-3)">Undangan terkait:</span><b>${esc(linked.title)}</b><span class="pill ${invStatus(linked).cls}">${invStatus(linked).label}</span>${linkedOrder ? `<span style="color:var(--ink-3)">Pesanan ${esc(linkedOrder.number)} · ${esc(linkedOrder.paymentStatus)}</span>` : ''}<a class="btn ghost sm" href="#/studio/${linked.id}">Buka Builder</a>${linked.status === 'published' ? `<a class="btn ghost sm" href="#/u/${linked.slug}">Halaman Publik</a>` : (s.status === 'Published' || s.status === 'Completed' || s.status === 'Approved') ? `<button class="btn gold sm" data-s2="svc-publish-inv" data-id="${s.id}">Terbitkan Undangan Terkait</button>` : ''}</div>` : ''}
         ${svcSteps(s.status)}
         ${s.status === 'Review' ? `<div style="background:var(--ivory);border:1px solid var(--line-soft);border-radius:var(--r-md);padding:14px;margin-bottom:12px"><b>Pratinjau desain dari desainer</b><div style="display:flex;gap:12px;align-items:center;margin-top:8px;flex-wrap:wrap"><img src="${mediaById(s.reference || 'reception').src}" alt="Pratinjau desain" style="width:86px;height:86px;object-fit:cover;border-radius:10px"><p style="font-size:14px;color:var(--ink-2);margin:0;flex:1;min-width:200px">Konsep “${esc(s.style)}” untuk ${esc(s.eventName)} sudah siap ditinjau. Setujui untuk lanjut ke publikasi, atau minta revisi dengan catatan.</p></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn gold sm" data-s2="svc-approve" data-id="${s.id}">Setujui Desain</button><button class="btn ghost sm" data-s2="svc-revision" data-id="${s.id}">Minta Revisi…</button></div></div>` : ''}
@@ -2674,12 +2826,12 @@
       if (tab === 'pesanan') return `<div class="card"><h2>Semua Pesanan</h2><p class="sub">Kelola status pesanan lintas pelanggan. Status pembayaran tetap terpisah dan hanya berubah lewat simulasi pembayaran.</p><div class="list-rows">${S2.orders.slice().sort((a,b) => b.createdAt - a.createdAt).map(o => orderCard(o, true)).join('')}</div></div>`;
       if (tab === 'pembayaran') return `<div class="card"><h2>Pembayaran (Simulasi)</h2><p class="sub">Semua record pembayaran simulasi beserta pesanan induknya.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Kode</th><th>Pesanan</th><th>Metode</th><th>Jumlah</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${S2.payments.slice().sort((a,b) => b.createdAt - a.createdAt).map(p => { const o = S2.orders.find(x => x.id === p.orderId); return `<tr><td data-l="Kode">${esc(p.code)}</td><td data-l="Pesanan">${esc(o ? o.number : '—')}</td><td data-l="Metode">${esc(p.method)}</td><td data-l="Jumlah">${rp(p.amount)}</td><td data-l="Status">${payPill(p.status)}</td><td data-l="Waktu">${new Date(p.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</td></tr>`; }).join('')}</tbody></table></div></div>`;
       if (tab === 'layanan') return `<div class="card"><h2>Antrean Layanan Bantuan</h2><p class="sub">Tugaskan desainer dan pantau alur New → Paid → Assigned → In Progress → Review → Revision → Approved → Published → Completed pada record yang sama dengan milik pelanggan.</p>
-      <div class="list-rows">${S2.services.slice().sort((a,b) => b.updatedAt - a.updatedAt).map(s => `<div class="lrow"><div class="grow"><b>${esc(s.title)}</b> <span class="pill exp">${esc(s.status)}</span><div class="mut">${esc(s.number)} · ${esc(userById(s.customerId).name)} · revisi ${s.revisions.length} · diperbarui ${new Date(s.updatedAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</div></div>
+      <div class="list-rows">${S2.services.slice().sort((a,b) => b.updatedAt - a.updatedAt).map(s => { const li = s.invitationId ? S.invitations.find(i => i.id === s.invitationId) : null; return `<div class="lrow"><div class="grow"><b>${esc(s.title)}</b> <span class="pill exp">${esc(s.status)}</span><div class="mut">${esc(s.number)} · ${esc(userById(s.customerId).name)} · revisi ${s.revisions.length} · diperbarui ${new Date(s.updatedAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}${li ? ' · Undangan: ' + esc(li.title) + ' (' + invStatus(li).label + ')' : ''}${s.orderId ? ' · Pesanan terkait' : ''}</div></div>
         <span style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><label style="font-size:13px;font-weight:700">Desainer</label>
         <select class="input" data-s2-assign="${s.id}" style="width:auto;min-height:42px"><option value="">— belum —</option>${S2.users.filter(u => u.role === 'designer').map(u => `<option value="${u.id}" ${s.designerId===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
         ${s.status === 'Approved' ? `<button class="btn gold sm" data-s2="svc-progress" data-id="${s.id}" data-to="Published">Terbitkan Hasil</button>` : ''}
         ${s.status === 'Published' ? `<button class="btn gold sm" data-s2="svc-progress" data-id="${s.id}" data-to="Completed">Selesaikan Proyek</button>` : ''}
-        </span></div>`).join('')}</div></div>`;
+        </span></div>`; }).join('')}</div></div>`;
       if (tab === 'media') return `<div class="card"><h2>Pustaka Media</h2><p class="sub">Aset demo yang dipakai Builder, CMS, dan referensi Bantuan Desain.</p><div class="media-grid">${DB.media.map(m => `<div class="media-item" style="cursor:default"><img src="${m.src}" alt="${esc(m.name)}"><span class="cap">${esc(m.name)} · ${esc(m.tag)}</span></div>`).join('')}</div></div>`;
       if (tab === 'paket') return `<div class="card"><h2>Paket & Harga</h2><p class="sub">Perubahan harga hanya berlaku untuk pesanan baru — pesanan lama menyimpan snapshot harganya sendiri.</p>
       ${DB.packages.map(p => `<form class="s2-pkg-form" data-id="${p.id}" style="border:1px solid var(--line-soft);border-radius:var(--r-md);padding:16px;margin-bottom:12px"><b>${esc(p.name)}</b><div class="row2" style="margin-top:10px"><div class="field" style="margin:0"><label>Harga (Rp)</label><input class="input" name="price" type="number" min="0" step="1000" value="${p.price}"></div><div class="field" style="margin:0"><label>Fitur (satu per baris)</label><textarea class="textarea input" name="features" rows="3">${esc(p.features.join('\n'))}</textarea></div></div><button class="btn gold sm" type="submit" style="margin-top:10px">Simpan Paket ${esc(p.name)}</button></form>`).join('')}</div>`;
@@ -2690,7 +2842,7 @@
       if (tab === 'pengaturan') return `<div class="card"><h2>Pengaturan Platform (Demo)</h2><form id="s2-settings-form">
         <div class="field"><label>Nama platform</label><input class="input" id="set-name" value="${esc(S2.settings.storeName)}"></div>
         <div class="field"><label>Email dukungan</label><input class="input" id="set-email" value="${esc(S2.settings.supportEmail)}"></div>
-        <div class="vis-row"><div><b>Publikasi wajib pembayaran</b><span>Jika aktif, undangan dari pesanan berbayar hanya terbit setelah pembayaran simulasi berhasil. Builder tetap dapat menerbitkan untuk validasi desain (perilaku Stage 1).</span></div><label class="switch"><input type="checkbox" id="set-gate" ${S2.settings.publishNeedsPayment?'checked':''}><i></i></label></div>
+        <div class="vis-row"><div><b>Publikasi wajib pembayaran</b><span>Jika aktif, undangan yang terhubung ke pesanan berbayar hanya bisa terbit setelah ada pembayaran simulasi berstatus Success untuk undangan itu. Gate ini ditegakkan di semua jalur publikasi: Builder, halaman pembayaran, dan proyek Bantuan Desain.</span></div><label class="switch"><input type="checkbox" id="set-gate" ${S2.settings.publishNeedsPayment?'checked':''}><i></i></label></div>
         <button class="btn gold" type="submit" style="margin-top:14px">Simpan Pengaturan</button></form></div>
         <div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seed awal Stage 2 dan menghapus seluruh record buatan sesi ini — termasuk draft undangan buatan sendiri. Selalu dengan konfirmasi.</p><button class="btn" data-s2="reset-demo" style="background:var(--err);color:#FFF">Reset Data Demo…</button></div>`;
       return '';
@@ -2807,10 +2959,11 @@
         saveColl('guests'); const n = D2.bulkPreview.valid.length; D2.bulkPreview = null;
         logAct(n + ' tamu diimpor massal ke “' + inv.title + '”.'); toast(n + ' tamu berhasil diimpor'); rerender2(); return;
       }
-      /* Moderasi ucapan */
+      /* Moderasi ucapan — "Hapus Ucapan" hanya mengosongkan pesan; record
+         RSVP dan jawaban kehadiran tamu tetap tersimpan. */
       if (act === 'mod'){
         const r = S2.rsvps.find(x => x.id === id); if (!r) return;
-        if (el.dataset.act === 'delete'){ S2.rsvps = S2.rsvps.filter(x => x.id !== id); toast('Ucapan dihapus'); }
+        if (el.dataset.act === 'delete'){ r.message = ''; r.moderation = 'approved'; toast('Ucapan dihapus — jawaban kehadiran ' + r.name + ' tetap tersimpan'); }
         else { r.moderation = el.dataset.act; toast(el.dataset.act === 'approved' ? 'Ucapan disetujui — tampil di halaman publik' : 'Ucapan disembunyikan dari halaman publik'); }
         saveColl('rsvps'); rerender2(); return;
       }
@@ -2866,6 +3019,7 @@
       if (act === 'pay-publish'){
         const o = S2.orders.find(x => x.id === id); if (!o) return;
         const inv = S.invitations.find(i => i.id === o.invitationId); if (!inv) return;
+        const blk = publishBlockedByGate(inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); return; }
         flushAutosave(inv);
         const slug = publishInvitation(inv);
         logAct('Undangan “' + inv.title + '” diterbitkan setelah pembayaran ' + o.number + ' berhasil.');
@@ -2893,7 +3047,22 @@
         s.status = el.dataset.to; s.updatedAt = Date.now(); saveColl('services');
         logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.');
         if (s.status === 'Review') notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer');
+        if (s.status === 'Published'){
+          /* Status layanan "Published" TIDAK menerbitkan undangan terkait —
+             publikasi undangan adalah tindakan terpisah dan eksplisit. */
+          const linked = s.invitationId ? S.invitations.find(i => i.id === s.invitationId) : null;
+          if (linked && linked.status !== 'published'){ notify2('Hasil desain diterbitkan', 'Proyek ' + s.number + ' selesai di sisi desain. Undangan “' + linked.title + '” masih draft — terbitkan dari kartu proyek di Dashboard → Layanan.', 'customer'); toast('Status proyek: Published — undangan terkait masih draft dan perlu diterbitkan terpisah'); rerender2(); return; }
+        }
         toast('Status proyek diperbarui: ' + s.status); rerender2(); return;
+      }
+      if (act === 'svc-publish-inv'){
+        const s = S2.services.find(x => x.id === id); if (!s || !s.invitationId) return;
+        const inv = S.invitations.find(i => i.id === s.invitationId); if (!inv) return;
+        const blk = publishBlockedByGate(inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); return; }
+        flushAutosave(inv);
+        const slug = publishInvitation(inv);
+        logAct('Undangan “' + inv.title + '” diterbitkan dari proyek desain ' + s.number + ' (status layanan tetap ' + s.status + ').');
+        toast('Undangan terbit di /u/' + slug); go('#/u/' + slug); return;
       }
       /* Admin: template */
       if (act === 'tpl-new'){
@@ -2912,6 +3081,24 @@
       }
       if (act === 'tf-thumb'){ $$('#s2-tpl-form .thumb-pick button').forEach(b => b.classList.toggle('on', b === el)); const h = $('#tf-thumb-val'); if (h) h.value = id; return; }
       if (act === 'coupon-toggle'){ const c = S2.coupons.find(x => x.id === id); if (c){ c.active = !c.active; saveColl('coupons'); toast('Kupon ' + c.code + (c.active ? ' diaktifkan' : ' dinonaktifkan')); rerender2(); } return; }
+      /* Pemulihan data lokal */
+      if (act === 'backup-download'){
+        const bk = load2(K2.backup, null);
+        const payload = bk || {at: Date.now(), keys: {}};
+        const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'kita-invite-cadangan-lokal.json'; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        toast('Cadangan lokal diunduh'); return;
+      }
+      if (act === 'quarantine-restore'){
+        const q = load2(K2.quarantine, []);
+        if (!q.length){ toast('Tidak ada record di karantina'); return; }
+        showModal({title:'Pulihkan record karantina?', confirmLabel:'Ya, Pulihkan', body:q.length + ' record rusak yang dikarantina akan ditulis kembali ke kunci aslinya (hanya bila kunci itu sekarang kosong), lalu halaman dimuat ulang. Isi karantina yang sudah dipulihkan dibersihkan.', onConfirm:() => {
+          const st = storageBackend(); let n = 0;
+          if (st){ q.forEach(item => { try { if (st.getItem(item.key) == null){ st.setItem(item.key, item.raw); n++; } } catch(e){} }); save2(K2.quarantine, []); }
+          toast(n + ' record dipulihkan — memuat ulang…'); setTimeout(() => location.reload(), 500);
+        }}); return;
+      }
       /* Reset demo */
       if (act === 'reset-demo'){
         showModal({title:'Reset seluruh data demo?', danger:true, confirmLabel:'Ya, Reset Semua Data Demo', body:'Semua record akan dikembalikan ke seed awal Stage 2 (undangan demo, 22 tamu, RSVP, 8 pesanan, pembayaran, 4 proyek desain, kupon, notifikasi). <b>Draft undangan buatan Anda sendiri ikut terhapus.</b> Halaman akan dimuat ulang setelah reset.', onConfirm:() => {
@@ -2972,7 +3159,9 @@
         e.preventDefault();
         const name = $('#sv-name').value.trim(); if (!name){ toast('Nama acara wajib diisi', true); return; }
         const feats = $$('input[name="sv-feat"]', sf).filter(x => x.checked).map(x => x.value);
-        const s = {id:uid2('svc'), number:'REQ-2026-' + (200 + S2.services.length + 1), customerId:CURRENT_USER, title:name, category:$('#sv-cat').value, eventName:name, eventDate:$('#sv-date').value || '', style:$('#sv-style').value, features:feats, reference:$('#sv-ref').value, notes:$('#sv-notes').value.trim(), status:'New', designerId:null, revisions:[], internalNotes:[], createdAt:Date.now(), updatedAt:Date.now()};
+        const linkInvId = ($('#sv-inv') || {}).value || null;
+        const linkOrder = linkInvId ? S2.orders.filter(o => o.invitationId === linkInvId).slice().sort((a, b) => b.createdAt - a.createdAt)[0] : null;
+        const s = {id:uid2('svc'), number:'REQ-2026-' + (200 + S2.services.length + 1), customerId:CURRENT_USER, title:name, category:$('#sv-cat').value, eventName:name, eventDate:$('#sv-date').value || '', style:$('#sv-style').value, features:feats, reference:$('#sv-ref').value, notes:$('#sv-notes').value.trim(), status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:linkInvId, orderId:linkOrder ? linkOrder.id : null, createdAt:Date.now(), updatedAt:Date.now()};
         S2.services.unshift(s); saveColl('services');
         logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.');
         notify2('Permintaan desain baru', s.number + ' — ' + name + ' menunggu penugasan desainer.', 'admin');
@@ -2992,7 +3181,14 @@
         const t = TEMPLATES.find(x => x.id === tf.dataset.id); if (!t) return;
         const secs = $$('input[name="tf-sec"]', tf).filter(x => x.checked).map(x => x.value);
         if (!secs.includes('cover')) secs.unshift('cover');
+        /* Arsipkan versi saat ini SEBELUM naik versi: snapshot ini immutable
+           dan terus dipakai undangan yang dibuat pada versi tersebut. */
+        const hist = load2(K2.tplHistory, {});
+        (hist[t.id] = hist[t.id] || {})[t.version] = {name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:(t.sections || []).slice(), features:(t.features || []).slice()};
+        save2(K2.tplHistory, hist);
+        TPL_VERSIONS[t.id + '@' + t.version] = Object.assign({}, t);
         Object.assign(t, {name:$('#tf-name').value.trim() || t.name, price:Math.max(0, +$('#tf-price').value || 0), desc:$('#tf-desc').value.trim(), categoryId:$('#tf-cat').value, styleId:$('#tf-style').value, tier:$('#tf-tier').value, status:$('#tf-status').value, thumb:$('#tf-thumb-val').value, sections:secs, features:$('#tf-feats').value.split('\n').map(s => s.trim()).filter(Boolean), version:t.version + 1});
+        TPL_VERSIONS[t.id + '@' + t.version] = t;
         persistCmsTemplate({id:t.id, baseId:t.id, slug:t.slug, name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:t.sections, features:t.features});
         DB.categories.forEach(c => c.count = TEMPLATES.filter(x => x.categoryId === c.id && x.status === 'published').length);
         logAct('Template ' + t.name + ' diperbarui ke v' + t.version + '.0 oleh admin.', 'admin');
@@ -3066,6 +3262,10 @@
     });
 
     s2Render();
+    /* Halaman publik dirender sekali lagi setelah data Stage 2 siap, agar buku
+       ucapan termoderasi, nama tamu dari tautan ?to=, dan template CMS tampil
+       sejak muatan pertama — render awal Stage 1 berjalan sebelum Stage 2. */
+    if (location.hash.startsWith('#/u/')) render();
     </script>
   </body>
 </html>

@@ -2165,6 +2165,53 @@
     function logAct(text, scope, owner){ S2.activity.unshift({id:uid2('act'), text, scope:scope||'customer', owner:owner||null, at:Date.now()}); S2.activity = S2.activity.slice(0, 60); return saveColl('activity'); }
     function notify2(title, body, scope, owner){ S2.notifications.unshift({id:uid2('ntf'), title, body, scope:scope||'customer', owner:owner||null, at:Date.now(), read:false}); return saveColl('notifications'); }
 
+    /* ---------- Sinkronisasi antar-tab (origin yang sama) ----------
+       Setiap tab memegang salinan in-memory; tanpa sinkronisasi, tab lain
+       menampilkan data basi dan penulisan ulang satu koleksi dari tab basi
+       dapat menimpa perubahan terbaru tab lain. kiRefreshCollections()
+       membaca ulang seluruh koleksi persisten dari storage — dipanggil
+       (a) oleh listener "storage" yang hanya menyala di TAB LAIN saat ada
+       penulisan, (b) saat tab kembali terlihat, dan (c) tepat sebelum
+       penulisan kritis (RSVP, pembayaran, penugasan, checkout) agar
+       mutasi selalu berangkat dari state tersimpan terbaru. */
+    const KI_COLLS = ['users','guests','rsvps','orders','payments','services','notifications','activity','coupons'];
+    function kiRefreshCollections(){
+      KI_COLLS.forEach(n => { S2[n] = load2(K2[n], S2[n]); });
+      S2.settings = Object.assign({storeName:'Kita Invite', supportEmail:'', publishNeedsPayment:true}, load2(K2.settings, {}));
+    }
+    let _kiSyncBusy = false;
+    function kiSyncFromStorage(){
+      if (_kiSyncBusy) return; _kiSyncBusy = true;
+      try {
+        /* Draft Builder yang autosave-nya masih tertunda di tab INI tidak
+           boleh ditimpa salinan storage: pertahankan salinan lokalnya. */
+        const pending = {};
+        try { Object.keys(_saveTimers || {}).forEach(id => { const inv = S.invitations.find(i => i.id === id); if (inv) pending[id] = inv; }); } catch(e){}
+        kiRefreshCollections();
+        hydrateInvitationsFromStorage();
+        Object.keys(pending).forEach(id => { const ix = S.invitations.findIndex(i => i.id === id); if (ix >= 0) S.invitations[ix] = pending[id]; else S.invitations.unshift(pending[id]); });
+        const seg = parseHash().seg;
+        if (['dashboard','admin','desainer','checkout','bayar','faktur'].includes(seg[0])) s2Render(); else render();
+      } catch(e){}
+      _kiSyncBusy = false;
+    }
+    window.addEventListener('storage', e => {
+      if (e.key === K2.seeded && e.newValue === null){ location.reload(); return; } /* tab lain mereset: muat ulang agar seed konsisten */
+      if (e.key === null || (e.key && e.key.indexOf('vowora:') === 0)) kiSyncFromStorage();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      const a = document.activeElement;
+      if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName || '')) return; /* jangan ganggu tab yang sedang mengedit */
+      /* Hanya rute data (dashboard/admin/desainer/checkout/bayar/faktur)
+         yang disegarkan saat tab kembali terlihat — halaman publik tamu
+         tidak dirender ulang di sini agar amplop & posisi baca tamu tidak
+         tereset; perubahan nyata dari tab lain tetap masuk lewat event
+         "storage" di atas. */
+      if (!['dashboard','admin','desainer','checkout','bayar','faktur'].includes(parseHash().seg[0])) return;
+      kiSyncFromStorage();
+    });
+
     /* ---------- Terapkan override CMS (template, taksonomi, paket) sebelum seed ---------- */
     (function applyCms(){
       const tax = load2(K2.taxonomy, {cats:[], styles:[]});
@@ -2257,7 +2304,12 @@
     function publishBlockedByGate(inv){
       if (!inv || !S2.settings.publishNeedsPayment) return null;
       const os = ordersOf(inv.id);
-      if (os.some(o => o.paymentStatus === 'Success')) return null;
+      /* Gate HANYA lolos oleh pesanan yang benar-benar terkait ke undangan
+         ini, TIDAK dibatalkan, dan punya record pembayaran Success yang
+         terhubung ke pesanan itu. Status "Success" yang menggantung —
+         pesanan batal, atau tanpa record pembayaran yang cocok — tidak
+         pernah meloloskan publikasi. */
+      if (os.some(o => o.paymentStatus === 'Success' && o.status !== 'Dibatalkan' && S2.payments.some(p => p.orderId === o.id && p.status === 'Success'))) return null;
       if (!os.length) return { noOrder:true, number:null };
       return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
     }
@@ -2463,6 +2515,7 @@
       S2.services.forEach(s => {
         if (s.invitationId) return;
         if (s.id === 'seed-svc-1'){ s.invitationId = 'seed-inv-1'; const o = S2.orders.find(x => x.invitationId === 'seed-inv-1' && x.paymentStatus === 'Success'); s.orderId = o ? o.id : null; changed = true; }
+        else if (s.id === 'seed-svc-2'){ s.invitationId = 'seed-inv-3'; const o = S2.orders.find(x => x.invitationId === 'seed-inv-3' && x.paymentStatus === 'Success'); s.orderId = o ? o.id : null; changed = true; }
         else if (s.id === 'seed-svc-3'){ s.invitationId = 'seed-inv-4'; s.orderId = s.orderId || null; changed = true; }
       });
       if (changed) saveColl('services');
@@ -2487,12 +2540,20 @@
        desainernya. Penugasan baru hanya bisa terjadi lewat gerbang di
        handler penugasan setelah pembayaran Success terverifikasi. */
     (function enforceServicePaidGate(){
+      const POST_ASSIGN = ['Assigned','In Progress','Review','Revision','Approved','Published','Completed'];
       let changed = false;
       S2.services.forEach(s => {
-        if (s.status !== 'Assigned') return;
+        if (!POST_ASSIGN.includes(s.status)) return;
         const o = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null;
-        if (o && o.paymentStatus === 'Success') return;
-        s.status = 'New'; s.designerId = null; s.updatedAt = Date.now(); changed = true;
+        const paidOk = !!(o && o.paymentStatus === 'Success' && o.status !== 'Dibatalkan');
+        if (paidOk && s.designerId) return; /* alur sah: Paid terverifikasi + desainer tertugaskan */
+        /* Status sesudah penugasan tanpa pembayaran Success yang terhubung
+           (atau tanpa desainer) melompati gerbang — turunkan: ke Paid bila
+           pembayaran terkait memang Success, selain itu ke New, dan lepas
+           desainernya bila pembayaran tidak lolos. */
+        s.status = paidOk ? 'Paid' : 'New';
+        if (!paidOk) s.designerId = null;
+        s.updatedAt = Date.now(); changed = true;
       });
       if (changed) saveColl('services');
     })();
@@ -3136,8 +3197,14 @@
       }
       /* Pesanan & checkout */
       if (act === 'order-cancel'){
+        kiRefreshCollections();
         const o = S2.orders.find(x => x.id === id); if (!o) return;
-        showModal({title:'Batalkan pesanan ' + o.number + '?', danger:true, confirmLabel:'Ya, Batalkan Pesanan', body:'Status pesanan berubah menjadi <b>Dibatalkan</b>. Record pembayaran simulasi tetap tersimpan sebagai riwayat.', onConfirm:() => { o.status = 'Dibatalkan'; saveColl('orders'); logAct('Pesanan ' + o.number + ' dibatalkan.', 'customer', o.customerId); toast('Pesanan dibatalkan'); rerender2(); }});
+        /* Transisi pembatalan eksplisit & idempoten: pesanan yang sudah
+           Dibatalkan tetap Dibatalkan; pesanan yang pembayarannya sudah
+           Success tidak dapat dibatalkan dari jalur ini. */
+        if (o.status === 'Dibatalkan'){ toast('Pesanan ' + o.number + ' sudah berstatus Dibatalkan (terminal) — tidak ada perubahan.', true); rerender2(); return; }
+        if (o.paymentStatus === 'Success'){ toast('Pesanan ' + o.number + ' sudah lunas (Success) — pembatalan tidak dapat diterapkan pada pesanan yang sudah dibayar.', true); rerender2(); return; }
+        showModal({title:'Batalkan pesanan ' + o.number + '?', danger:true, confirmLabel:'Ya, Batalkan Pesanan', body:'Status pesanan berubah menjadi <b>Dibatalkan</b> — status terminal: pembayaran tidak lagi ditawarkan dan hasil pembayaran apa pun tidak dapat menghidupkannya kembali. Record pembayaran simulasi tetap tersimpan sebagai riwayat.', onConfirm:() => { o.status = 'Dibatalkan'; if (!saveColl('orders')){ toast('Gagal menyimpan pembatalan — status pesanan tidak berubah.', true); rerender2(); return; } logAct('Pesanan ' + o.number + ' dibatalkan.', 'customer', o.customerId); toast('Pesanan dibatalkan'); rerender2(); }});
         return;
       }
       if (act === 'order-done'){ const o = S2.orders.find(x => x.id === id); if (o){ o.status = 'Selesai'; saveColl('orders'); toast('Pesanan ' + o.number + ' ditandai selesai'); rerender2(); } return; }
@@ -3152,45 +3219,77 @@
         rerender2(); return;
       }
       if (act === 'co-confirm'){
+        kiRefreshCollections(); /* jangan menimpa pesanan terbaru dari tab lain */
         const inv = S.invitations.find(i => i.id === CO.invId); const pkg = pkgById(CO.pkgId); if (!inv || !pkg) return;
         const disc = CO.coupon ? Math.round(pkg.price * CO.coupon.pct / 100) : 0;
+        /* Idempotensi checkout: konfirmasi ganda (klik dua kali / dua tab)
+           untuk undangan + paket + total yang sama dalam waktu singkat
+           tidak membuat pesanan kedua. */
+        if (CO._lock && Date.now() - CO._lock.t < 5000 && CO._lock.inv === inv.id && CO._lock.pkg === pkg.id && CO._lock.total === pkg.price - disc){
+          toast('Pesanan yang sama baru saja dibuat (' + CO._lock.num + ') — konfirmasi ganda diabaikan.', true); go('#/bayar/' + CO._lock.id); return;
+        }
         const num = 'KI-2026-' + (1000 + S2.orders.length + 1 + Math.floor(Math.random() * 40));
         const o = {id:uid2('order'), number:num, invitationId:inv.id, customerId:CURRENT_USER, packageId:pkg.id, packageName:pkg.name, price:pkg.price, discount:disc, couponCode:CO.coupon ? CO.coupon.code : null, total:pkg.price - disc, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        const actBefore = S2.activity.slice(), ntfBefore = S2.notifications.slice();
         S2.orders.unshift(o);
         S2.payments.push({id:uid2('pay'), orderId:o.id, method:CO.method, status:'Pending', amount:o.total, code: CO.method === 'QRIS' ? 'QRIS-SIM-' + num : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null});
-        saveColl('orders'); saveColl('payments');
-        logAct('Pesanan ' + num + ' dibuat: paket ' + pkg.name + ' untuk “' + inv.title + '” (' + rp(o.total) + ', simulasi).', 'customer', inv.ownerId || CURRENT_USER);
-        notify2('Pesanan dibuat', num + ' menunggu pembayaran simulasi sebesar ' + rp(o.total) + '.', 'customer', inv.ownerId || CURRENT_USER);
+        /* Harga pada pesanan adalah SNAPSHOT saat checkout: tersimpan di
+           record pesanan dan tidak berubah walau harga paket diubah admin
+           sesudahnya. Semua penulisan diperiksa hasilnya — satu gagal,
+           seluruh pesanan dibatalkan dari state dan storage. */
+        let okAll = saveColl('orders');
+        okAll = saveColl('payments') && okAll;
+        okAll = logAct('Pesanan ' + num + ' dibuat: paket ' + pkg.name + ' untuk “' + inv.title + '” (' + rp(o.total) + ', simulasi).', 'customer', inv.ownerId || CURRENT_USER) && okAll;
+        okAll = notify2('Pesanan dibuat', num + ' menunggu pembayaran simulasi sebesar ' + rp(o.total) + '.', 'customer', inv.ownerId || CURRENT_USER) && okAll;
+        if (!okAll){
+          S2.orders = S2.orders.filter(x => x.id !== o.id);
+          S2.payments = S2.payments.filter(x => x.orderId !== o.id);
+          S2.activity = actBefore; S2.notifications = ntfBefore;
+          saveColl('orders'); saveColl('payments'); saveColl('activity'); saveColl('notifications');
+          toast('Pesanan GAGAL disimpan di perangkat ini — tidak ada pesanan yang dibuat. Kosongkan ruang penyimpanan lalu coba lagi.', true);
+          rerender2(); return;
+        }
+        CO._lock = {t:Date.now(), inv:inv.id, pkg:pkg.id, total:o.total, num, id:o.id};
         toast('Pesanan ' + num + ' dibuat — lanjutkan pembayaran simulasi');
         go('#/bayar/' + o.id); return;
       }
       if (act === 'pay-result'){
+        kiRefreshCollections(); /* transisi selalu dinilai dari state tersimpan terbaru, bukan salinan tab yang basi */
         const o = S2.orders.find(x => x.id === id); if (!o) return;
         /* Dibatalkan adalah status TERMINAL: hasil pembayaran simulasi apa
            pun — termasuk Success — ditolak dan tidak boleh menghidupkan
            pesanan kembali menjadi Diproses. */
         if (o.status === 'Dibatalkan'){ toast('Pesanan ' + o.number + ' sudah dibatalkan (status terminal) — hasil pembayaran tidak dapat diterapkan. Buat pesanan baru bila masih memerlukan paket ini.', true); rerender2(); return; }
         const res = el.dataset.res;
+        /* Transisi pembayaran eksplisit & IDEMPOTEN: callback/hasil yang
+           sama dengan status saat ini adalah duplikat — diakui tanpa
+           mengubah apa pun dan tanpa aktivitas/notifikasi kedua. Success
+           adalah status akhir pembayaran: hasil lain sesudahnya ditolak. */
+        if (o.paymentStatus === res){ toast('Hasil “' + res + '” untuk pesanan ' + o.number + ' sudah tercatat sebelumnya — pengiriman ulang hasil yang sama diabaikan (idempoten), tidak ada perubahan atau catatan ganda.', true); rerender2(); return; }
+        if (o.paymentStatus === 'Success'){ toast('Pesanan ' + o.number + ' sudah berstatus Success (terminal) — hasil “' + res + '” ditolak dan tidak mengubah apa pun.', true); rerender2(); return; }
         const pay = S2.payments.filter(p => p.orderId === o.id).slice(-1)[0];
-        if (pay){ pay.status = res; pay.paidAt = res === 'Success' ? Date.now() : null; saveColl('payments'); }
+        let okAll = true;
+        if (pay){ pay.status = res; pay.paidAt = res === 'Success' ? Date.now() : null; okAll = saveColl('payments') && okAll; }
         o.paymentStatus = res;
         if (res === 'Success'){
           o.status = 'Diproses';
           const inv = S.invitations.find(i => i.id === o.invitationId);
-          if (inv){ inv.packageId = o.packageId; persistInvitationNow(inv); }
+          if (inv){ inv.packageId = o.packageId; okAll = persistInvitationNow(inv) && okAll; }
           const payOwner = (inv && inv.ownerId) || o.customerId;
           /* Proyek desain yang pesanannya baru lunas melewati status Paid
              sebelum boleh ditugaskan (Assigned). */
           S2.services.forEach(sv => { if (sv.orderId === o.id && sv.status === 'New') sv.status = 'Paid'; });
-          saveColl('services');
-          logAct('Pembayaran simulasi ' + o.number + ' BERHASIL — paket ' + o.packageName + ' aktif.', 'customer', payOwner);
-          notify2('Pembayaran simulasi berhasil', o.number + ' — paket ' + o.packageName + ' aktif untuk undangan Anda.', 'customer', payOwner);
+          okAll = saveColl('services') && okAll;
+          okAll = logAct('Pembayaran simulasi ' + o.number + ' BERHASIL — paket ' + o.packageName + ' aktif.', 'customer', payOwner) && okAll;
+          okAll = notify2('Pembayaran simulasi berhasil', o.number + ' — paket ' + o.packageName + ' aktif untuk undangan Anda.', 'customer', payOwner) && okAll;
           toast('Pembayaran simulasi berhasil');
         } else {
           logAct('Pembayaran simulasi ' + o.number + ' berakhir ' + res + ' — undangan tidak diterbitkan.', 'customer', o.customerId);
           toast('Pembayaran simulasi ' + (res === 'Failed' ? 'gagal' : 'kedaluwarsa') + ' — tidak ada perubahan pada undangan', true);
         }
-        saveColl('orders'); rerender2(); return;
+        okAll = saveColl('orders') && okAll;
+        if (!okAll) toast('Sebagian perubahan pembayaran GAGAL disimpan di perangkat ini — muat ulang halaman dan periksa status pesanan sebelum mencoba lagi.', true);
+        rerender2(); return;
       }
       if (act === 'pay-publish'){
         const o = S2.orders.find(x => x.id === id); if (!o) return;
@@ -3219,7 +3318,14 @@
         }}); return;
       }
       if (act === 'svc-progress'){
+        kiRefreshCollections();
         const s = S2.services.find(x => x.id === id); if (!s) return;
+        /* Semua jalur perubahan status layanan tunduk pada alur yang sama:
+           "Assigned" TIDAK pernah dicapai lewat tombol progres — hanya
+           lewat penugasan desainer setelah pembayaran Success. Proyek yang
+           masih New/Paid juga tidak boleh melompat ke tahap pengerjaan. */
+        if (el.dataset.to === 'Assigned'){ toast('Status Assigned hanya dicapai lewat penugasan desainer setelah pembayaran Success — jalur ini tidak dapat melompat ke Assigned.', true); rerender2(); return; }
+        if ((s.status === 'New' || s.status === 'Paid') && el.dataset.to !== s.status){ toast('Proyek ' + s.number + ' masih berstatus ' + s.status + ' — selesaikan alur New → Paid → Assigned sebelum tahap pengerjaan dimulai.', true); rerender2(); return; }
         s.status = el.dataset.to; s.updatedAt = Date.now(); saveColl('services');
         logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.', 'customer', s.customerId);
         if (s.status === 'Review') notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer', s.customerId);
@@ -3295,10 +3401,18 @@
             let snapOk = !hadData; /* tidak ada data = tidak ada yang perlu dicadangkan */
             if (hadData){
               const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
-              try { st.setItem(K2.backup, payload); snapOk = st.getItem(K2.backup) === payload; }
-              catch(e1){ /* Kuota penuh (profil lama menumpuk): bebaskan slot
-                   cadangan lama — yang memang akan ditimpa — lalu coba lagi. */
-                try { st.removeItem(K2.backup); st.setItem(K2.backup, payload); snapOk = st.getItem(K2.backup) === payload; } catch(e2){ snapOk = false; } }
+              /* Backup lama DILINDUNGI: backup baru ditulis dulu ke kunci
+                 SEMENTARA dan diverifikasi baca-baliknya; kunci backup
+                 resmi hanya diganti setelah salinan baru terbukti utuh.
+                 Backup lama tidak pernah dihapus untuk "membuat ruang" —
+                 bila penulisan gagal, backup lama tetap utuh dan reset
+                 dibatalkan tanpa menghapus apa pun. */
+              const TMP_BK = 'vowora-tmp:backup-next';
+              try { st.setItem(TMP_BK, payload); snapOk = st.getItem(TMP_BK) === payload; } catch(e1){ snapOk = false; }
+              if (snapOk){
+                try { st.setItem(K2.backup, payload); snapOk = st.getItem(K2.backup) === payload; } catch(e2){ snapOk = false; }
+              }
+              try { st.removeItem(TMP_BK); } catch(e3){}
             }
             if (!snapOk){
               toast('Reset DIBATALKAN: cadangan pra-reset gagal ditulis di perangkat ini (penyimpanan penuh?). Tidak ada data yang dihapus — unduh cadangan atau kosongkan ruang, lalu coba lagi.', true);
@@ -3312,11 +3426,13 @@
             const keys = []; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) keys.push(k); } keys.forEach(k => { try { st.removeItem(k); } catch(e){} });
             const leftover = keys.filter(k => { try { return st.getItem(k) !== null; } catch(e){ return true; } });
             if (leftover.length){
-              let restored = true;
-              Object.keys(snap || {}).forEach(k => { try { st.setItem(k, snap[k]); if (st.getItem(k) !== snap[k]) restored = false; } catch(e){ restored = false; } });
-              toast(restored
-                ? 'Reset DIBATALKAN: penghapusan data tidak tuntas (' + leftover.length + ' record tertinggal) — seluruh data dipulihkan dari cadangan pra-reset dan tidak ada yang berubah.'
-                : 'Reset GAGAL di tengah jalan dan pemulihan cadangan tidak tuntas. Data cadangan pra-reset tersimpan — gunakan Unduh Cadangan / pemulihan di Pengaturan sebelum mencoba lagi.', true);
+              Object.keys(snap || {}).forEach(k => { try { st.setItem(k, snap[k]); } catch(e){} });
+              /* Pemulihan hanya dilaporkan berhasil setelah SELURUH snapshot
+                 diverifikasi baca-balik, kunci per kunci. */
+              const verified = Object.keys(snap || {}).every(k => { try { return st.getItem(k) === snap[k]; } catch(e){ return false; } });
+              toast(verified
+                ? 'Reset DIBATALKAN: penghapusan data tidak tuntas (' + leftover.length + ' record tertinggal) — seluruh snapshot dipulihkan dari cadangan pra-reset dan terverifikasi utuh; tidak ada yang berubah.'
+                : 'Reset GAGAL di tengah jalan dan pemulihan cadangan tidak lolos verifikasi. Data cadangan pra-reset tersimpan — gunakan Unduh Cadangan / pemulihan di Pengaturan sebelum mencoba lagi.', true);
               return;
             }
           }
@@ -3341,6 +3457,7 @@
       if (e.target.id === 'co-inv'){ CO.invId = e.target.value; rerender2(); return; }
       const asg = e.target.closest && e.target.closest('[data-s2-assign]');
       if (asg){
+        kiRefreshCollections(); /* nilai gerbang dari state tersimpan terbaru, bukan salinan tab yang basi */
         const s = S2.services.find(x => x.id === asg.dataset.s2Assign); if (!s) return;
         if (asg.value){
           /* Gerbang alur New → Paid → Assigned (tanpa pengecualian):
@@ -3491,6 +3608,7 @@
       if (!form) return;
       if (form.dataset.kiBridged) return; /* pengaman submit ganda di lapisan persisten */
       if (!location.hash.startsWith('#/u/')) return; /* demo template tidak menulis data pelanggan */
+      kiRefreshCollections(); /* tulis dari state tersimpan terbaru — tab lain bisa saja baru mengubah record yang sama */
       const slug = location.hash.slice(4).split('?')[0];
       const inv = S.invitations.find(i => i.slug === slug);
       if (!inv) return;
@@ -3557,18 +3675,22 @@
         if (rsvpCreated) S2.rsvps = S2.rsvps.filter(x => x.id !== r.id);
         else { r.status = prev.status; r.count = prev.count; r.message = prev.message; r.at = prev.at; }
         S2.activity = actBefore; S2.notifications = ntfBefore;
-        /* Pulihkan salinan tersimpan yang mungkin sempat tertimpa sebagian
-           (upaya terbaik — bila penyimpanan memang penuh, salinan lama yang
-           gagal tertimpa tetap utuh dan rollback in-memory sudah berlaku). */
-        saveColl('guests'); saveColl('rsvps');
+        /* Rollback ditulis kembali ke storage untuk KEEMPAT koleksi —
+           bukan hanya in-memory — agar tidak ada state parsial yang
+           tersisa setelah halaman dimuat ulang. */
+        saveColl('guests'); saveColl('rsvps'); saveColl('activity'); saveColl('notifications');
         drawWishes();
         if (zone) zone.innerHTML = `<div class="ok-box" style="border-color:var(--err)"><b>Respons gagal disimpan</b><p class="muted small" style="margin:4px 0 0">Penyimpanan perangkat tidak menerima data baru (mungkin penuh), jadi konfirmasi Anda <b>belum tercatat</b> — tidak ada respons yang tersimpan atas nama Anda dari percobaan ini. Kosongkan ruang penyimpanan, muat ulang halaman, lalu kirim ulang respons Anda.</p></div>`;
         toast('RSVP gagal disimpan — respons belum tercatat. Muat ulang halaman dan coba lagi.', true);
         return;
       }
-      /* Simpan terverifikasi — barulah konfirmasi sukses ditampilkan. */
+      /* Simpan terverifikasi — barulah konfirmasi sukses ditampilkan, dan
+         tampilannya PERSIS komponen status yang dirender setelah muat
+         ulang: "Respons Anda sudah terkirim" + aksi "Ubah Respons".
+         Status tidak boleh berbeda (atau hilang) antara sesudah submit
+         dan sesudah reload. */
       drawWishes();
-      if (zone) zone.innerHTML = `<div class="ok-box"><b>Terima kasih, ${esc(name)}!</b><p class="muted small" style="margin:4px 0 0">Konfirmasi Anda (${esc(status)}) sudah tercatat. Sampai jumpa di hari acara!</p></div>`;
+      if (zone) zone.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}});
       toast('RSVP terkirim. Terima kasih!');
     });
 

@@ -570,9 +570,9 @@
         {id:'cinematic', name:'Cinematic Immersive'}
       ],
       packages: [
-        {id:'basic', name:'Basic', price:29000, note:'Untuk acara sederhana', features:['1 template Basic','Maks. 3 foto galeri','RSVP & buku tamu digital','Masa aktif 3 bulan','1 kali revisi mandiri']},
-        {id:'premium', name:'Premium', price:59000, note:'Paling dipilih pelanggan', hot:true, features:['Semua template Premium','Galeri hingga 10 foto','Countdown & peta lokasi','Amplop digital','Masa aktif 6 bulan']},
-        {id:'signature', name:'Signature', price:99000, note:'Desain & fitur lebih lengkap', features:['Semua template Signature','Galeri tanpa batas wajar','Musik latar & video','Dress code & timeline acara','Masa aktif 12 bulan']},
+        {id:'basic', name:'Basic', price:29000, note:'Untuk acara sederhana', features:['1 template Basic','Maks. 3 foto galeri','RSVP & buku tamu digital','Masa aktif mengikuti masa akses paket (belum ditetapkan)','1 kali revisi mandiri']},
+        {id:'premium', name:'Premium', price:59000, note:'Paling dipilih pelanggan', hot:true, features:['Semua template Premium','Galeri hingga 10 foto','Countdown & peta lokasi','Amplop digital','Masa aktif mengikuti masa akses paket (belum ditetapkan)']},
+        {id:'signature', name:'Signature', price:99000, note:'Desain & fitur lebih lengkap', features:['Semua template Signature','Galeri tanpa batas wajar','Musik latar & video','Dress code & timeline acara','Masa aktif mengikuti masa akses paket (belum ditetapkan)']},
         {id:'exclusive', name:'Exclusive', price:149000, note:'Mulai dari — dibantu tim desain', from:true, features:['Desain kustom bersama desainer','Konsultasi & pendampingan penuh','Revisi terbimbing','Prioritas pengerjaan','Semua fitur Signature']}
       ],
       media: [
@@ -1533,7 +1533,7 @@
               <button class="on" data-dev="hp">${ICONS.phone} HP</button>
               <button data-dev="desktop">${ICONS.monitor} Desktop</button>
             </div>
-            <div class="phone-shell" id="detail-shell"><div class="phone-screen">${renderInvitation(demoInv, {mode:'demo', envelope:true, wishes: S.wishes})}</div></div>
+            <div class="phone-shell" id="detail-shell"><div class="phone-screen">${renderInvitation(demoInv, {mode:'demo', envelope:true, wishes: S.wishes.filter(w => w.slug === 'demo')})}</div></div>
             <p style="text-align:center;font-size:13px;color:var(--ink-3);margin-top:12px">Ini adalah renderer undangan yang sama dengan yang dipakai Builder & halaman publik.</p>
           </div>
         </div></div>`;
@@ -1545,7 +1545,7 @@
       const demoInv = { templateId: t.id, content: demoFor(t.categoryId), design: { paletteId: t.palettes[0].id, fontId: t.fontId, ornament: t.ornament }, sections: Object.fromEntries(t.sections.map(s => [s, true])), categoryId: t.categoryId };
       const html = `<div class="wrap"><div class="detail-grid" style="grid-template-columns:400px 1fr">
         <div>
-          <div class="phone-shell"><div class="phone-screen" style="height:min(76vh,720px)">${renderInvitation(demoInv, {mode:'demo', envelope:true, wishes: S.wishes})}</div></div>
+          <div class="phone-shell"><div class="phone-screen" style="height:min(76vh,720px)">${renderInvitation(demoInv, {mode:'demo', envelope:true, wishes: S.wishes.filter(w => w.slug === 'demo')})}</div></div>
         </div>
         <div class="detail-info">
           <p class="crumbs" style="padding-top:0"><a href="#/template/${t.slug}">← Kembali ke detail ${esc(t.name)}</a></p>
@@ -1758,7 +1758,7 @@
           ${pub ? `<div class="slug-box"><div class="url">${esc(publicUrl(inv.slug))}</div><button class="btn soft sm" data-copy="${esc(publicUrl(inv.slug))}">${ICONS.copy} Salin</button><a class="btn gold sm" href="#/u/${inv.slug}">${ICONS.eye} Buka Undangan</a></div>
           <p class="hint" style="margin-top:12px">Undangan sudah terbit sejak ${new Date(inv.publishedAt).toLocaleString('id-ID')}. Perubahan konten yang Anda simpan akan tampil di tautan yang sama.</p>`
           : `<button class="btn gold block" data-publish ${allOk && !gateBlock ? '' : 'disabled'}>${ICONS.send} Terbitkan Undangan</button>
-          ${gateBlock ? `<p class="hint" style="margin-top:10px;color:var(--err)">Publikasi ditahan oleh pengaturan <b>“Publikasi wajib pembayaran”</b>: pesanan ${esc(gateBlock.number)} untuk undangan ini belum berstatus pembayaran <b>Success</b>. Selesaikan pembayaran simulasinya dari Dashboard → Pesanan, lalu kembali ke sini.</p>` : allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
+          ${gateBlock ? `<p class="hint" style="margin-top:10px;color:var(--err)">${esc(gateBlockText(gateBlock))}</p>` : allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
           </div>
           <div class="b-panel"><h2>Paket Undangan</h2><p class="sub">Template ini berada di paket <b>${esc(t.tier)}</b> (${rp(t.price)}). Pesan paketnya lewat checkout simulasi — pembayaran yang berhasil mengaktifkan paket untuk undangan ini dan tercatat di Dashboard.</p>
           <a class="btn gold sm" href="#/checkout">Pesan Paket Ini (Simulasi)</a> <a class="btn ghost sm" href="#/dashboard?tab=pesanan">Lihat Pesanan Saya</a></div>`;
@@ -1912,7 +1912,7 @@
       if (gt && B.inv){ B.tab = ({konten:'sampul', acara:'acara', media:'media', penutup:'seksi'})[gt.dataset.gotoTab] || 'sampul'; render(); return; }
       if (e.target.closest('[data-publish]') && B.inv){
         flushAutosave(B.inv); /* terbitkan selalu dari versi draft terakhir yang tersimpan */
-        if (typeof publishBlockedByGate === 'function'){ const blk = publishBlockedByGate(B.inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); render(); return; } }
+        if (typeof publishBlockedByGate === 'function'){ const blk = publishBlockedByGate(B.inv); if (blk){ toast(typeof gateBlockText === 'function' ? gateBlockText(blk) : 'Publikasi ditahan: pembayaran simulasi belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); render(); return; } }
         const slug = publishInvitation(B.inv); render(); toast('Undangan terbit di /u/' + slug); return;
       }
       /* Builder: struktur konten */
@@ -1955,9 +1955,12 @@
       const form = e.target.closest('[data-rsvp-form]');
       if (!form) return;
       e.preventDefault();
+      if (form.dataset.kiSent) return; /* pengaman submit ganda: satu formulir, satu pengiriman */
       const fd = new FormData(form);
       const name = (fd.get('name') || '').toString().trim();
       if (!name){ toast('Nama wajib diisi untuk RSVP', true); return; }
+      form.dataset.kiSent = '1';
+      const sb = form.querySelector('[type="submit"]'); if (sb) sb.disabled = true;
       const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
       const msg = (fd.get('message') || '').toString().trim();
       const isDemo = !location.hash.startsWith('#/u/');
@@ -1968,7 +1971,14 @@
       if (zone) zone.innerHTML = `<div class="ok-box"><b>Terima kasih, ${esc(name)}!</b><p class="muted small" style="margin:4px 0 0">Konfirmasi Anda (${esc(status)}) sudah tercatat${isDemo ? ' pada data demo' : ''}. Sampai jumpa di hari acara!</p></div>`;
       if (msg){
         const w = {name, status, msg, slug};
-        if (list){ if (list.querySelector('.muted.small') && list.children.length === 1) list.innerHTML = ''; list.insertAdjacentHTML('afterbegin', wishHTML(w)); }
+        /* Ucapan yang record RSVP-nya sedang disembunyikan moderator tidak
+           boleh muncul lagi lewat sisipan langsung ini — daftar publik
+           sesudah muat ulang memang menyaringnya, jalur ini menyamakan diri. */
+        let blockedNow = null;
+        if (!isDemo && typeof s2BlockedWishKeys === 'function'){ const invNow = S.invitations.find(i => i.slug === slug); if (invNow) blockedNow = s2BlockedWishKeys(invNow); }
+        if (!(blockedNow && blockedNow.has(name + '|' + msg))){
+          if (list){ if (list.querySelector('.muted.small') && list.children.length === 1) list.innerHTML = ''; list.insertAdjacentHTML('afterbegin', wishHTML(w)); }
+        }
         if (!isDemo) S.wishes.push(w);
       }
       toast('RSVP terkirim. Terima kasih!');
@@ -2099,13 +2109,13 @@
       notifications: load2(K2.notifications, []),
       activity: load2(K2.activity, []),
       coupons: load2(K2.coupons, []),
-      settings: Object.assign({storeName:'Kita Invite', supportEmail:'', publishNeedsPayment:false}, load2(K2.settings, {})),
+      settings: Object.assign({storeName:'Kita Invite', supportEmail:'', publishNeedsPayment:true}, load2(K2.settings, {})),
       role: load2(K2.role, 'customer')
     };
     function saveColl(name){ save2(K2[name], S2[name]); }
     function userById(id){ return S2.users.find(u => u.id === id) || {name:'—', role:'customer'}; }
-    function logAct(text, scope){ S2.activity.unshift({id:uid2('act'), text, scope:scope||'customer', at:Date.now()}); S2.activity = S2.activity.slice(0, 60); saveColl('activity'); }
-    function notify2(title, body, scope){ S2.notifications.unshift({id:uid2('ntf'), title, body, scope:scope||'customer', at:Date.now(), read:false}); saveColl('notifications'); }
+    function logAct(text, scope, owner){ S2.activity.unshift({id:uid2('act'), text, scope:scope||'customer', owner:owner||null, at:Date.now()}); S2.activity = S2.activity.slice(0, 60); saveColl('activity'); }
+    function notify2(title, body, scope, owner){ S2.notifications.unshift({id:uid2('ntf'), title, body, scope:scope||'customer', owner:owner||null, at:Date.now(), read:false}); saveColl('notifications'); }
 
     /* ---------- Terapkan override CMS (template, taksonomi, paket) sebelum seed ---------- */
     (function applyCms(){
@@ -2166,15 +2176,22 @@
     function ordersOf(invId){ return S2.orders.filter(o => !invId || o.invitationId === invId); }
     function tplOf(inv){ return TEMPLATES.find(t => t.id === inv.templateId) || TEMPLATES[0]; }
     function guestLink(inv, g){ return publicUrl(inv.slug || inv.id) + '?to=' + g.code; }
-    /* Payment gate: bila pengaturan aktif, undangan yang terhubung ke pesanan
-       berbayar hanya boleh terbit setelah ada pembayaran Success untuknya.
-       Mengembalikan record pesanan penghambat, atau null bila boleh terbit. */
+    /* Payment gate: aktif secara bawaan. Bila pengaturan aktif, undangan
+       hanya boleh terbit setelah ada pembayaran Success yang terhubung ke
+       undangan itu — TANPA pengecualian: undangan yang belum punya pesanan
+       sama sekali juga tertahan. Mengembalikan record penghambat (pesanan
+       terbaru yang belum Success, atau penanda {noOrder:true} bila belum ada
+       pesanan), atau null bila boleh terbit. */
     function publishBlockedByGate(inv){
       if (!inv || !S2.settings.publishNeedsPayment) return null;
       const os = ordersOf(inv.id);
-      if (!os.length) return null;
       if (os.some(o => o.paymentStatus === 'Success')) return null;
+      if (!os.length) return { noOrder:true, number:null };
       return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
+    }
+    function gateBlockText(blk){
+      if (blk && blk.noOrder) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): belum ada pembayaran simulasi berstatus Success yang terhubung ke undangan ini. Buat pesanan lewat checkout simulasi dan selesaikan pembayaran simulasinya terlebih dahulu.';
+      return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): pembayaran simulasi pesanan ' + (blk ? blk.number : 'terkait') + ' belum berstatus Success.';
     }
     function s2GuestbookWishes(inv){
       return rsvpsOf(inv.id).filter(r => r.moderation === 'approved' && r.message).map(r => ({name:r.name, status:r.status, msg:r.message}));
@@ -2415,7 +2432,7 @@
       const gCount = mine.reduce((a, i) => a + guestsOf(i.id).length, 0);
       const rCount = mine.reduce((a, i) => a + rsvpsOf(i.id).length, 0);
       const pend = S2.orders.filter(o => o.customerId === CURRENT_USER && o.paymentStatus === 'Pending').length;
-      const recent = S2.activity.filter(a => a.scope === 'customer').slice().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 6);
+      const recent = S2.activity.filter(a => a.scope === 'customer' && (!a.owner || a.owner === CURRENT_USER)).slice().sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 6);
       return `<div class="stat-grid">
         <div class="stat"><b>${mine.length}</b><span>Total undangan</span><small>${mine.filter(i => invStatus(i).key==='draft').length} draft · ${mine.filter(i => invStatus(i).key==='published').length} terbit</small></div>
         <div class="stat"><b>${gCount}</b><span>Total tamu</span><small>dari semua undangan Anda</small></div>
@@ -2680,7 +2697,7 @@
       <p style="font-size:13.5px;color:var(--ink-3);margin:14px 0 0">Grup terbesar: ${esc((() => { const m = {}; gs.forEach(g => m[g.group] = (m[g.group]||0) + 1); const top = Object.entries(m).sort((a,b) => b[1] - a[1])[0]; return top ? top[0] + ' (' + top[1] + ' tamu)' : '—'; })())}</p></div>`;
     }
     function dashNotifications(){
-      const list = S2.notifications.filter(n => n.scope === 'customer');
+      const list = S2.notifications.filter(n => n.scope === 'customer' && (!n.owner || n.owner === CURRENT_USER));
       return `<div class="card"><h2>Notifikasi</h2><p class="sub">Pembaruan dari RSVP, pembayaran simulasi, dan proyek desain Anda.</p>
       ${list.length ? `<div class="list-rows">${list.map(n => `<div class="lrow"><div class="grow"><b>${esc(n.title)}</b><div style="font-size:14.5px">${esc(n.body)}</div><div class="mut">${new Date(n.at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>${n.read ? '' : '<span class="pill exp">Baru</span>'}</div>`).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada notifikasi.</p>'}
       ${list.some(n => !n.read) ? '<button class="btn ghost sm" data-s2="notif-read" style="margin-top:14px">Tandai Semua Dibaca</button>' : ''}</div>`;
@@ -2693,7 +2710,7 @@
       <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div></div>`;
     }
     function dashSettings(){
-      return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas.</p>
+      return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus.</p>
       <p style="background:#F9E9E4;border:1px solid #EBC5B8;color:var(--err);border-radius:var(--r-md);padding:13px 16px;font-size:14px;font-weight:600">Perhatian: reset juga <b>menghapus draft undangan yang Anda buat sendiri</b> selama sesi demo ini, karena semuanya tersimpan di perangkat yang sama. Reset tidak pernah berjalan tanpa konfirmasi.</p>
       <button class="btn" data-s2="reset-demo" style="background:var(--err);color:#FFF">Reset Data Demo…</button></div>
       <div class="card"><h2>Tentang Penyimpanan</h2><p class="sub">Undangan tersimpan per record dengan key <b>vowora:v1:invitation:&lt;id&gt;</b>; tamu, RSVP, pesanan, pembayaran, layanan, dan notifikasi tersimpan per koleksi (vowora:v1:guests, vowora:v1:rsvps, vowora:v1:orders, vowora:v1:payments, vowora:v1:service-requests, vowora:v1:notifications) di localStorage perangkat ini.</p></div>`;
@@ -2834,6 +2851,7 @@
         </span></div>`; }).join('')}</div></div>`;
       if (tab === 'media') return `<div class="card"><h2>Pustaka Media</h2><p class="sub">Aset demo yang dipakai Builder, CMS, dan referensi Bantuan Desain.</p><div class="media-grid">${DB.media.map(m => `<div class="media-item" style="cursor:default"><img src="${m.src}" alt="${esc(m.name)}"><span class="cap">${esc(m.name)} · ${esc(m.tag)}</span></div>`).join('')}</div></div>`;
       if (tab === 'paket') return `<div class="card"><h2>Paket & Harga</h2><p class="sub">Perubahan harga hanya berlaku untuk pesanan baru — pesanan lama menyimpan snapshot harganya sendiri.</p>
+      <div style="background:var(--ivory);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 16px;font-size:14px;margin-bottom:16px"><b>Kebijakan masa akses paket — belum ditetapkan.</b> Undangan yang sudah terbit tetap publik sampai masa akses paketnya berakhir, tetapi durasi setiap paket dan kapan hitungannya dimulai <b>belum diputuskan</b> (menunggu arahan pemilik). Placeholder ini sengaja dibiarkan kosong: belum ada angka atau aturan kedaluwarsa yang diterapkan, dan tanggal acara <b>tidak</b> menutup halaman publik.</div>
       ${DB.packages.map(p => `<form class="s2-pkg-form" data-id="${p.id}" style="border:1px solid var(--line-soft);border-radius:var(--r-md);padding:16px;margin-bottom:12px"><b>${esc(p.name)}</b><div class="row2" style="margin-top:10px"><div class="field" style="margin:0"><label>Harga (Rp)</label><input class="input" name="price" type="number" min="0" step="1000" value="${p.price}"></div><div class="field" style="margin:0"><label>Fitur (satu per baris)</label><textarea class="textarea input" name="features" rows="3">${esc(p.features.join('\n'))}</textarea></div></div><button class="btn gold sm" type="submit" style="margin-top:10px">Simpan Paket ${esc(p.name)}</button></form>`).join('')}</div>`;
       if (tab === 'kupon') return `<div class="card"><h2>Kupon</h2><p class="sub">Kupon aktif dapat dipakai pelanggan di checkout.</p>
       <form id="s2-coupon-form" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><input class="input" id="cp-code" required maxlength="16" placeholder="KODEBARU" style="flex:1;min-width:140px;text-transform:uppercase"><input class="input" id="cp-pct" required type="number" min="1" max="90" placeholder="%" style="width:100px"><input class="input" id="cp-note" maxlength="50" placeholder="Catatan…" style="flex:1;min-width:160px"><button class="btn gold sm" type="submit">Tambah Kupon</button></form>
@@ -2842,7 +2860,7 @@
       if (tab === 'pengaturan') return `<div class="card"><h2>Pengaturan Platform (Demo)</h2><form id="s2-settings-form">
         <div class="field"><label>Nama platform</label><input class="input" id="set-name" value="${esc(S2.settings.storeName)}"></div>
         <div class="field"><label>Email dukungan</label><input class="input" id="set-email" value="${esc(S2.settings.supportEmail)}"></div>
-        <div class="vis-row"><div><b>Publikasi wajib pembayaran</b><span>Jika aktif, undangan yang terhubung ke pesanan berbayar hanya bisa terbit setelah ada pembayaran simulasi berstatus Success untuk undangan itu. Gate ini ditegakkan di semua jalur publikasi: Builder, halaman pembayaran, dan proyek Bantuan Desain.</span></div><label class="switch"><input type="checkbox" id="set-gate" ${S2.settings.publishNeedsPayment?'checked':''}><i></i></label></div>
+        <div class="vis-row"><div><b>Publikasi wajib pembayaran</b><span>Pengaturan ini <b>aktif secara bawaan</b>. Jika aktif, undangan hanya bisa terbit setelah ada pembayaran simulasi berstatus Success yang terhubung ke undangan itu — undangan yang belum punya pesanan sama sekali juga tertahan, tanpa pengecualian. Gate ini ditegakkan di semua jalur publikasi: Builder, halaman pembayaran, dan proyek Bantuan Desain.</span></div><label class="switch"><input type="checkbox" id="set-gate" ${S2.settings.publishNeedsPayment?'checked':''}><i></i></label></div>
         <button class="btn gold" type="submit" style="margin-top:14px">Simpan Pengaturan</button></form></div>
         <div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seed awal Stage 2 dan menghapus seluruh record buatan sesi ini — termasuk draft undangan buatan sendiri. Selalu dengan konfirmasi.</p><button class="btn" data-s2="reset-demo" style="background:var(--err);color:#FFF">Reset Data Demo…</button></div>`;
       return '';
@@ -3019,14 +3037,14 @@
       if (act === 'pay-publish'){
         const o = S2.orders.find(x => x.id === id); if (!o) return;
         const inv = S.invitations.find(i => i.id === o.invitationId); if (!inv) return;
-        const blk = publishBlockedByGate(inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); return; }
+        const blk = publishBlockedByGate(inv); if (blk){ toast(gateBlockText(blk), true); return; }
         flushAutosave(inv);
         const slug = publishInvitation(inv);
         logAct('Undangan “' + inv.title + '” diterbitkan setelah pembayaran ' + o.number + ' berhasil.');
         toast('Undangan terbit di /u/' + slug); go('#/u/' + slug); return;
       }
       /* Notifikasi */
-      if (act === 'notif-read'){ S2.notifications.forEach(n => { if (n.scope === 'customer') n.read = true; }); saveColl('notifications'); rerender2(); return; }
+      if (act === 'notif-read'){ S2.notifications.forEach(n => { if (n.scope === 'customer' && (!n.owner || n.owner === CURRENT_USER)) n.read = true; }); saveColl('notifications'); rerender2(); return; }
       /* Layanan bantuan */
       if (act === 'svc-approve'){
         const s = S2.services.find(x => x.id === id); if (!s) return;
@@ -3058,7 +3076,7 @@
       if (act === 'svc-publish-inv'){
         const s = S2.services.find(x => x.id === id); if (!s || !s.invitationId) return;
         const inv = S.invitations.find(i => i.id === s.invitationId); if (!inv) return;
-        const blk = publishBlockedByGate(inv); if (blk){ toast('Publikasi ditahan: pembayaran simulasi pesanan ' + blk.number + ' belum berhasil (pengaturan “Publikasi wajib pembayaran” aktif).', true); return; }
+        const blk = publishBlockedByGate(inv); if (blk){ toast(gateBlockText(blk), true); return; }
         flushAutosave(inv);
         const slug = publishInvitation(inv);
         logAct('Undangan “' + inv.title + '” diterbitkan dari proyek desain ' + s.number + ' (status layanan tetap ' + s.status + ').');
@@ -3093,18 +3111,31 @@
       if (act === 'quarantine-restore'){
         const q = load2(K2.quarantine, []);
         if (!q.length){ toast('Tidak ada record di karantina'); return; }
-        showModal({title:'Pulihkan record karantina?', confirmLabel:'Ya, Pulihkan', body:q.length + ' record rusak yang dikarantina akan ditulis kembali ke kunci aslinya (hanya bila kunci itu sekarang kosong), lalu halaman dimuat ulang. Isi karantina yang sudah dipulihkan dibersihkan.', onConfirm:() => {
-          const st = storageBackend(); let n = 0;
-          if (st){ q.forEach(item => { try { if (st.getItem(item.key) == null){ st.setItem(item.key, item.raw); n++; } } catch(e){} }); save2(K2.quarantine, []); }
-          toast(n + ' record dipulihkan — memuat ulang…'); setTimeout(() => location.reload(), 500);
+        showModal({title:'Pulihkan record karantina?', confirmLabel:'Ya, Pulihkan', body:q.length + ' record di karantina akan ditulis kembali ke kunci aslinya — hanya bila kunci itu sekarang kosong dan penulisannya terverifikasi. Record yang kuncinya sudah terisi (bentrok) atau gagal ditulis <b>tetap tinggal di karantina dan tidak dihapus</b>. Halaman dimuat ulang setelahnya.', onConfirm:() => {
+          const st = storageBackend(); let n = 0; const kept = [];
+          if (st){ q.forEach(item => { let ok = false; try { if (st.getItem(item.key) == null){ st.setItem(item.key, item.raw); ok = st.getItem(item.key) === item.raw; } } catch(e){ ok = false; } if (ok) n++; else kept.push(item); }); save2(K2.quarantine, kept); }
+          toast(n + ' record dipulihkan' + (kept.length ? ' — ' + kept.length + ' tetap di karantina (bentrok/gagal)' : '') + ' — memuat ulang…'); setTimeout(() => location.reload(), 600);
         }}); return;
       }
-      /* Reset demo */
+      /* Reset demo: snapshot cadangan ditulis SEBELUM penghapusan, dan kunci
+         cadangan + karantina dipertahankan — reset tidak menghancurkan jalur
+         pemulihan. Semua koleksi lain dihapus dalam satu paket lalu seed
+         dibangun ulang saat muat ulang, jadi tidak ada referensi yatim. */
       if (act === 'reset-demo'){
-        showModal({title:'Reset seluruh data demo?', danger:true, confirmLabel:'Ya, Reset Semua Data Demo', body:'Semua record akan dikembalikan ke seed awal Stage 2 (undangan demo, 22 tamu, RSVP, 8 pesanan, pembayaran, 4 proyek desain, kupon, notifikasi). <b>Draft undangan buatan Anda sendiri ikut terhapus.</b> Halaman akan dimuat ulang setelah reset.', onConfirm:() => {
+        showModal({title:'Reset seluruh data demo?', danger:true, confirmLabel:'Ya, Reset Semua Data Demo', body:'Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan (menimpa cadangan sebelumnya) dan record karantina dipertahankan. Lalu semua record lain dikembalikan ke seed awal Stage 2 (undangan demo, tamu, RSVP, pesanan, pembayaran, proyek desain, kupon, notifikasi) dalam satu paket yang konsisten. <b>Draft undangan buatan Anda sendiri ikut terhapus.</b> Halaman akan dimuat ulang setelah reset.', onConfirm:() => {
           const st = storageBackend();
-          if (st){ const keys = []; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0) keys.push(k); } keys.forEach(k => { try { st.removeItem(k); } catch(e){} }); }
-          toast('Data demo direset — memuat ulang…'); setTimeout(() => location.reload(), 500);
+          let snapOk = false;
+          if (st){
+            try { const snap = {}; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) snap[k] = st.getItem(k); }
+              if (Object.keys(snap).length){ const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
+                try { st.setItem(K2.backup, payload); snapOk = true; }
+                catch(e1){ /* Kuota penuh (profil lama menumpuk): bebaskan slot
+                     cadangan lama — yang memang akan ditimpa — lalu coba lagi. */
+                  try { st.removeItem(K2.backup); st.setItem(K2.backup, payload); snapOk = true; } catch(e2){ snapOk = false; } } }
+            } catch(e){}
+            const keys = []; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k && k.indexOf('vowora:') === 0 && k !== K2.backup && k !== K2.quarantine) keys.push(k); } keys.forEach(k => { try { st.removeItem(k); } catch(e){} });
+          }
+          toast(snapOk ? 'Cadangan disimpan, data demo direset — memuat ulang…' : 'Data demo direset — memuat ulang… (peringatan: cadangan pra-reset gagal ditulis di perangkat ini)', !snapOk); setTimeout(() => location.reload(), 500);
         }}); return;
       }
     });
@@ -3238,27 +3269,42 @@
     document.addEventListener('submit', e => {
       const form = e.target.closest('[data-rsvp-form]');
       if (!form) return;
+      if (form.dataset.kiBridged) return; /* pengaman submit ganda di lapisan persisten */
       if (!location.hash.startsWith('#/u/')) return; /* demo template tidak menulis data pelanggan */
       const slug = location.hash.slice(4).split('?')[0];
       const inv = S.invitations.find(i => i.slug === slug);
       if (!inv) return;
       const fd = new FormData(form);
-      const name = (fd.get('name') || '').toString().trim(); if (!name) return;
+      const typedName = (fd.get('name') || '').toString().trim(); if (!typedName) return;
+      form.dataset.kiBridged = '1';
       const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
       const count = status === 'Hadir' ? +(fd.get('count') || 1) : status === 'Masih Ragu' ? +(fd.get('count') || 1) : 0;
       const message = (fd.get('message') || '').toString().trim();
-      let g = S2.guests.find(x => x.invitationId === inv.id && x.name.toLowerCase() === name.toLowerCase());
+      /* Kaitkan RSVP ke tamu lewat ID stabil: kode pada tautan personal
+         ?to= didahulukan — tamu yang membuka tautannya sendiri selalu
+         terhubung ke record tamunya, apa pun ejaan nama yang diketik.
+         Tanpa kode, cocokkan nama; terakhir, buat record tamu baru. */
+      const toCode = new URLSearchParams((location.hash.split('?')[1] || '')).get('to');
+      let g = toCode ? S2.guests.find(x => x.invitationId === inv.id && x.code === toCode) : null;
+      if (!g) g = S2.guests.find(x => x.invitationId === inv.id && x.name.toLowerCase() === typedName.toLowerCase());
       if (!g){
-        g = {id:uid2('guest'), invitationId:inv.id, name, group:'Lainnya', contact:'', rsvpStatus:status, attendees:count, code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()};
+        g = {id:uid2('guest'), invitationId:inv.id, name:typedName, group:'Lainnya', contact:'', rsvpStatus:status, attendees:count, code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()};
         S2.guests.push(g);
       } else { g.rsvpStatus = status; g.attendees = count; }
       saveColl('guests');
+      const name = g.name; /* nama kanonis dari record tamu yang stabil */
       let r = S2.rsvps.find(x => x.guestId === g.id);
-      if (r) Object.assign(r, {status, count, message: message || r.message, at:Date.now(), moderation: message ? r.moderation : 'approved'});
+      if (r){
+        r.status = status; r.count = count; r.name = name; r.at = Date.now();
+        if (message) r.message = message;
+        /* Status moderasi TIDAK pernah dilonggarkan oleh submit ulang:
+           ucapan yang disembunyikan tetap tersembunyi sampai moderator
+           menyetujuinya lagi — submit tanpa pesan pun tidak membukanya. */
+      }
       else { r = {id:uid2('rsvp'), guestId:g.id, invitationId:inv.id, name, status, count, message, at:Date.now(), moderation:'approved'}; S2.rsvps.push(r); }
       saveColl('rsvps');
-      logAct('RSVP publik: ' + name + ' → ' + status + ' untuk “' + inv.title + '”.');
-      notify2('RSVP baru masuk', name + ' merespons ' + status + ' untuk “' + inv.title + '”.', 'customer');
+      logAct('RSVP publik: ' + name + ' → ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || null);
+      notify2('RSVP baru masuk', name + ' merespons ' + status + ' untuk “' + inv.title + '”.', 'customer', inv.ownerId || null);
     });
 
     s2Render();

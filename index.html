@@ -900,13 +900,33 @@
         return true;
       } catch(e){ setSaveStatus('error'); return false; }
     }
+    /* Generasi grant (v17): setiap pencabutan grant / perubahan persona
+       menaikkan nomor generasi ini (kiRevokeAdminGrant di Stage 2). Timer
+       autosave menangkap generasi saat ia DIJADWALKAN; bila generasi sudah
+       berubah saat timer menyala, timer itu gugur — izin tidak cukup dicek
+       saat penjadwalan, tetapi dinilai ulang tepat sebelum penulisan. */
+    function kiGrantGen(){ try { return window.__kiGrantGen || 0; } catch(e){ return 0; } }
+    /* Penembakan autosave tertunda — gerbang yang SAMA dipakai timer nyata
+       dan uji fixture. Menulis HANYA bila (a) generasi grant masih sama
+       dengan saat timer dijadwalkan, DAN (b) predikat persistensi
+       (pemilik aktif / Admin ber-grant) MASIH lolos pada saat penulisan.
+       Grant yang dicabut — atau peran yang berganti — di antara
+       penjadwalan dan penembakan membatalkan penulisan, walau timernya
+       sendiri tidak sempat dibersihkan. */
+    function kiFireAutosave(inv, genAtSchedule, persistFn){
+      if (!inv) return false;
+      if (genAtSchedule !== kiGrantGen()) return false;
+      if (!kiCanPersist(inv)) return false;
+      return persistFn(inv);
+    }
     function scheduleAutosave(inv){
       if (!inv) return;
       if (!kiCanPersist(inv)) return; /* P1: jalur simpan Builder hanya menulis undangan milik pemilik aktif — atau Admin DENGAN grant tulis eksplisit (grant benar-benar mengaktifkan persistensi, bukan hanya membuka UI) */
       inv.updatedAt = Date.now();
       setSaveStatus('saving');
       clearTimeout(_saveTimers[inv.id]);
-      _saveTimers[inv.id] = setTimeout(() => { persistInvitationNow(inv); }, 650);
+      const genAtSchedule = kiGrantGen();
+      _saveTimers[inv.id] = setTimeout(() => { kiFireAutosave(inv, genAtSchedule, persistInvitationNow); }, 650);
     }
     function flushAutosave(inv){
       if (!inv) return false;
@@ -1852,7 +1872,7 @@
           <div class="check-list">${checks.map(x => `<div>${x.ok ? `<span class="ic-ok">${ICONS.check}</span>` : `<span class="ic-no">${ICONS.warn}</span>`}<span>${esc(x.label)}</span>${x.ok ? '' : `<button class="fix" data-goto-tab="${x.tab}">Perbaiki</button>`}</div>`).join('')}</div>
           ${pub ? `<div class="slug-box"><div class="url">${esc(publicUrl(inv.slug))}</div><button class="btn soft sm" data-copy="${esc(publicUrl(inv.slug))}">${ICONS.copy} Salin</button><a class="btn gold sm" href="#/u/${inv.slug}">${ICONS.eye} Buka Undangan</a></div>
           <p class="hint" style="margin-top:12px">Undangan sudah terbit sejak ${new Date(inv.publishedAt).toLocaleString('id-ID')}. Perubahan konten yang Anda simpan akan tampil di tautan yang sama.</p>
-          ${typeof invAccessEndsAt === 'function' && invAccessEndsAt(inv) ? `<p class="hint" style="margin-top:6px">Masa aktif paket berakhir ${new Date(invAccessEndsAt(inv)).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — dihitung sejak terbit sesuai durasi paket undangan ini.</p>` : (!inv.packageId ? `<p class="hint" style="margin-top:6px;color:var(--warn)"><b>Paket belum terselesaikan:</b> undangan terbit ini tidak mempunyai paket yang dapat dibuktikan dari pesanan terkait, jadi masa aksesnya belum terhitung dan tidak diklaim di sini.</p>` : '')}`
+          ${typeof invAccessEndsAt === 'function' && invAccessEndsAt(inv) ? `<p class="hint" style="margin-top:6px">Masa aktif paket berakhir ${new Date(invAccessEndsAt(inv)).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})} — dihitung sejak terbit sesuai durasi paket undangan ini.</p>` : (`<p class="hint" style="margin-top:6px;color:var(--warn)"><b>Paket belum terselesaikan:</b> undangan terbit ini tidak mempunyai paket yang dapat dibuktikan dari pesanan terkait (packageId kosong atau tidak dikenal, atau tanggal terbit tak terbukti), jadi masa aksesnya belum terhitung dan tidak diklaim di sini.</p>`)}`
           : `<button class="btn gold block" data-publish ${allOk && !gateBlock ? '' : 'disabled'}>${ICONS.send} Terbitkan Undangan</button>
           ${gateBlock ? `<p class="hint" style="margin-top:10px;color:var(--err)">${esc(gateBlockText(gateBlock))}</p>` : allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
           </div>
@@ -2392,7 +2412,7 @@
       if (end && Date.now() > end) return {key:'expired', label:'Kedaluwarsa', cls:'exp', endsAt:end};
       if (inv.archived) return {key:'archived', label:'Arsip', cls:'arc', endsAt:end};
       if (inv.status !== 'published') return {key:'draft', label:'Draft', cls:'draft', endsAt:end};
-      return {key:'published', label:'Terbit', cls:'pub', endsAt:end, unresolved: !inv.packageId};
+      return {key:'published', label:'Terbit', cls:'pub', endsAt:end, unresolved: !end}; /* v17: "belum terselesaikan" = masa akses TIDAK terhitung — packageId kosong, packageId tidak dikenal, atau tanggal terbit tak terbukti, semuanya unresolved; tanggal berakhir hanya diklaim bila paket + publishedAt terbukti (endsAt terisi) */
     }
     function invExpired(inv){ return invStatus(inv).key === 'expired'; }
     /* Scope pemilik yang ketat: dashboard pelanggan HANYA memasukkan record
@@ -2424,7 +2444,7 @@
        pernah terbawa ke persona berikutnya; Admin pada persona baru
        harus mengaktifkannya lagi secara eksplisit. Fungsi yang sama
        dipanggil handler ganti persona DAN uji fixture. */
-    function kiRevokeAdminGrant(){ try { window.__kiAdminWrite = false; } catch(e){} }
+    function kiRevokeAdminGrant(){ try { window.__kiAdminWrite = false; window.__kiGrantGen = (window.__kiGrantGen || 0) + 1; } catch(e){} } /* v17: generasi grant ikut dinaikkan — timer autosave yang dijadwalkan sebelum pencabutan/perubahan persona menjadi gugur dan tidak menulis walau grant diaktifkan lagi sesudahnya */
     /* Desainer yang SEDANG AKTIF (persona demo desainer): workspace dan
        semua handler tulis Desainer dibatasi ke proyek yang assignee-nya
        adalah desainer aktif ini — bukan gabungan semua desainer. */
@@ -2496,6 +2516,43 @@
       const m = KI_SVC_PROGRESS[role];
       return !!(m && (m[from] || []).indexOf(to) >= 0);
     }
+    /* Keputusan PELEPASAN desainer (unassign) menurut state machine
+       layanan (v17) — dipakai handler penugasan DAN uji fixture:
+       - 'Assigned' -> boleh dilepas; status kembali ke 'Paid' bila bukti
+         pembayaran Success yang tertaut ketat (linkedSuccessPayment)
+         terbukti untuk proyek ini, selain itu ke 'New'.
+       - 'New'/'Paid' -> boleh dilepas; status tidak berubah (proyek
+         memang belum berjalan, belum ada kerja yang kehilangan pemilik).
+       - Berjalan ('In Progress'/'Review'/'Revision') dan terminal
+         ('Approved'/'Published'/'Completed') -> DITOLAK: melepas desainer
+         dari proyek berjalan/terminal meninggalkan status tanpa pemilik
+         kerja yang tidak konsisten; ganti desainer lewat penugasan ulang. */
+    function kiSvcUnassignDecision(s, orders, pays){
+      if (!s) return {ok:false, toStatus:null};
+      if (s.status === 'Assigned'){
+        const lo = s.orderId ? (orders || []).find(x => x.id === s.orderId) : null;
+        const proven = !!(lo && linkedSuccessPayment(lo, s.invitationId || lo.invitationId, pays));
+        return {ok:true, toStatus: proven ? 'Paid' : 'New'};
+      }
+      if (s.status === 'New' || s.status === 'Paid') return {ok:true, toStatus:s.status};
+      return {ok:false, toStatus:null};
+    }
+    /* Keputusan PENEGAK muat-ulang untuk record pasca-penugasan (v17) —
+       dipakai IIFE enforceServicePaidGate DAN uji fixture. Status
+       berjalan/terminal TIDAK PERNAH diturunkan diam-diam saat reload.
+       Penurunan otomatis hanya berlaku untuk 'Assigned' warisan lama yang
+       melewati gerbang pembayaran (kerja belum dimulai): ke 'Paid' bila
+       pembayaran terbukti Success, selain itu ke 'New' sambil melepas
+       desainer yang penugasannya belum sah. */
+    function kiSvcGateDecision(s, orders, pays){
+      const POST = ['Assigned','In Progress','Review','Revision','Approved','Published','Completed'];
+      if (!s || POST.indexOf(s.status) < 0) return {action:'keep'};
+      const o = s.orderId ? (orders || []).find(x => x.id === s.orderId) : null;
+      const paidOk = !!(o && linkedSuccessPayment(o, s.invitationId || o.invitationId, pays));
+      if (paidOk && s.designerId) return {action:'keep'};
+      if (s.status !== 'Assigned') return {action:'keep'};
+      return {action:'downgrade', toStatus: paidOk ? 'Paid' : 'New', releaseDesigner: !paidOk};
+    }
     function svcGuard(s){
       if (!s) return false;
       if (S2.role === 'customer') { if (s.customerId === CURRENT_USER) return true; toast('Akses ditolak: proyek ini milik akun lain — perubahan ditolak.', true); return false; }
@@ -2561,6 +2618,40 @@
       (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments)) proven.add(o.packageId); });
       return proven.size === 1 ? Array.from(proven)[0] : null;
     }
+    /* Inti rollback pembayaran (v17) — dipakai handler pay-result DAN uji
+       fixture. Mengembalikan orders/payments/services/activity/
+       notifications ke snapshot pra-tulis dan menulisnya kembali satu per
+       satu, lalu memulihkan packageId undangan dari snapshot. Mengembalikan
+       true HANYA bila SETIAP penulisan pemulihan berhasil — termasuk
+       persistensi packageId; satu kegagalan saja -> false, dan pemanggil
+       wajib melaporkannya sebagai rollback gagal (tidak diklaim pulih).
+       saveFn dapat disuntikkan fixture untuk mensimulasikan kegagalan
+       simpan awal dan kegagalan rollback secara terpisah. */
+    function kiRollbackPayment(rbSnap, persistInvFn, saveFn){
+      const sv = saveFn || saveColl;
+      S2.orders = rbSnap.orders; S2.payments = rbSnap.payments; S2.services = rbSnap.services; S2.activity = rbSnap.activity; S2.notifications = rbSnap.notifications;
+      let ok = sv('orders'); ok = sv('payments') && ok; ok = sv('services') && ok; ok = sv('activity') && ok; ok = sv('notifications') && ok;
+      const ivRb = S.invitations.find(i => i.id === rbSnap.invId);
+      if (ivRb && rbSnap.invPkg !== undefined){ ivRb.packageId = rbSnap.invPkg; ok = persistInvFn(ivRb) && ok; }
+      return ok;
+    }
+    /* Snapshot & pemulihan RSVP (v17) — dipakai handler submit RSVP DAN
+       uji fixture. Snapshot mencakup SETIAP field yang dapat berubah di
+       jalur submit, TERMASUK nama tamu dan nama pada record RSVP:
+       - kiRsvpIsChanged: dedupe hanya untuk respons yang identik PENUH
+         (nama + status + jumlah + pesan akhir); perubahan nama saja
+         adalah perubahan sah yang WAJIB tersimpan, bukan dedupe.
+       - kiRsvpRestoreGuest/kiRsvpRestoreRsvp: rollback mengembalikan
+         semua field snapshot, nama termasuk — tidak ada sisa parsial. */
+    function kiRsvpIsChanged(gPrev, prev, next){
+      if (!prev) return true;
+      if (prev.status !== next.status || prev.count !== next.count || prev.message !== next.message) return true;
+      if ((prev.name || '') !== (next.name || '')) return true;
+      if (gPrev && (gPrev.name || '') !== (next.name || '')) return true;
+      return false;
+    }
+    function kiRsvpRestoreGuest(g, gPrev){ if (!g || !gPrev) return; g.name = gPrev.name; g.rsvpStatus = gPrev.rsvpStatus; g.attendees = gPrev.attendees; }
+    function kiRsvpRestoreRsvp(r, prev){ if (!r || !prev) return; r.name = prev.name; r.status = prev.status; r.count = prev.count; r.message = prev.message; r.at = prev.at; }
     /* Jalur publikasi Stage 2 (halaman pembayaran & proyek desain):
        hasil autosave DAN persistensi publikasi diperiksa — sukses hanya
        diklaim bila keduanya berhasil; gagal -> error ditampilkan,
@@ -2676,7 +2767,15 @@
        (8) identitas stabil RSVP tanpa kode, (9) transisi layanan,
        (10) konsistensi seed + aturan multi-order se-paket,
        (11) siklus hidup grant Admin (tanpa/dengan izin, tersimpan
-       setelah baca-ulang, pencabutan saat persona/peran berubah). */
+       setelah baca-ulang, pencabutan saat persona/peran berubah),
+       (12) autosave tertunda vs pencabutan grant/perubahan peran
+       (gerbang penembakan kiFireAutosave yang sama dengan timer nyata),
+       (13) RSVP: dedupe & rollback yang mencakup NAMA,
+       (14) rollback pembayaran: hasil pemulihan packageId diperiksa,
+       kegagalan simpan vs kegagalan rollback terpisah,
+       (15) state machine unassign + konsistensi status setelah reload,
+       (16) badge paket Admin: packageId kosong/tidak dikenal =
+       belum terselesaikan; tanggal berakhir hanya bila terbukti. */
     function kiFixtureTests(){
       const mk = fail => { const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
         const reads = {};
@@ -2818,6 +2917,101 @@
         S2.role = roleBak3;
         try { window.__kiAdminWrite = grantBak3 === true; } catch(e){}
       } catch(e){ out.push({name:'Uji siklus hidup grant Admin (tanpa/dengan izin, reload, pencabutan)', pass:false}); }
+      /* (12) Autosave tertunda vs pencabutan grant (v17): gerbang
+         penembakan yang SAMA dengan timer nyata (kiFireAutosave) —
+         persistensi disuntikkan sebagai stub disposable; izin dinilai
+         ulang pada SAAT penulisan, bukan hanya saat penjadwalan. */
+      try {
+        const roleBak4 = S2.role;
+        let grantBak4 = null; try { grantBak4 = window.__kiAdminWrite === true; } catch(e){}
+        const fxInvAuto = {id:'fx-inv-auto', ownerId:'cust-2', title:'Fixture Autosave'};
+        const writes = [];
+        const stubPersist = inv => { writes.push(inv.id); return true; };
+        S2.role = 'admin'; kiRevokeAdminGrant();
+        try { window.__kiAdminWrite = true; } catch(e){}
+        const genAtSchedule = kiGrantGen();
+        out.push({name:'Autosave: timer dijadwalkan SAAT grant aktif & izin tidak berubah -> menulis saat timer menyala', pass: kiFireAutosave(fxInvAuto, genAtSchedule, stubPersist) === true && writes.length === 1});
+        kiRevokeAdminGrant(); /* grant dicabut SEBELUM timer menyala */
+        out.push({name:'Autosave: grant DICABUT sebelum timer menyala -> timer TIDAK menulis (izin dinilai ulang saat penulisan + generasi berubah)', pass: kiFireAutosave(fxInvAuto, genAtSchedule, stubPersist) === false && writes.length === 1});
+        try { window.__kiAdminWrite = true; } catch(e){} /* grant baru untuk persona berikutnya */
+        out.push({name:'Autosave: grant BARU sesudah pencabutan TIDAK menghidupkan timer lama (generasi berbeda)', pass: kiFireAutosave(fxInvAuto, genAtSchedule, stubPersist) === false && writes.length === 1});
+        const genBaru = kiGrantGen();
+        out.push({name:'Autosave: timer BARU pada generasi grant yang aktif menulis normal', pass: kiFireAutosave(fxInvAuto, genBaru, stubPersist) === true && writes.length === 2});
+        S2.role = 'customer'; /* peran berganti sebelum timer menyala */
+        out.push({name:'Autosave: PERAN berubah sebelum timer menyala -> predikat persistensi gugur, tidak menulis', pass: kiFireAutosave(fxInvAuto, genBaru, stubPersist) === false && writes.length === 2});
+        S2.role = roleBak4;
+        try { window.__kiAdminWrite = grantBak4 === true; } catch(e){}
+      } catch(e){ out.push({name:'Uji autosave tertunda vs pencabutan grant (kiFireAutosave)', pass:false}); }
+      /* (13) RSVP: snapshot, dedupe, dan rollback mencakup NAMA (v17) —
+         fungsi yang sama dengan handler submit (kiRsvpIsChanged,
+         kiRsvpRestoreGuest, kiRsvpRestoreRsvp) pada record sintetis. */
+      try {
+        const gFx = {id:'fx-g1', name:'Nama Lama', rsvpStatus:'Hadir', attendees:2};
+        const rFx = {id:'fx-r1', guestId:'fx-g1', name:'Nama Lama', status:'Hadir', count:2, message:'Siap hadir', at:111};
+        const gPrevFx = {name:gFx.name, rsvpStatus:gFx.rsvpStatus, attendees:gFx.attendees};
+        const prevFx = {name:rFx.name, status:rFx.status, count:rFx.count, message:rFx.message, at:rFx.at};
+        out.push({name:'RSVP: submit identik PENUH (nama + status + jumlah + pesan sama) -> dedupe, tidak ada penulisan ulang', pass: kiRsvpIsChanged(gPrevFx, prevFx, {name:'Nama Lama', status:'Hadir', count:2, message:'Siap hadir'}) === false});
+        out.push({name:'RSVP: perubahan NAMA saja -> BUKAN dedupe (perubahan sah yang wajib tersimpan)', pass: kiRsvpIsChanged(gPrevFx, prevFx, {name:'Nama Baru', status:'Hadir', count:2, message:'Siap hadir'}) === true});
+        gFx.name = 'Nama Baru'; gFx.rsvpStatus = 'Tidak Hadir'; gFx.attendees = 0;
+        rFx.name = 'Nama Baru'; rFx.status = 'Tidak Hadir'; rFx.count = 0; rFx.message = ''; rFx.at = 222;
+        kiRsvpRestoreGuest(gFx, gPrevFx); kiRsvpRestoreRsvp(rFx, prevFx);
+        out.push({name:'RSVP: rollback memulihkan NAMA tamu & NAMA record RSVP beserta status/jumlah/pesan/waktu — tanpa sisa parsial', pass: gFx.name === 'Nama Lama' && gFx.rsvpStatus === 'Hadir' && gFx.attendees === 2 && rFx.name === 'Nama Lama' && rFx.status === 'Hadir' && rFx.count === 2 && rFx.message === 'Siap hadir' && rFx.at === 111});
+      } catch(e){ out.push({name:'Uji RSVP nama (dedupe + rollback)', pass:false}); }
+      /* (14) Rollback pembayaran (v17): inti yang sama dengan handler
+         pay-result (kiRollbackPayment) pada koleksi sintetis yang
+         ditukar sementara — hasil pemulihan SETIAP koleksi diperiksa,
+         packageId termasuk; kegagalan per koleksi dan kegagalan
+         packageId diuji TERPISAH. Koleksi nyata dipulihkan sesudahnya. */
+      try {
+        const keepCols = {orders:S2.orders, payments:S2.payments, services:S2.services, activity:S2.activity, notifications:S2.notifications};
+        const fxInvRb = {id:'fx-inv-rbf', packageId:'premium'};
+        S.invitations.push(fxInvRb);
+        const snapFx = {invId:'fx-inv-rbf', invPkg:'premium', orders:[{id:'fx-o-keep'}], payments:[{id:'fx-p-keep'}], services:[], activity:[], notifications:[]};
+        S2.orders = [{id:'fx-o-mut'}]; S2.payments = [{id:'fx-p-mut'}]; S2.services = [{id:'fx-s-mut'}]; S2.activity = [{id:'fx-a-mut'}]; S2.notifications = [{id:'fx-n-mut'}];
+        fxInvRb.packageId = 'basic'; /* packageId tertimpa oleh jalur yang gagal */
+        const rbAllOk = kiRollbackPayment(snapFx, () => true, () => true);
+        out.push({name:'Pembayaran: rollback dengan SEMUA penulisan pulih -> dilaporkan sukses, koleksi & packageId kembali persis ke snapshot', pass: rbAllOk === true && S2.orders[0].id === 'fx-o-keep' && S2.payments[0].id === 'fx-p-keep' && fxInvRb.packageId === 'premium'});
+        S2.orders = [{id:'fx-o-mut'}]; fxInvRb.packageId = 'basic';
+        const rbPkgFail = kiRollbackPayment(snapFx, () => false, () => true);
+        out.push({name:'Pembayaran: pemulihan packageId GAGAL -> rollback dilaporkan GAGAL (rbOk=false), tidak diklaim pulih walau koleksi lain berhasil', pass: rbPkgFail === false});
+        S2.payments = [{id:'fx-p-mut'}];
+        const rbCollFail = kiRollbackPayment(snapFx, () => true, nm => nm !== 'payments');
+        out.push({name:'Pembayaran: satu koleksi (payments) GAGAL dipulihkan -> rbOk=false, terpisah dari kegagalan packageId', pass: rbCollFail === false});
+        S2.orders = keepCols.orders; S2.payments = keepCols.payments; S2.services = keepCols.services; S2.activity = keepCols.activity; S2.notifications = keepCols.notifications;
+        S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-rbf');
+      } catch(e){ out.push({name:'Uji rollback pembayaran (kiRollbackPayment)', pass:false}); }
+      /* (15) State machine unassign + konsistensi setelah reload (v17):
+         keputusan yang sama dengan handler penugasan
+         (kiSvcUnassignDecision) dan penegak muat-ulang
+         (kiSvcGateDecision) pada record sintetis. */
+      try {
+        const oFxSvc = {id:'fx-o-svc', invitationId:'fx-inv-svc', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
+        const pFxSvc = {id:'fx-p-svc', orderId:'fx-o-svc', invitationId:'fx-inv-svc', status:'Success'};
+        const svcFx = st => ({id:'fx-svc-u', number:'REQ-FX', status:st, designerId:'des-1', orderId:'fx-o-svc', invitationId:'fx-inv-svc'});
+        const dAsg = kiSvcUnassignDecision(svcFx('Assigned'), [oFxSvc], [pFxSvc]);
+        out.push({name:'Unassign: dari Assigned + bukti Success tertaut ketat -> boleh, status kembali ke Paid', pass: dAsg.ok === true && dAsg.toStatus === 'Paid'});
+        const dAsgNoPay = kiSvcUnassignDecision(svcFx('Assigned'), [Object.assign({}, oFxSvc, {paymentStatus:'Pending'})], [Object.assign({}, pFxSvc, {status:'Pending'})]);
+        out.push({name:'Unassign: dari Assigned TANPA bukti Success tertaut -> boleh, kembali ke New (Paid tidak ditebak)', pass: dAsgNoPay.ok === true && dAsgNoPay.toStatus === 'New'});
+        out.push({name:'Unassign: proyek BERJALAN (In Progress/Review/Revision) -> DITOLAK di state machine', pass: ['In Progress','Review','Revision'].every(st => kiSvcUnassignDecision(svcFx(st), [oFxSvc], [pFxSvc]).ok === false)});
+        out.push({name:'Unassign: proyek TERMINAL (Approved/Published/Completed) -> DITOLAK di state machine', pass: ['Approved','Published','Completed'].every(st => kiSvcUnassignDecision(svcFx(st), [oFxSvc], [pFxSvc]).ok === false)});
+        out.push({name:'Reload: hasil unassign sah (Paid, tanpa desainer) KONSISTEN — penegak muat-ulang tidak mengubahnya', pass: kiSvcGateDecision({status:'Paid', designerId:null, orderId:'fx-o-svc', invitationId:'fx-inv-svc'}, [oFxSvc], [pFxSvc]).action === 'keep'});
+        out.push({name:'Reload: status BERJALAN tanpa desainer TIDAK diturunkan diam-diam ke Paid/New oleh penegak', pass: kiSvcGateDecision({status:'In Progress', designerId:null, orderId:'fx-o-svc', invitationId:'fx-inv-svc'}, [oFxSvc], [pFxSvc]).action === 'keep' && kiSvcGateDecision({status:'Completed', designerId:null, orderId:'fx-o-svc', invitationId:'fx-inv-svc'}, [oFxSvc], [pFxSvc]).action === 'keep'});
+        const dLegacy = kiSvcGateDecision({status:'Assigned', designerId:'des-1', orderId:null, invitationId:null}, [], []);
+        out.push({name:'Reload: Assigned warisan TANPA bukti pembayaran tetap ditegakkan -> New + desainer dilepas (satu-satunya penurunan otomatis)', pass: dLegacy.action === 'downgrade' && dLegacy.toStatus === 'New' && dLegacy.releaseDesigner === true});
+      } catch(e){ out.push({name:'Uji state machine unassign + konsistensi reload', pass:false}); }
+      /* (16) Badge paket Admin (v17): fungsi status yang sama dengan
+         daftar Admin (invStatus/invAccessEndsAt) pada undangan sintetis. */
+      try {
+        const nowFx = Date.now();
+        const invEmptyPkg = {status:'published', archived:false, packageId:'', publishedAt:nowFx - 864e5, slug:'fx-a'};
+        const invUnknownPkg = {status:'published', archived:false, packageId:'paket-ngaco', publishedAt:nowFx - 864e5, slug:'fx-b'};
+        const invKnownPkg = {status:'published', archived:false, packageId:'premium', publishedAt:nowFx - 864e5, slug:'fx-c'};
+        out.push({name:'Badge Admin: undangan terbit dengan packageId KOSONG -> belum terselesaikan', pass: invStatus(invEmptyPkg).unresolved === true});
+        out.push({name:'Badge Admin: packageId TIDAK DIKENAL -> belum terselesaikan dan tanggal berakhir TIDAK diklaim (endsAt kosong)', pass: invStatus(invUnknownPkg).unresolved === true && invStatus(invUnknownPkg).endsAt == null});
+        const stKnownFx = invStatus(invKnownPkg);
+        out.push({name:'Badge Admin: paket dikenal + tanggal terbit terbukti -> terselesaikan, tanggal berakhir terhitung (Premium +6 bulan)', pass: stKnownFx.unresolved === false && typeof stKnownFx.endsAt === 'number' && stKnownFx.endsAt > nowFx});
+        out.push({name:'Badge Admin: paket dikenal TAPI tanggal terbit tidak terbukti -> tetap belum terselesaikan', pass: invStatus({status:'published', archived:false, packageId:'premium', publishedAt:null, slug:'fx-d'}).unresolved === true});
+      } catch(e){ out.push({name:'Uji badge paket Admin (invStatus)', pass:false}); }
       return out;
     }
     function gateBlockText(blk){
@@ -3094,26 +3288,23 @@
       });
       if (changed) saveColl('services');
     })();
-    /* Penegak alur New → Paid → Assigned untuk record lama (idempoten):
-       proyek yang terlanjur berstatus Assigned TANPA pesanan terkait
-       berstatus Success (termasuk seed lama REQ-2026-203 yang Assigned
-       tanpa orderId) melompat melewati Paid — kembalikan ke New dan lepas
-       desainernya. Penugasan baru hanya bisa terjadi lewat gerbang di
-       handler penugasan setelah pembayaran Success terverifikasi. */
+    /* Penegak alur New → Paid → Assigned untuk record lama (idempoten),
+       keputusannya lewat kiSvcGateDecision yang sama dengan uji fixture:
+       proyek warisan berstatus Assigned TANPA pembayaran Success yang
+       terhubung (termasuk seed lama REQ-2026-203 yang Assigned tanpa
+       orderId) melompat melewati Paid — kembalikan ke New dan lepas
+       desainernya. Status BERJALAN/TERMINAL tidak pernah diturunkan
+       diam-diam saat reload (v17): proyek yang sudah mulai kerja tidak
+       kehilangan tahapnya hanya karena dimuat ulang. Penugasan baru
+       hanya bisa terjadi lewat gerbang di handler penugasan setelah
+       pembayaran Success terverifikasi. */
     (function enforceServicePaidGate(){
-      const POST_ASSIGN = ['Assigned','In Progress','Review','Revision','Approved','Published','Completed'];
       let changed = false;
       S2.services.forEach(s => {
-        if (!POST_ASSIGN.includes(s.status)) return;
-        const o = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null;
-        const paidOk = !!(o && linkedSuccessPayment(o, s.invitationId || o.invitationId));
-        if (paidOk && s.designerId) return; /* alur sah: Paid terverifikasi + desainer tertugaskan */
-        /* Status sesudah penugasan tanpa pembayaran Success yang terhubung
-           (atau tanpa desainer) melompati gerbang — turunkan: ke Paid bila
-           pembayaran terkait memang Success, selain itu ke New, dan lepas
-           desainernya bila pembayaran tidak lolos. */
-        s.status = paidOk ? 'Paid' : 'New';
-        if (!paidOk) s.designerId = null;
+        const d = kiSvcGateDecision(s, S2.orders, S2.payments);
+        if (d.action !== 'downgrade') return;
+        s.status = d.toStatus;
+        if (d.releaseDesigner) s.designerId = null;
         s.updatedAt = Date.now(); changed = true;
       });
       if (changed) saveColl('services');
@@ -3600,7 +3791,7 @@
     }
     function adminSimple(tab){
       if (tab === 'pelanggan') return `<div class="card"><h2>Pelanggan & Akun Demo</h2><p class="sub">Akun-akun demo platform, termasuk peran admin dan desainer.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nama</th><th>Email</th><th>Peran</th><th>Undangan</th><th>Pesanan</th><th>Bergabung</th></tr></thead><tbody>${S2.users.map(u => `<tr><td data-l="Nama"><b>${esc(u.name)}</b></td><td data-l="Email">${esc(u.email)}</td><td data-l="Peran">${esc(u.role)}</td><td data-l="Undangan">${S.invitations.filter(i => i.ownerId === u.id).length}</td><td data-l="Pesanan">${S2.orders.filter(o => o.customerId === u.id).length}</td><td data-l="Bergabung">${new Date(u.joined).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}</td></tr>`).join('')}</tbody></table></div></div>`;
-      if (tab === 'undangan') return `<div class="card"><h2>Semua Undangan</h2><p class="sub">Record yang sama dengan milik pelanggan — perubahan di Builder pelanggan langsung tercermin di sini.</p><div class="list-rows">${S.invitations.map(inv => { const st = invStatus(inv); const unres = inv.status === 'published' && !inv.packageId; return `<div class="lrow"><div class="grow"><b>${esc(inv.title)}</b> <span class="pill ${st.cls}">${st.label}</span>${unres ? ' <span class="pill unres">Paket belum terselesaikan</span>' : ''}<div class="mut">${esc(userById(inv.ownerId).name)} · ${esc(tplOf(inv).name)} v${inv.templateVersion}.0 · ${guestsOf(inv.id).length} tamu · ${rsvpsOf(inv.id).length} RSVP${inv.slug ? ' · /u/' + esc(inv.slug) : ''}${unres ? ' · masa akses belum terhitung — tidak ada paket yang terbukti dari pesanan terkait' : ''}</div></div><a class="btn ghost sm" href="#/studio/${inv.id}">Lihat Builder (Admin)</a></div>`; }).join('')}</div></div>`;
+      if (tab === 'undangan') return `<div class="card"><h2>Semua Undangan</h2><p class="sub">Record yang sama dengan milik pelanggan — perubahan di Builder pelanggan langsung tercermin di sini.</p><div class="list-rows">${S.invitations.map(inv => { const st = invStatus(inv); const unres = inv.status === 'published' && !!st.unresolved; return `<div class="lrow"><div class="grow"><b>${esc(inv.title)}</b> <span class="pill ${st.cls}">${st.label}</span>${unres ? ' <span class="pill unres">Paket belum terselesaikan</span>' : ''}<div class="mut">${esc(userById(inv.ownerId).name)} · ${esc(tplOf(inv).name)} v${inv.templateVersion}.0 · ${guestsOf(inv.id).length} tamu · ${rsvpsOf(inv.id).length} RSVP${inv.slug ? ' · /u/' + esc(inv.slug) : ''}${unres ? ' · masa akses belum terhitung — tidak ada paket yang terbukti dari pesanan terkait' : (inv.status === 'published' && st.endsAt ? ' · masa aktif paket berakhir ' + new Date(st.endsAt).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'}) : '')}</div></div><a class="btn ghost sm" href="#/studio/${inv.id}">Lihat Builder (Admin)</a></div>`; }).join('')}</div></div>`;
       if (tab === 'pesanan') return `<div class="card"><h2>Semua Pesanan</h2><p class="sub">Kelola status pesanan lintas pelanggan. Status pembayaran tetap terpisah dan hanya berubah lewat simulasi pembayaran.</p><div class="list-rows">${S2.orders.slice().sort((a,b) => b.createdAt - a.createdAt).map(o => orderCard(o, true)).join('')}</div></div>`;
       if (tab === 'pembayaran') return `<div class="card"><h2>Pembayaran (Simulasi)</h2><p class="sub">Semua record pembayaran simulasi beserta pesanan induknya.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Kode</th><th>Pesanan</th><th>Metode</th><th>Jumlah</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${S2.payments.slice().sort((a,b) => b.createdAt - a.createdAt).map(p => { const o = S2.orders.find(x => x.id === p.orderId); return `<tr><td data-l="Kode">${esc(p.code)}</td><td data-l="Pesanan">${esc(o ? o.number : '—')}</td><td data-l="Metode">${esc(p.method)}</td><td data-l="Jumlah">${rp(p.amount)}</td><td data-l="Status">${payPill(p.status)}</td><td data-l="Waktu">${new Date(p.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</td></tr>`; }).join('')}</tbody></table></div></div>`;
       if (tab === 'layanan') return `<div class="card"><h2>Antrean Layanan Bantuan</h2><p class="sub">Tugaskan desainer dan pantau alur New → Paid → Assigned → In Progress → Review → Revision → Approved → Published → Completed pada record yang sama dengan milik pelanggan.</p>
@@ -3909,7 +4100,7 @@
         /* Snapshot pra-tulis SEMUA koleksi yang disentuh jalur ini: bila
            satu saja penyimpanan gagal, seluruhnya di-rollback dan ditulis
            kembali ke storage — dibuktikan konsisten setelah reload. */
-        const rbSnap = { orders: structuredClone(S2.orders), payments: structuredClone(S2.payments), services: structuredClone(S2.services), activity: S2.activity.slice(), notifications: S2.notifications.slice(), invPkg: (() => { const iv = S.invitations.find(i => i.id === o.invitationId); return iv ? iv.packageId : undefined; })() };
+        const rbSnap = { invId: o.invitationId, orders: structuredClone(S2.orders), payments: structuredClone(S2.payments), services: structuredClone(S2.services), activity: S2.activity.slice(), notifications: S2.notifications.slice(), invPkg: (() => { const iv = S.invitations.find(i => i.id === o.invitationId); return iv ? iv.packageId : undefined; })() };
         let okAll = true;
         if (pay && pay.status !== 'Pending'){
           /* Perlakuan expiry/gagal yang KONSISTEN di semua jalur: record
@@ -3940,12 +4131,14 @@
         }
         okAll = saveColl('orders') && okAll;
         if (!okAll){
-          /* ROLLBACK TOTAL: kembalikan semua koleksi ke snapshot pra-tulis
-             dan tulis kembali ke storage, supaya setelah reload pun tidak
-             ada state parsial (pesanan berubah tapi pembayaran tidak, dst). */
-          S2.orders = rbSnap.orders; S2.payments = rbSnap.payments; S2.services = rbSnap.services; S2.activity = rbSnap.activity; S2.notifications = rbSnap.notifications;
-          const ivRb = S.invitations.find(i => i.id === o.invitationId); if (ivRb && rbSnap.invPkg !== undefined){ ivRb.packageId = rbSnap.invPkg; persistInvitationNow(ivRb); }
-          let rbOk = saveColl('orders'); rbOk = saveColl('payments') && rbOk; rbOk = saveColl('services') && rbOk; rbOk = saveColl('activity') && rbOk; rbOk = saveColl('notifications') && rbOk;
+          /* ROLLBACK TOTAL lewat inti yang sama dengan uji fixture
+             (kiRollbackPayment): semua koleksi dikembalikan ke snapshot
+             pra-tulis dan ditulis kembali ke storage — TERMASUK pemulihan
+             packageId undangan, yang hasilnya ikut diperiksa. rbOk=false
+             berarti satu saja penulisan pemulihan gagal (koleksi mana pun,
+             packageId termasuk) dan dilaporkan apa adanya, supaya setelah
+             reload pun tidak ada state parsial yang diklaim pulih. */
+          const rbOk = kiRollbackPayment(rbSnap, persistInvitationNow);
           toast(rbOk ? 'Pembayaran GAGAL disimpan di perangkat ini — seluruh perubahan di-rollback, tidak ada state parsial. Muat ulang halaman untuk membuktikan status kembali seperti semula.' : 'Pembayaran GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa status pesanan/pembayaran sebelum mencoba lagi.', true);
         }
         rerender2(); return;
@@ -4171,14 +4364,19 @@
           s.designerId = asg.value;
           if (s.status === 'Paid' || (s.status === 'New' && isPaid)) s.status = 'Assigned';
         } else {
+          /* Pelepasan desainer mengikuti state machine layanan
+             (kiSvcUnassignDecision, fungsi yang sama dengan uji fixture):
+             hanya sah dari Assigned — kembali ke Paid bila bukti
+             pembayaran Success TERTAUT KETAT terbukti, selain itu ke
+             New — atau dari New/Paid tanpa perubahan status. Proyek
+             BERJALAN (In Progress/Review/Revision) dan TERMINAL
+             (Approved/Published/Completed) DITOLAK di handler: tidak ada
+             lagi status berjalan tanpa desainer yang lalu diturunkan
+             diam-diam ke Paid/New saat reload. */
+          const un = kiSvcUnassignDecision(s, S2.orders, S2.payments);
+          if (!un.ok){ toast('Pelepasan desainer ditolak di handler: proyek ' + s.number + ' berstatus ' + s.status + ' — desainer tidak dapat dilepas dari proyek yang sedang berjalan atau sudah selesai. Ganti desainer lewat penugasan ulang bila perlu; status proyek tidak berubah.', true); rerender2(); return; }
           s.designerId = null;
-          /* Melepas desainer dari proyek Assigned mengembalikannya ke Paid
-             bila pembayaran terkait sudah Success, atau ke New bila belum —
-             status tidak boleh tertinggal di Assigned tanpa desainer. */
-          if (s.status === 'Assigned'){
-            const lo = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null;
-            s.status = (lo && lo.paymentStatus === 'Success') ? 'Paid' : 'New';
-          }
+          s.status = un.toStatus;
         }
         s.updatedAt = Date.now();
         /* Hasil simpan assignment DIPERIKSA: satu penulisan gagal ->
@@ -4383,22 +4581,25 @@
          gagal, perubahan in-memory dibatalkan, error ditampilkan, dan TIDAK
          ada konfirmasi sukses maupun state palsu yang tertinggal. */
       const guestCreated = !g;
-      const gPrev = g ? {rsvpStatus:g.rsvpStatus, attendees:g.attendees} : null;
+      const gPrev = g ? {name:g.name, rsvpStatus:g.rsvpStatus, attendees:g.attendees} : null; /* v17: snapshot tamu mencakup NAMA — field apa pun yang dapat berubah di jalur ini harus dapat dipulihkan rollback */
       const actBefore = S2.activity.slice();
       const ntfBefore = S2.notifications.slice();
       let name = g ? g.name : typedName; /* nama kanonis dari record tamu yang stabil */
       let r = g ? S2.rsvps.find(x => x.guestId === g.id) : null;
       const rsvpCreated = !r;
-      const prev = r ? {status:r.status, count:r.count, message:r.message || '', at:r.at} : null;
+      const prev = r ? {name:r.name, status:r.status, count:r.count, message:r.message || '', at:r.at} : null; /* v17: snapshot RSVP mencakup NAMA record juga */
       /* Pesan: teks baru menggantikan; kotak kosong TIDAK menghapus ucapan
          lama — penghapusan ucapan hanya lewat centang eksplisit
          "Hapus ucapan saya" (clearMsg), dan itu tercatat sebagai perubahan. */
       const nextMessage = clearMsg ? '' : (message ? message : (prev ? prev.message : ''));
-      /* DEDUPE dihitung SEBELUM mutasi apa pun: submit yang identik dengan
-         respons tersimpan (status, jumlah, pesan akhir sama) tidak menulis
-         ulang record, TIDAK mengubah timestamp r.at, tidak menambah
-         aktivitas/notifikasi, dan tidak menyentuh koleksi tamu. */
-      const changed = !prev || prev.status !== status || prev.count !== count || prev.message !== nextMessage;
+      /* DEDUPE dihitung SEBELUM mutasi apa pun: submit yang identik PENUH
+         dengan respons tersimpan (nama akhir, status, jumlah, pesan akhir
+         sama — kiRsvpIsChanged) tidak menulis ulang record, TIDAK mengubah
+         timestamp r.at, tidak menambah aktivitas/notifikasi, dan tidak
+         menyentuh koleksi tamu. Perubahan NAMA saja (lewat identitas stabil
+         perangkat) adalah perubahan sah dan TIDAK didedupe (v17). */
+      const nextName = (g && webStableId && g.id === webStableId) ? typedName : name;
+      const changed = kiRsvpIsChanged(gPrev, prev, {name:nextName, status, count, message:nextMessage});
       if (!changed){
         const zone0 = form.closest('[data-rsvp-zone]');
         if (zone0) zone0.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}});
@@ -4438,9 +4639,9 @@
       if (!(okGuests && okRsvps && okAct && okNtf)){
         /* GAGAL SIMPAN → rollback total ke keadaan sebelum submit. */
         if (guestCreated) S2.guests = S2.guests.filter(x => x.id !== g.id);
-        else { g.rsvpStatus = gPrev.rsvpStatus; g.attendees = gPrev.attendees; }
+        else kiRsvpRestoreGuest(g, gPrev); /* v17: NAMA tamu ikut dipulihkan, bukan hanya status/jumlah */
         if (rsvpCreated) S2.rsvps = S2.rsvps.filter(x => x.id !== r.id);
-        else { r.status = prev.status; r.count = prev.count; r.message = prev.message; r.at = prev.at; }
+        else kiRsvpRestoreRsvp(r, prev); /* v17: NAMA record RSVP ikut dipulihkan */
         S2.activity = actBefore; S2.notifications = ntfBefore;
         /* Rollback ditulis kembali ke storage untuk KEEMPAT koleksi —
            bukan hanya in-memory — agar tidak ada state parsial yang

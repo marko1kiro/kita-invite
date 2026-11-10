@@ -201,7 +201,7 @@
       const hold21 = inv ? kiOrderTierHold(o, inv) : {held:false, expected:null, unresolved:false};
       const held21 = hold21.held;
       const holdReason = held21 ? (hold21.unresolved ? 'tier template undangan ini tidak dapat dibuktikan dari versi template yang dipakai' : 'pesanan memakai paket ' + o.packageName + ', tetapi undangan memakai template tier ' + (hold21.expected ? hold21.expected.name : '')) : '';
-      return `<div class="lrow"><div class="grow"><b>${esc(o.number)}</b> ${payPill(o.paymentStatus)} <span class="pill draft">${esc(o.status)}</span>${o.needsNewOrder || held21 ? ' <span class="pill exp">Perlu pesanan baru — paket tidak sesuai tier template</span>' : ''}
+      return `<div class="lrow"><div class="grow"><b>${esc(o.number)}</b> ${payPill(o.paymentStatus)} <span class="pill draft">${esc(o.status)}</span>${o.needsNewOrder || held21 ? ' <span class="pill exp wrap">Perlu pesanan baru — paket tidak sesuai tier template</span>' : ''}
         <div class="mut">${esc(inv ? inv.title : 'Undangan terhapus')} · Paket ${esc(o.packageName)} · ${new Date(o.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}</div>
         <div class="mut">Subtotal ${rp(o.price)}${o.discount ? ' · Diskon ' + esc(o.couponCode||'') + ' −' + rp(o.discount) : ''} · <b style="color:var(--ink)">Total ${rp(o.total)}</b> (harga paket tersimpan saat pesanan dibuat)</div>
         ${pays.length ? `<div class="mut">Pembayaran: ${pays.map(p => esc(p.method) + ' — ' + p.status).join(' · ')}</div>` : ''}
@@ -236,26 +236,32 @@
          kunci ini bukan sekadar tampilan. */
       const selInv = mine.find(i => i.id === CO.invId);
       const lockPkg = selInv ? kiTemplatePackage(selInv) : null;
+      /* v21.1 — FAIL CLOSED di tampilan: bila tier tidak terbukti
+         (lockPkg null), checkout TIDAK menampilkan paket seolah-olah
+         bisa dipesan — semua pilihan paket off, ringkasan "—", tombol
+         konfirmasi disabled. Handler co-confirm sudah menolak lewat
+         kiCheckoutValidate; ini lapisan tampilan yang sama. */
+      const tierUnresolved = !lockPkg;
       if (lockPkg && CO.pkgId !== lockPkg.id) CO.pkgId = lockPkg.id;
       const pkg = pkgById(CO.pkgId) || DB.packages[1];
       const disc = CO.coupon ? Math.round(pkg.price * CO.coupon.pct / 100) : 0;
       const METHODS = [['Virtual Account','Nomor VA dibuat otomatis untuk simulasi'],['QRIS','Kode QR simulasi di layar pembayaran'],['E-Wallet','Saldo dompet elektronik (simulasi)'],['Bank Transfer','Transfer manual dengan kode unik (simulasi)']];
       const inner = `<div class="wrap" style="padding-bottom:90px"><div class="s2-head"><div class="rule"><span>Checkout — Simulasi</span></div><h1>Pesan Paket Undangan</h1><p>Alur: pilih undangan → pilih paket → kupon → ringkasan → metode pembayaran → konfirmasi pesanan simulasi.</p></div>
       <div class="sim-banner">Ini <b>checkout simulasi</b>. Tidak ada pembayaran nyata yang diproses.</div>
-      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${lockPkg ? ' — ' + esc((kiInvTemplate(selInv) || {}).name || '') + ' (versi yang dipakai undangan ini) adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ''}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
+      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${lockPkg ? ' — ' + esc((kiInvTemplate(selInv) || {}).name || '') + ' (versi yang dipakai undangan ini) adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ' — <b style="color:var(--err)">tier template undangan ini tidak dapat dibuktikan dari versi template yang dipakai, jadi checkout DITAHAN sampai tier dapat dibuktikan.</b>'}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
         <div class="field"><label for="co-inv">Undangan</label><select class="input" id="co-inv">${mine.map(i => `<option value="${i.id}" ${i.id===CO.invId?'selected':''}>${esc(i.title)} — ${esc(tplOf(i).name)}</option>`).join('')}</select></div>
-        <div class="pkg-pick">${DB.packages.map(p => { const off = lockPkg && p.id !== lockPkg.id; const body = `<b>${esc(p.name)}</b><span class="amt2">${p.from ? '<small style="font-size:13px;font-family:var(--font-ui)">Mulai </small>' : ''}${rp(p.price)}</span><span style="font-size:13px;color:var(--ink-2)">${esc(p.note)}</span><ul>${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${off ? '<span style="font-size:12.5px;font-weight:700;color:var(--ink-3)">Tidak tersedia untuk tier template undangan ini</span>' : ''}`; return off ? `<div class="pkg-opt" style="opacity:.45" aria-disabled="true">${body}</div>` : `<button type="button" class="pkg-opt ${CO.pkgId===p.id?'on':''}" data-s2="co-pkg" data-id="${p.id}">${body}</button>`; }).join('')}</div>
+        <div class="pkg-pick">${DB.packages.map(p => { const off = tierUnresolved || (lockPkg && p.id !== lockPkg.id); const body = `<b>${esc(p.name)}</b><span class="amt2">${p.from ? '<small style="font-size:13px;font-family:var(--font-ui)">Mulai </small>' : ''}${rp(p.price)}</span><span style="font-size:13px;color:var(--ink-2)">${esc(p.note)}</span><ul>${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${off ? '<span style="font-size:12.5px;font-weight:700;color:var(--ink-3)">' + (tierUnresolved ? 'Tier template tidak dapat dibuktikan — checkout ditahan' : 'Tidak tersedia untuk tier template undangan ini') + '</span>' : ''}`; return off ? `<div class="pkg-opt" style="opacity:.45" aria-disabled="true">${body}</div>` : `<button type="button" class="pkg-opt ${CO.pkgId===p.id?'on':''}" data-s2="co-pkg" data-id="${p.id}">${body}</button>`; }).join('')}</div>
       </div>
       <div class="card"><h2>2 · Kupon & Ringkasan</h2>
         <div class="toolbar2"><input class="input" id="co-coupon" placeholder="Kode kupon, cth. HEMAT10" value="${esc(CO.couponCode)}" style="text-transform:uppercase"><button class="btn ghost" data-s2="co-coupon-apply">Pakai Kupon</button></div>
         ${CO.coupon ? `<p style="color:var(--ok);font-weight:700;font-size:14px">Kupon ${esc(CO.coupon.code)} aktif — diskon ${CO.coupon.pct}%.</p>` : '<p style="font-size:13.5px;color:var(--ink-3)">Kupon demo yang valid: HEMAT10 dan LAUNCH20.</p>'}
-        <div class="sum-row"><span>Paket ${esc(pkg.name)} untuk “${esc((mine.find(i => i.id === CO.invId) || {}).title || '')}”</span><span>${rp(pkg.price)}</span></div>
-        <div class="sum-row"><span>Diskon kupon</span><span>−${rp(disc)}</span></div>
-        <div class="sum-row total"><span>Total bayar (simulasi)</span><span>${rp(pkg.price - disc)}</span></div>
+        ${tierUnresolved ? `<div class="sum-row"><span>Paket belum dapat ditentukan — tier template tidak terbukti</span><span>—</span></div>` : `<div class="sum-row"><span>Paket ${esc(pkg.name)} untuk “${esc((mine.find(i => i.id === CO.invId) || {}).title || '')}”</span><span>${rp(pkg.price)}</span></div>`}
+        <div class="sum-row"><span>Diskon kupon</span><span>${tierUnresolved ? '—' : '−' + rp(disc)}</span></div>
+        <div class="sum-row total"><span>Total bayar (simulasi)</span><span>${tierUnresolved ? '—' : rp(pkg.price - disc)}</span></div>
       </div>
       <div class="card"><h2>3 · Metode Pembayaran (Simulasi)</h2>
         ${METHODS.map(m => `<button type="button" class="meth-opt ${CO.method===m[0]?'on':''}" data-s2="co-method" data-id="${esc(m[0])}"><span>${esc(m[0])}<small>${esc(m[1])}</small></span></button>`).join('')}
-        <button class="btn gold block" data-s2="co-confirm" style="margin-top:8px">Konfirmasi Pesanan Simulasi — ${rp(pkg.price - disc)}</button>
+        <button class="btn gold block" data-s2="co-confirm" style="margin-top:8px"${tierUnresolved ? ' disabled' : ''}>${tierUnresolved ? 'Checkout Ditahan — Tier Template Tidak Dapat Dibuktikan' : 'Konfirmasi Pesanan Simulasi — ' + rp(pkg.price - disc)}</button>
         <p class="hint" style="margin-top:10px">Setelah konfirmasi, Anda masuk ke layar pembayaran simulasi dengan status awal <b>Pending</b>. Dari sana Anda dapat mensimulasikan pembayaran berhasil, gagal, atau kedaluwarsa.</p>
       </div></div>`;
       return shell(inner, 'dashboard');

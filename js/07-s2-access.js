@@ -263,14 +263,21 @@
          COCOK dengan tier template versi undangan itu yang dihitung
          sebagai bukti — order lama bertier salah tidak pernah menjadi
          dasar penetapan packageId, walau statusnya Success. */
-      const exp = inv ? kiTemplatePackage(inv) : null;
-      /* v21: bila record undangan DIBERIKAN tetapi tiernya tidak dapat
-         dibuktikan, hasilnya null = belum terselesaikan — paket tidak
-         pernah ditebak dari order mana pun. Bila record undangan TIDAK
-         diberikan (pemanggil tidak memilikinya), aturan lama berlaku:
-         order Success tertaut apa pun dihitung sebagai bukti. */
-      if (inv && !exp) return null;
-      (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments) && (!exp || o.packageId === exp.id)) proven.add(o.packageId); });
+      /* v21.1 — FAIL CLOSED JUGA TANPA RECORD UNDANGAN: pemanggil
+         produksi satu-satunya (seed align, 11-s2-seed.js) selalu
+         membawa record undangan; tidak ada pemanggil sah yang tidak
+         memilikinya. Menetapkan paket dari order saja — tanpa memeriksa
+         tier template versi undangan — dapat mengesahkan order lama
+         bertier salah (pola KI-2026-1008) sebagai bukti. Bila record
+         undangan TIDAK diberikan, hasilnya null = belum terselesaikan.
+         Bila record diberikan tetapi tiernya tidak dapat dibuktikan,
+         hasilnya juga null — paket tidak pernah ditebak dari order
+         mana pun. Kasus penjaga: grup 10 + grup 22 di
+         js/09-s2-fixtures.js. */
+      if (!inv) return null;
+      const exp = kiTemplatePackage(inv);
+      if (!exp) return null;
+      (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments) && o.packageId === exp.id) proven.add(o.packageId); });
       return proven.size === 1 ? Array.from(proven)[0] : null;
     }
     /* ---------- v18: kunci paket checkout, inti pembatalan, bukti
@@ -291,16 +298,29 @@
        di TPL_VERSIONS) — BUKAN template terkini. CMS dapat menaikkan
        versi/tier template kapan pun; undangan lama tetap pada tier
        versinya sendiri untuk checkout, gerbang, dan rekonsiliasi.
-       Jatuh kembali ke template terkini hanya bila snapshot versi
-       tidak ada (record sangat lama). */
+       v21.1 — FAIL CLOSED: bila snapshot versi hilang atau tidak
+       terpetakan, jalur KEPUTUSAN tidak lagi jatuh ke template terkini.
+       kiInvTemplateProven mengembalikan snapshot itu saja (atau null);
+       kiInvTemplate di bawah hanya untuk TAMPILAN (nama template) dan
+       masih boleh jatuh ke template terkini, karena label bukan bukti. */
+    function kiInvTemplateProven(inv){
+      if (!inv) return null;
+      if (typeof inv.templateVersion === 'number' && typeof TPL_VERSIONS !== 'undefined'){
+        return TPL_VERSIONS[inv.templateId + '@' + inv.templateVersion] || null;
+      }
+      return null;
+    }
     function kiInvTemplate(inv){
       if (!inv) return null;
-      const snap = (typeof inv.templateVersion === 'number' && typeof TPL_VERSIONS !== 'undefined' && TPL_VERSIONS[inv.templateId + '@' + inv.templateVersion]) || null;
+      const snap = kiInvTemplateProven(inv);
       return snap || TEMPLATES.find(t => t.id === inv.templateId) || null;
     }
     function kiTemplatePackage(inv){
       if (!inv) return null;
-      const t = kiInvTemplate(inv);
+      /* v21.1: HANYA snapshot versi — tidak jatuh ke template terkini.
+         Undangan yang versinya hilang/tidak terpetakan -> null = tier
+         tidak terbukti; semua pemanggil WAJIB fail closed. */
+      const t = kiInvTemplateProven(inv);
       if (!t || !t.tier) return null;
       return pkgById(String(t.tier).toLowerCase()) || DB.packages.find(p => p.name === t.tier) || null;
     }
@@ -413,8 +433,19 @@
       /* v19: Success dari pesanan yang paketnya tidak cocok dengan
          tier template versi undangan ini juga TIDAK menjadi bukti —
          hasil pembayaran pesanan semacam itu ditahan di handler.
-         v21: tier yang TAK TERBUKTI juga bukan bukti (fail closed). */
-      try { const iv = (typeof S !== 'undefined' && S.invitations || []).find(i => i.id === s.invitationId); if (iv){ const g = kiOrderTierGate(o, iv); if (g.mismatch || g.unresolved) return null; } } catch(e){}
+         v21: tier yang TAK TERBUKTI juga bukan bukti (fail closed).
+         v21.1: record undangan proyek WAJIB DITEMUKAN — bila hilang
+         (orphan / sudah dihapus), tidak ada bukti Paid sama sekali.
+         Celah lama: blok try hanya memeriksa tier bila iv ada, lalu
+         tetap mengembalikan linkedSuccessPayment. linkedSuccessPayment
+         sendiri SENGAJA tidak diberi pemeriksaan keberadaan record
+         (fixture memanggilnya dengan invId sintetis) — penutupannya
+         ada di sini, bukan di sana. */
+      if (typeof S === 'undefined' || !S.invitations) return null;
+      const iv = S.invitations.find(i => i.id === s.invitationId);
+      if (!iv) return null;
+      const g = kiOrderTierGate(o, iv);
+      if (g.mismatch || g.unresolved) return null;
       return linkedSuccessPayment(o, s.invitationId, pays);
     }
     /* (6) KEPUTUSAN NAMA RSVP (v18, ditegaskan): nama pada record RSVP

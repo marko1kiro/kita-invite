@@ -32,10 +32,31 @@
       }
       if (keys.length){
         const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
-        try { store.setItem(KI_TMP_BK, payload); if (store.getItem(KI_TMP_BK) !== payload) return {ok:false, stage:'backup-verify'}; }
-        catch(e){ return {ok:false, stage:'backup-write'}; }
-        try { store.setItem(K2.backup, payload); if (store.getItem(K2.backup) !== payload) return {ok:false, stage:'backup-commit'}; }
-        catch(e){ return {ok:false, stage:'backup-commit'}; }
+        /* v21.1 — BACKUP LAMA DIPERTAHANKAN: tangkap backup lama SEBELUM
+           menimpa kunci cadangan. Bila penulisan cadangan baru gagal
+           terverifikasi (tulis/baca-balik/commit), backup lama dipulihkan
+           dan diverifikasi; hasilnya dilaporkan lewat `restored`
+           (true = backup lama utuh kembali, false = pemulihan TIDAK
+           terverifikasi — pemanggil WAJIB melaporkannya apa adanya,
+           jangan klaim "backup lama dipertahankan"). Kunci sementara
+           selalu dibersihkan saat gagal, agar tidak tertinggal. */
+        let oldBackup = null, hadOldBackup = false;
+        try { oldBackup = store.getItem(K2.backup); hadOldBackup = oldBackup !== null && oldBackup !== undefined; } catch(e){ return {ok:false, stage:'backup-read'}; }
+        const restoreOldBackup = () => {
+          /* Baca dulu: bila penulisan commit gagal SEBELUM menimpa
+             (lempar saat tulis), backup lama masih utuh di tempatnya —
+             tidak perlu ditulis ulang, cukup diverifikasi. */
+          try {
+            if (hadOldBackup){ if (store.getItem(K2.backup) === oldBackup) return true; store.setItem(K2.backup, oldBackup); if (store.getItem(K2.backup) !== oldBackup) return false; }
+            else { if (store.getItem(K2.backup) === null) return true; try { store.removeItem(K2.backup); } catch(e){} if (store.getItem(K2.backup) !== null) return false; }
+            return true;
+          } catch(e){ return false; }
+        };
+        const dropTmp = () => { try { store.removeItem(KI_TMP_BK); } catch(e){} };
+        try { store.setItem(KI_TMP_BK, payload); if (store.getItem(KI_TMP_BK) !== payload){ dropTmp(); return {ok:false, stage:'backup-verify', restored:true}; } }
+        catch(e){ dropTmp(); return {ok:false, stage:'backup-write', restored:true}; }
+        try { store.setItem(K2.backup, payload); if (store.getItem(K2.backup) !== payload){ dropTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored}; } }
+        catch(e){ dropTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored}; }
         try { store.removeItem(KI_TMP_BK); } catch(e){}
       }
       keys.forEach(k => { try { store.removeItem(k); } catch(e){} });

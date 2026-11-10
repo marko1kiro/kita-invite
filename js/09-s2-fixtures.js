@@ -47,18 +47,31 @@
     function kiFixtureTests(){
       const mk = fail => { const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
         const reads = {};
+        let commitWrites = 0; /* v21.1: hitung penulisan kunci cadangan (commit + pemulihan) untuk mode commit-* */
         return { get length(){ return m.size; }, key:i => [...m.keys()][i] ?? null,
-          getItem:k => { if (fail === 'read') throw new Error('read-fail'); if (fail === 'corrupt' && k === KI_TMP_BK) return '{"rusak":1}'; if (fail === 'mutate' && k === 'vowora:v1:guests'){ reads[k] = (reads[k] || 0) + 1; if (reads[k] > 1) return '["diubah-tab-lain"]'; } return m.has(k) ? m.get(k) : null; },
-          setItem:(k, v) => { if (fail === 'write' && k === KI_TMP_BK) throw new Error('quota'); if (fail === 'restore-fail' && k === 'vowora:v1:orders') throw new Error('restore-quota'); m.set(k, String(v)); },
+          getItem:k => { if (fail === 'read') throw new Error('read-fail'); if (fail === 'backup-read' && k === K2.backup) throw new Error('backup-read-fail'); if (fail === 'corrupt' && k === KI_TMP_BK) return '{"rusak":1}'; if (fail === 'mutate' && k === 'vowora:v1:guests'){ reads[k] = (reads[k] || 0) + 1; if (reads[k] > 1) return '["diubah-tab-lain"]'; } return m.has(k) ? m.get(k) : null; },
+          setItem:(k, v) => { if (fail === 'write' && k === KI_TMP_BK) throw new Error('quota'); if (fail === 'restore-fail' && k === 'vowora:v1:orders') throw new Error('restore-quota'); if (fail === 'commit-torn' && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } } if (fail === 'commit-write' && k === K2.backup) throw new Error('commit-quota'); if (fail === 'commit-restore-fail' && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } throw new Error('restore-quota'); } m.set(k, String(v)); },
           removeItem:k => { if (fail === 'partial' && k === 'vowora:v1:orders') return; if (fail === 'restore-fail' && k === 'vowora:v1:guests') return; m.delete(k); }, _m:m }; };
       const out = [];
       /* Snapshot isolasi sesi (v18) — diambil SEBELUM kasus pertama;
          dipulihkan + diverifikasi di akhir suite (lihat kasus isolasi). */
       const sessBak = { role:S2.role, designerId:S2.designerId,
         grant:(() => { try { return window.__kiAdminWrite === true; } catch(e){ return false; } })(),
+        /* v21.1: catat juga KEBERADAAN property global (bukan hanya
+           nilainya) — pemulihan wajib MENGHAPUS property yang sebelumnya
+           tidak ada, bukan mengubahnya jadi false/0. */
+        grantHad:(() => { try { return '__kiAdminWrite' in window; } catch(e){ return false; } })(),
         gen:kiGrantGen(),
+        genHad:(() => { try { return '__kiGrantGen' in window; } catch(e){ return false; } })(),
         orders:S2.orders, payments:S2.payments, services:S2.services, activity:S2.activity, notifications:S2.notifications, guests:S2.guests, rsvps:S2.rsvps,
-        invIds:new Set(S.invitations.map(i => i.id)) };
+        invIds:new Set(S.invitations.map(i => i.id)),
+        co:{invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock},
+        d2:{invFilter:D2.invFilter, invQuery:D2.invQuery, guestInv:D2.guestInv, guestQuery:D2.guestQuery, guestStatus:D2.guestStatus, guestGroup:D2.guestGroup, guestSel:new Set(D2.guestSel), guestEdit:D2.guestEdit, bulkPreview:D2.bulkPreview, rsvpInv:D2.rsvpInv, svcEdit:D2.svcEdit},
+        b:{tab:B.tab, inv:B.inv, readonly:B.readonly},
+        saveStatus:SAVE_STATE.status, saveAt:SAVE_STATE.at,
+        timers:new Set(Object.keys(_saveTimers)),
+        winKeys:new Set(Object.keys(window)),
+        sessKeys:(() => { const d = {}; try { const ss = window.sessionStorage; if (ss) for (let i = 0; i < ss.length; i++){ const k = ss.key(i); d[k] = ss.getItem(k); } } catch(e){} return d; })() };
       /* Snapshot SELURUH key storage sesi (v19): suite fixture tidak
          boleh menambah/mengubah/menghapus satu key pun di storage
          nyata — diverifikasi byte-per-byte pada kasus terakhir suite. */
@@ -70,6 +83,20 @@
       st = mk('corrupt'); r = kiResetCore(st); out.push({name:'Reset: backup tak lolos verifikasi -> berhenti sebelum menghapus', pass: r.ok === false && r.stage === 'backup-verify' && st._m.has('vowora:v1:guests') && st._m.get(K2.backup) === '{"lama":true}'});
       st = mk('partial'); r = kiResetCore(st); out.push({name:'Reset: penghapusan parsial -> snapshot dipulihkan & terverifikasi', pass: r.ok === false && r.stage === 'partial-delete' && r.restored === true && st._m.get('vowora:v1:orders') === '["o1"]'});
       st = mk('restore-fail'); r = kiResetCore(st); out.push({name:'Reset: pemulihan snapshot GAGAL -> dilaporkan restored=false (tidak diklaim pulih)', pass: r.ok === false && r.stage === 'partial-delete' && r.restored === false && st._m.get('vowora:v1:guests') === '["g1"]'});
+      /* v21.1 — BACKUP LAMA DIPERTAHANKAN saat commit cadangan baru
+         gagal: penulisan robek (baca-balik tidak cocok), lempar saat
+         tulis, dan pemulihan backup lama yang ikut gagal — ketiganya
+         lewat fault injection pada stub; plus backup lama yang tidak
+         bisa dibaca sama sekali (berhenti sebelum menimpa apa pun). */
+      st = mk('commit-torn'); r = kiResetCore(st); out.push({name:'v21.1 — Reset: commit cadangan ROBEK (baca-balik tidak cocok) -> berhenti, backup LAMA dipulihkan & terverifikasi (restored=true), data aktif utuh', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === true && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders'), exp:'stage=backup-commit; restored=true; backup={"lama":true}; data utuh', act:'stage=' + r.stage + '; restored=' + r.restored + '; backup=' + st._m.get(K2.backup) + '; guests=' + st._m.has('vowora:v1:guests')});
+      st = mk('commit-write'); r = kiResetCore(st); out.push({name:'v21.1 — Reset: commit cadangan LEMPAR saat tulis -> berhenti, backup lama TIDAK PERNAH tertimpa (masih utuh di tempatnya, restored=true), data aktif utuh', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === true && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders'), exp:'stage=backup-commit; restored=true; backup={"lama":true}; data utuh', act:'stage=' + r.stage + '; restored=' + r.restored + '; backup=' + st._m.get(K2.backup) + '; guests=' + st._m.has('vowora:v1:guests')});
+      st = mk('commit-restore-fail'); r = kiResetCore(st); out.push({name:'v21.1 — Reset: commit robek DAN pemulihan backup lama GAGAL -> dilaporkan restored=false secara jujur (nilai robek tetap di kunci cadangan, tidak diklaim pulih), data aktif utuh', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === false && st._m.get(K2.backup) === '{"torn":1}' && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders'), exp:'stage=backup-commit; restored=false; backup={"torn":1}; data utuh', act:'stage=' + r.stage + '; restored=' + r.restored + '; backup=' + st._m.get(K2.backup) + '; guests=' + st._m.has('vowora:v1:guests')});
+      st = mk('backup-read'); r = kiResetCore(st); out.push({name:'v21.1 — Reset: backup lama TIDAK BISA DIBACA -> berhenti sebelum mengubah apa pun (stage backup-read), backup + data aktif utuh', pass: r.ok === false && r.stage === 'backup-read' && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders'), exp:'stage=backup-read; backup={"lama":true}; data utuh', act:'stage=' + r.stage + '; backup=' + st._m.get(K2.backup) + '; guests=' + st._m.has('vowora:v1:guests')});
+      /* v21.1 — TANPA backup lama: halaman seed segar tidak punya kunci
+         backup; commit robek tidak menghilangkan apa pun — nilai robek
+         dibersihkan dan kunci kembali tidak ada, jadi restored=true
+         adalah jawaban yang jujur (bukan false). */
+      st = mk('commit-torn'); st._m.delete(K2.backup); r = kiResetCore(st); out.push({name:'v21.1 — Reset: commit robek TANPA backup lama -> berhenti, nilai robek dibersihkan, kunci cadangan kembali tidak ada (restored=true — tidak ada yang hilang)', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === true && !st._m.has(K2.backup) && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders'), exp:'stage=backup-commit; restored=true; backup tidak ada; data utuh', act:'stage=' + r.stage + '; restored=' + r.restored + '; backup-ada=' + st._m.has(K2.backup) + '; guests=' + st._m.has('vowora:v1:guests')});
       st = mk(''); r = kiResetCore(st); out.push({name:'Reset: jalur normal -> terhapus bersih, backup baru tersimpan, karantina dipertahankan', pass: r.ok === true && !st._m.has('vowora:v1:guests') && !!st._m.get(K2.backup) && st._m.get(K2.quarantine) === '[]'});
       /* (2) Handler tulis dipanggil LANGSUNG lewat predikat yang dipakai
          handler (kiWriteAllowed = logika ownGuard; kiDesignerAllowed =
@@ -158,16 +185,30 @@
         out.push({name:'Layanan: transisi sah per peran diterima (Assigned→In Progress→Review, Approved→Published→Completed)', pass: legal});
         out.push({name:'Layanan: transisi ilegal ditolak (lompat tahap, Approved→Completed, mundur dari Completed, Assigned lewat progres)', pass: illegal});
       } catch(e){ out.push({name:'Uji transisi layanan (kiSvcTransitionAllowed)', pass:false}); }
-      /* (10) Konsistensi seed terbit tanpa packageId (kiResolvePackageId). */
+      /* (10) Konsistensi seed terbit tanpa packageId (kiResolvePackageId).
+         v21.1: record undangan SELALU diberikan — resolver fail-closed
+         tanpa record (kasus terakhir kelompok ini). Undangan fixture
+         memakai luxury-ivory v1 (tier Premium), jadi hanya order
+         berpaket premium yang dihitung bukti. */
       try {
         const so = (id, inv, pkg, ps) => ({id, invitationId:inv, packageId:pkg, paymentStatus:ps, status:'Diproses'});
         const sp = (id, oid, inv, st) => ({id, orderId:oid, invitationId:inv, status:st});
-        out.push({name:'Seed: terbit tanpa packageId + order Success terbukti TUNGGAL -> paket diambil dari order itu', pass: kiResolvePackageId('fx-inv-s', [so('o1','fx-inv-s','premium','Success')], [sp('p1','o1','fx-inv-s','Success')]) === 'premium'});
-        out.push({name:'Seed: terbit tanpa packageId + TIDAK ada order Success terbukti -> belum terselesaikan (paket tidak ditebak)', pass: kiResolvePackageId('fx-inv-s', [so('o2','fx-inv-s','premium','Expired')], [sp('p2','o2','fx-inv-s','Expired')]) === null});
-        out.push({name:'Seed: bukti menunjuk DUA paket berbeda -> belum terselesaikan (tidak dipilih sembarang)', pass: kiResolvePackageId('fx-inv-s', [so('o3','fx-inv-s','premium','Success'), so('o4','fx-inv-s','signature','Success')], [sp('p3','o3','fx-inv-s','Success'), sp('p4','o4','fx-inv-s','Success')]) === null});
-        out.push({name:'Seed: order Success tanpa record pembayaran tertaut ketat -> tidak dihitung sebagai bukti paket', pass: kiResolvePackageId('fx-inv-s', [so('o5','fx-inv-s','premium','Success')], [sp('p5','o5',undefined,'Success')]) === null});
-        out.push({name:'Seed — ATURAN multi-order: DUA order Success dengan package ID yang SAMA (keduanya terbukti) -> SATU bukti paket, paket itu dipakai (syaratnya tepat satu package ID unik, bukan tepat satu order)', pass: kiResolvePackageId('fx-inv-s', [so('o6','fx-inv-s','premium','Success'), so('o7','fx-inv-s','premium','Success')], [sp('p6','o6','fx-inv-s','Success'), sp('p7','o7','fx-inv-s','Success')]) === 'premium'});
-        out.push({name:'Seed — ATURAN multi-order: dua order Success se-paket, hanya SATU yang terbukti tertaut -> yang terbukti tetap dihitung, paket teresolusi', pass: kiResolvePackageId('fx-inv-s', [so('o8','fx-inv-s','premium','Success'), so('o9','fx-inv-s','premium','Success')], [sp('p8','o8','fx-inv-s','Success'), sp('p9','o9',undefined,'Success')]) === 'premium'});
+        const invS = {id:'fx-inv-s', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Resolver', status:'draft', ownerId:'cust-1'};
+        let pid;
+        pid = kiResolvePackageId('fx-inv-s', [so('o1','fx-inv-s','premium','Success')], [sp('p1','o1','fx-inv-s','Success')], invS);
+        out.push({name:'Seed: terbit tanpa packageId + order Success terbukti TUNGGAL -> paket diambil dari order itu', pass: pid === 'premium', exp:'premium', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o2','fx-inv-s','premium','Expired')], [sp('p2','o2','fx-inv-s','Expired')], invS);
+        out.push({name:'Seed: terbit tanpa packageId + TIDAK ada order Success terbukti -> belum terselesaikan (paket tidak ditebak)', pass: pid === null, exp:'null', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o3','fx-inv-s','premium','Success'), so('o4','fx-inv-s','signature','Success')], [sp('p3','o3','fx-inv-s','Success'), sp('p4','o4','fx-inv-s','Success')], invS);
+        out.push({name:'Seed v21.1: order Success bertier SALAH (signature) disaring filter tier — hanya premium yang cocok tier undangan yang dihitung, paket = premium (kasus lama "dua paket -> null" mustahil bila tier terbukti: kedua bukti harus sama dengan tier)', pass: pid === 'premium', exp:'premium', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o5','fx-inv-s','premium','Success')], [sp('p5','o5',undefined,'Success')], invS);
+        out.push({name:'Seed: order Success tanpa record pembayaran tertaut ketat -> tidak dihitung sebagai bukti paket', pass: pid === null, exp:'null', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o6','fx-inv-s','premium','Success'), so('o7','fx-inv-s','premium','Success')], [sp('p6','o6','fx-inv-s','Success'), sp('p7','o7','fx-inv-s','Success')], invS);
+        out.push({name:'Seed — ATURAN multi-order: DUA order Success dengan package ID yang SAMA (keduanya terbukti) -> SATU bukti paket, paket itu dipakai (syaratnya tepat satu package ID unik, bukan tepat satu order)', pass: pid === 'premium', exp:'premium', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o8','fx-inv-s','premium','Success'), so('o9','fx-inv-s','premium','Success')], [sp('p8','o8','fx-inv-s','Success'), sp('p9','o9',undefined,'Success')], invS);
+        out.push({name:'Seed — ATURAN multi-order: dua order Success se-paket, hanya SATU yang terbukti tertaut -> yang terbukti tetap dihitung, paket teresolusi', pass: pid === 'premium', exp:'premium', act: String(pid)});
+        pid = kiResolvePackageId('fx-inv-s', [so('o1','fx-inv-s','premium','Success')], [sp('p1','o1','fx-inv-s','Success')]);
+        out.push({name:'v21.1 — Resolver paket FAIL-CLOSED tanpa record undangan: order Success terbukti TUNGGAL pun TIDAK dihitung (null) — satu-satunya pemanggil produksi (seed align) selalu membawa record', pass: pid === null, exp:'null', act: String(pid)});
       } catch(e){ out.push({name:'Uji konsistensi seed (kiResolvePackageId)', pass:false}); }
       /* (11) Siklus hidup grant Admin lintas-pemilik — fungsi yang SAMA
          dengan handler nyata: predikat handler (kiWriteAllowed),
@@ -265,6 +306,12 @@
          (kiSvcUnassignDecision) dan penegak muat-ulang
          (kiSvcGateDecision) pada record sintetis. */
       try {
+        /* v21.1: undangan fixture 'fx-inv-svc' (luxury-ivory v1 -> Premium)
+           WAJIB ada di S.invitations — bukti Paid fail-closed bila record
+           undangan proyek hilang; kasus positif di kelompok ini memakai
+           record itu. */
+        const invSvc = {id:'fx-inv-svc', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Unassign', status:'draft', ownerId:'cust-1'};
+        S.invitations.push(invSvc);
         const oFxSvc = {id:'fx-o-svc', invitationId:'fx-inv-svc', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
         const pFxSvc = {id:'fx-p-svc', orderId:'fx-o-svc', invitationId:'fx-inv-svc', status:'Success'};
         const svcFx = st => ({id:'fx-svc-u', number:'REQ-FX', status:st, designerId:'des-1', orderId:'fx-o-svc', invitationId:'fx-inv-svc'});
@@ -278,6 +325,7 @@
         out.push({name:'Reload: status BERJALAN tanpa desainer TIDAK diturunkan diam-diam ke Paid/New oleh penegak', pass: kiSvcGateDecision({status:'In Progress', designerId:null, orderId:'fx-o-svc', invitationId:'fx-inv-svc'}, [oFxSvc], [pFxSvc]).action === 'keep' && kiSvcGateDecision({status:'Completed', designerId:null, orderId:'fx-o-svc', invitationId:'fx-inv-svc'}, [oFxSvc], [pFxSvc]).action === 'keep'});
         const dLegacy = kiSvcGateDecision({status:'Assigned', designerId:'des-1', orderId:null, invitationId:null}, [], []);
         out.push({name:'Reload: Assigned warisan TANPA bukti pembayaran tetap ditegakkan -> New + desainer dilepas (satu-satunya penurunan otomatis)', pass: dLegacy.action === 'downgrade' && dLegacy.toStatus === 'New' && dLegacy.releaseDesigner === true});
+        S.invitations.splice(S.invitations.indexOf(invSvc), 1);
       } catch(e){ out.push({name:'Uji state machine unassign + konsistensi reload', pass:false}); }
       /* (16) Badge paket Admin (v17): fungsi status yang sama dengan
          daftar Admin (invStatus/invAccessEndsAt) pada undangan sintetis. */
@@ -298,8 +346,8 @@
          dengan saveFn suntikan: simpan gagal dan rollback gagal diuji
          TERPISAH, dan status di memori harus kembali persis. */
       try {
-        const invLux = {id:'fx-inv-co', templateId:'luxury-ivory'}; /* template Premium Rp59.000 */
-        const invBas = {id:'fx-inv-co2', templateId:'confetti-pop'}; /* template Basic Rp29.000 */
+        const invLux = {id:'fx-inv-co', templateId:'luxury-ivory', templateVersion:1}; /* template Premium Rp59.000 — v21.1: versi WAJIB ada, tier hanya dari snapshot versi */
+        const invBas = {id:'fx-inv-co2', templateId:'confetti-pop', templateVersion:1}; /* template Basic Rp29.000 */
         out.push({name:'Checkout: paket terkunci dihitung dari tier template (Luxury Ivory -> Premium Rp59.000; Confetti Pop -> Basic Rp29.000)', pass: (kiTemplatePackage(invLux) || {}).id === 'premium' && (kiTemplatePackage(invLux) || {}).price === 59000 && (kiTemplatePackage(invBas) || {}).id === 'basic' && (kiTemplatePackage(invBas) || {}).price === 29000});
         out.push({name:'Checkout: paket + harga SESUAI tier template -> handler mengizinkan (ok)', pass: kiCheckoutValidate(invLux, 'premium', 59000).ok === true});
         out.push({name:'Checkout: paket LAIN dari tier template (Signature untuk template Premium) -> DITOLAK di validasi handler, bukan hanya UI', pass: kiCheckoutValidate(invLux, 'signature', 99000).ok === false});
@@ -321,6 +369,13 @@
          TIDAK cukup; record harus tertaut ke order + undangan yang sama
          dengan proyek. */
       try {
+        /* v21.1: undangan fixture WAJIB ada di S.invitations — bukti Paid
+           fail-closed bila record undangan proyek hilang, jadi kasus
+           positif di sini membutuhkan record yang benar-benar ada
+           (luxury-ivory v1 -> tier Premium, cocok dengan packageId
+           order 'premium'). Record dibuang lagi sesudah kelompok ini. */
+        const invR = {id:'fx-inv-r', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Rekonsiliasi', status:'draft', ownerId:'cust-1'};
+        S.invitations.push(invR);
         const svcR = {id:'fx-svc-r', orderId:'fx-o-r', invitationId:'fx-inv-r', status:'New'};
         const ordR = {id:'fx-o-r', invitationId:'fx-inv-r', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
         const payROk = {id:'fx-p-r', orderId:'fx-o-r', invitationId:'fx-inv-r', status:'Success'};
@@ -331,6 +386,7 @@
         out.push({name:'Rekonsiliasi: record Success tertaut ke UNDANGAN LAIN -> TIDAK terbukti untuk proyek ini', pass: kiServicePaidProof(svcR, [ordR], [payROther]) === null});
         out.push({name:'Rekonsiliasi: orderId proyek menunjuk pesanan milik undangan lain -> TIDAK terbukti walau record Success-nya cocok dengan pesanan itu', pass: kiServicePaidProof(svcR, [Object.assign({}, ordR, {invitationId:'fx-inv-lain'})], [Object.assign({}, payROk, {invitationId:'fx-inv-lain'})]) === null});
         out.push({name:'Rekonsiliasi: proyek tanpa orderId / pesanan Pending -> tidak ada bukti (tetap New, tidak ditebak Paid)', pass: kiServicePaidProof({id:'fx-svc-r2', orderId:null, invitationId:'fx-inv-r', status:'New'}, [ordR], [payROk]) === null && kiServicePaidProof(svcR, [Object.assign({}, ordR, {paymentStatus:'Pending'})], [payROk]) === null});
+        S.invitations.splice(S.invitations.indexOf(invR), 1);
       } catch(e){ out.push({name:'Uji bukti rekonsiliasi layanan (kiServicePaidProof)', pass:false}); }
       /* (19) v18 — Semantik nama RSVP (keputusan: SNAPSHOT nama kanonis
          saat submit; identitas & dedupe per guestId, BUKAN nama) — inti
@@ -384,6 +440,11 @@
           const ix = TEMPLATES.findIndex(t => t.id === fxTplId); if (ix >= 0) TEMPLATES.splice(ix, 1);
           delete TPL_VERSIONS[fxTplId + '@1']; delete TPL_VERSIONS[fxTplId + '@2']; delete TPL_VERSIONS[fxTplId + '@3'];
         }
+        /* v21.1: undangan fixture 'fx-inv-fb' (luxury-ivory v1 -> Premium)
+           WAJIB ada di S.invitations agar kasus positif di bawah bermakna
+           — bukti Paid fail-closed bila record undangan proyek hilang. */
+        const invFb = {id:'fx-inv-fb', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Fallback', status:'draft', ownerId:'cust-1'};
+        S.invitations.push(invFb);
         const svcNoInv = {id:'fx-svc-nofb', orderId:'fx-o-fb', invitationId:'', status:'New'};
         const ordFb = {id:'fx-o-fb', invitationId:'fx-inv-fb', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
         const payFb = {id:'fx-p-fb', orderId:'fx-o-fb', invitationId:'fx-inv-fb', status:'Success'};
@@ -391,6 +452,7 @@
         out.push({name:'Rekonsiliasi v19: proyek dengan invitationId KOSONG + order & record Success tertaut ke undangan milik order -> TIDAK terbukti Paid (fallback dari order dilarang)', pass: proofNoFb === null, exp:'null', act: String(proofNoFb)});
         const proofStrict = kiServicePaidProof({id:'fx-svc-fb2', orderId:'fx-o-fb', invitationId:'fx-inv-fb', status:'New'}, [ordFb], [payFb]);
         out.push({name:'Rekonsiliasi v19: invitationId proyek sama persis dengan order + record Success-nya -> terbukti (jalur sah tidak ikut tertutup)', pass: !!proofStrict, exp:'record pembayaran fx-p-fb', act: proofStrict ? proofStrict.id : 'null'});
+        S.invitations.splice(S.invitations.indexOf(invFb), 1);
         const e1 = kiAddMonthsClampWIB(Date.UTC(2026, 9, 31, 3, 0, 0), 6);
         const e1Exp = Date.UTC(2027, 3, 30, 16, 59, 59, 999);
         out.push({name:'Expiry clamp: 31 Okt 2026 + 6 bulan -> 30 April 2027 23:59:59 WIB (BUKAN overflow Date.setMonth ke 1 Mei)', pass: e1 === e1Exp, exp:'2027-04-30T23:59:59.999 (WIB)', act: e1 ? new Date(e1 + KI_WIB_MS).toISOString().replace('T', ' ').replace('Z', ' (WIB)') : 'null'});
@@ -452,14 +514,19 @@
           const fxInvUnr = {id:'fx-inv-21u', templateId:'template-tidak-ada', templateVersion:1, title:'Fixture Unresolved', status:'draft', ownerId:'cust-1'};
           const fxOrdUnr = {id:'fx-o-21u', invitationId:'fx-inv-21u', packageId:'premium', paymentStatus:'Success', status:'Diproses', number:'KI-FX-21U', createdAt:Date.now()};
           const fxPayUnr = {id:'fx-p-21u', orderId:'fx-o-21u', invitationId:'fx-inv-21u', status:'Success'};
-          S.invitations.push(fxInvUnr); S2.orders.push(fxOrdUnr); S2.payments.push(fxPayUnr);
+          /* v21.1: undangan fixture 'fx-inv-21a' (luxury-ivory v1 -> Premium)
+             ikut didorong ke S.invitations agar kasus silang di bawah
+             diuji pada jalurnya yang benar (tautan pembayaran), bukan
+             berhenti lebih awal karena record undangan hilang. */
+          const inv21a = {id:'fx-inv-21a', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Silang A', status:'draft', ownerId:'cust-1'};
+          S.invitations.push(fxInvUnr); S.invitations.push(inv21a); S2.orders.push(fxOrdUnr); S2.payments.push(fxPayUnr);
           try {
             const blkUnr = publishBlockedByGate(fxInvUnr);
             out.push({name:'v21 — Publish gate fail-closed: tier undangan TAK TERBUKTI + order Success -> DITAHAN (tierUnresolved), bukan lolos', pass: !!blkUnr && blkUnr.tierUnresolved === true, exp:'blocker tierUnresolved=true', act: blkUnr ? 'tierUnresolved=' + blkUnr.tierUnresolved : 'null (lolos)'});
             const pidUnr = kiResolvePackageId('fx-inv-21u', [fxOrdUnr], [fxPayUnr], fxInvUnr);
             out.push({name:'v21 — Resolver paket: undangan diberikan TAPI tier tak terbukti + order Success -> null (belum terselesaikan, tidak ditebak)', pass: pidUnr === null, exp:'null', act: String(pidUnr)});
             const pidNoInv = kiResolvePackageId('fx-inv-s', [{id:'o1', invitationId:'fx-inv-s', packageId:'premium', paymentStatus:'Success'}, {id:'o2', invitationId:'fx-inv-s', packageId:'premium', paymentStatus:'Success'}], [{id:'p1', orderId:'o1', invitationId:'fx-inv-s', status:'Success'}, {id:'p2', orderId:'o2', invitationId:'fx-inv-s', status:'Success'}]);
-            out.push({name:'v21 — Resolver paket: TANPA record undangan, aturan lama berlaku (dua order Success paket sama = satu paket terbukti)', pass: pidNoInv === 'premium', exp:'premium', act: String(pidNoInv)});
+            out.push({name:'v21.1 — Resolver paket FAIL-CLOSED tanpa record undangan: dua order Success paket sama pun TIDAK dihitung bukti (null) — paket tidak ditebak tanpa memeriksa tier template versi undangan; satu-satunya pemanggil produksi (seed align) selalu membawa record', pass: pidNoInv === null, exp:'null', act: String(pidNoInv)});
             const proofUnr = kiServicePaidProof({id:'fx-svc-21u', orderId:'fx-o-21u', invitationId:'fx-inv-21u', status:'New'}, [fxOrdUnr], [fxPayUnr]);
             out.push({name:'v21 — Bukti Paid fail-closed: undangan bertier tak terbukti + order Success tertaut -> null (tidak bisa dipakai aktivasi/assignment)', pass: proofUnr === null, exp:'null', act: String(proofUnr)});
             const proofCrossPay = kiServicePaidProof({id:'fx-svc-21x', orderId:'fx-o-21x', invitationId:'fx-inv-21a', status:'New'}, [{id:'fx-o-21x', invitationId:'fx-inv-21a', packageId:'premium', paymentStatus:'Success', status:'Diproses'}], [{id:'fx-p-21x', orderId:'fx-o-21x', invitationId:'fx-inv-21b', status:'Success'}]);
@@ -467,7 +534,7 @@
             const proofEmptyOrd = kiServicePaidProof({id:'fx-svc-21e', orderId:'fx-o-21e', invitationId:'fx-inv-21a', status:'New'}, [{id:'fx-o-21e', invitationId:'', packageId:'premium', paymentStatus:'Success', status:'Diproses'}], [{id:'fx-p-21e', orderId:'fx-o-21e', invitationId:'fx-inv-21a', status:'Success'}]);
             out.push({name:'v21 — Bukti Paid kosong: order dengan invitationId KOSONG -> null (tidak ada fallback)', pass: proofEmptyOrd === null, exp:'null', act: String(proofEmptyOrd)});
           } finally {
-            S.invitations.splice(S.invitations.indexOf(fxInvUnr), 1); S2.orders.splice(S2.orders.indexOf(fxOrdUnr), 1); S2.payments.splice(S2.payments.indexOf(fxPayUnr), 1);
+            S.invitations.splice(S.invitations.indexOf(fxInvUnr), 1); S.invitations.splice(S.invitations.indexOf(inv21a), 1); S2.orders.splice(S2.orders.indexOf(fxOrdUnr), 1); S2.payments.splice(S2.payments.indexOf(fxPayUnr), 1);
           }
         } finally {
           S.invitations.splice(S.invitations.indexOf(fxInvGate), 1); S2.orders.splice(S2.orders.indexOf(fxOrdGateMis), 1); S2.payments.splice(S2.payments.indexOf(fxPayGateMis), 1);
@@ -510,6 +577,11 @@
         } catch(e){ out.push({name:'Uji rollback jujur multi-koleksi (kiRollbackCollections)', pass:false}); }
         /* --- 21f: state machine reload --- */
         try {
+          /* v21.1: undangan fixture 'fx-inv-svc21' (luxury-ivory v1 ->
+             Premium) WAJIB ada di S.invitations — bukti Paid fail-closed
+             bila record undangan proyek hilang. */
+          const invSvc21 = {id:'fx-inv-svc21', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Reload', status:'draft', ownerId:'cust-1'};
+          S.invitations.push(invSvc21);
           const oFxSvc21 = {id:'fx-o-svc21', invitationId:'fx-inv-svc21', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
           const pFxSvc21 = {id:'fx-p-svc21', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21', status:'Success'};
           out.push({name:'v21 — Reload: status BERJALAN (In Progress) TANPA bukti pembayaran apa pun tetap dipertahankan penegak (tidak diturunkan diam-diam)', pass: kiSvcGateDecision({status:'In Progress', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [], []).action === 'keep', exp:'keep', act: kiSvcGateDecision({status:'In Progress', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [], []).action});
@@ -517,6 +589,7 @@
           const dAsgNoDes = kiSvcGateDecision({status:'Assigned', designerId:null, orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]);
           out.push({name:'v21 — Reload: Assigned + bukti Paid ADA tapi desainer kosong -> diturunkan ke Paid (satu-satunya penurunan otomatis selain tanpa-bukti)', pass: dAsgNoDes.action === 'downgrade' && dAsgNoDes.toStatus === 'Paid' && dAsgNoDes.releaseDesigner === false, exp:'downgrade->Paid, releaseDesigner=false', act:'action=' + dAsgNoDes.action + '; to=' + dAsgNoDes.toStatus + '; releaseDesigner=' + dAsgNoDes.releaseDesigner});
           out.push({name:'v21 — Reload: Review + bukti Paid + desainer ADA -> dipertahankan', pass: kiSvcGateDecision({status:'Review', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]).action === 'keep', exp:'keep', act: kiSvcGateDecision({status:'Review', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]).action});
+          S.invitations.splice(S.invitations.indexOf(invSvc21), 1);
         } catch(e){ out.push({name:'Uji state machine reload v21 (kiSvcGateDecision)', pass:false}); }
         /* --- 21g: penjaga badge Nusantara Tech + KI-2026-1008 (seed asli, baca saja) --- */
         try {
@@ -535,6 +608,56 @@
           out.push({name:'v21 — KI-2026-1008 (seed, baca saja): order Premium Pending untuk Kirana (template Basic) -> DITAHAN proaktif (expected=basic); snapshot pesanan TIDAK berubah (premium/Rp59.000)', pass: !!h1008 && h1008.held === true && !!h1008.expected && h1008.expected.id === 'basic' && o1008.packageId === 'premium' && o1008.total === 59000, exp:'held=true, expected=basic; snapshot premium/59000', act:'held=' + (h1008 && h1008.held) + '; snapshot=' + o1008.packageId + '/' + o1008.total});
         } catch(e){ out.push({name:'Uji badge Nusantara Tech + KI-2026-1008 (seed nyata)', pass:false}); }
       } catch(e){ out.push({name:'Uji v21 (hold proaktif, fail-closed, bukti silang, kode baru, RSVP multi-tamu, rollback jujur, state machine, badge Nusantara)', pass:false}); }
+      /* --- 22: v21.1 — tier fail-closed, Paid fail-closed (orphan),
+         isolasi probe, dan penanda CSS overflow --- */
+      try {
+        /* 22a: tier hanya dari snapshot versi */
+        const invNoVer = {id:'fx-inv-22a', templateId:'luxury-ivory', title:'Tanpa Versi', status:'draft', ownerId:'cust-1'};
+        const invBadVer = {id:'fx-inv-22b', templateId:'luxury-ivory', templateVersion:99, title:'Versi Tak Terdaftar', status:'draft', ownerId:'cust-1'};
+        const invBadTpl = {id:'fx-inv-22c', templateId:'template-tidak-ada', templateVersion:1, title:'Template Tak Ada', status:'draft', ownerId:'cust-1'};
+        const invOk22 = {id:'fx-inv-22d', templateId:'luxury-ivory', templateVersion:1, title:'Kontrol', status:'draft', ownerId:'cust-1'};
+        out.push({name:'v21.1 — Tier fail-closed: undangan TANPA templateVersion -> kiTemplatePackage null (tidak jatuh ke template terkini)', pass: kiTemplatePackage(invNoVer) === null, exp:'null', act: String(kiTemplatePackage(invNoVer))});
+        out.push({name:'v21.1 — Tier fail-closed: templateVersion 99 (tidak terdaftar di TPL_VERSIONS) -> null', pass: kiTemplatePackage(invBadVer) === null, exp:'null', act: String(kiTemplatePackage(invBadVer))});
+        out.push({name:'v21.1 — Tier fail-closed: templateId tidak dikenal -> null', pass: kiTemplatePackage(invBadTpl) === null, exp:'null', act: String(kiTemplatePackage(invBadTpl))});
+        out.push({name:'v21.1 — Tier fail-closed (kontrol positif): luxury-ivory v1 -> Premium Rp59.000', pass: (kiTemplatePackage(invOk22) || {}).id === 'premium' && (kiTemplatePackage(invOk22) || {}).price === 59000, exp:'premium/59000', act: (kiTemplatePackage(invOk22) || {}).id + '/' + (kiTemplatePackage(invOk22) || {}).price});
+        const g22u = kiOrderTierGate({id:'fx-o-22u', invitationId:'fx-inv-22c', packageId:'premium', paymentStatus:'Pending'}, invBadTpl);
+        out.push({name:'v21.1 — Gerbang tier: order Pending + tier tak terbukti -> unresolved=true (ditahan, bukan lolos)', pass: !!g22u && g22u.unresolved === true && g22u.mismatch === false, exp:'unresolved=true', act: 'unresolved=' + g22u.unresolved + '; mismatch=' + g22u.mismatch});
+        const h22u = kiOrderTierHold({id:'fx-o-22u', invitationId:'fx-inv-22c', packageId:'premium', paymentStatus:'Pending'}, invBadTpl);
+        out.push({name:'v21.1 — Hold proaktif: order Pending + tier tak terbukti -> held=true, unresolved=true', pass: !!h22u && h22u.held === true && h22u.unresolved === true, exp:'held=true; unresolved=true', act:'held=' + h22u.held + '; unresolved=' + h22u.unresolved});
+        /* 22b: checkout fail-closed di tampilan (render nyata viewCheckout) */
+        const invChk = {id:'fx-inv-22u', templateId:'template-tidak-ada', templateVersion:1, slug:'fx-22u', title:'Fixture Checkout Unresolved', categoryId:'pernikahan', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+        S.invitations.push(invChk);
+        const coBak22 = {invId:CO.invId, pkgId:CO.pkgId};
+        try {
+          CO.invId = invChk.id; CO.pkgId = 'premium';
+          const chkHtml = viewCheckout();
+          out.push({name:'v21.1 — Checkout fail-closed (tampilan): undangan bertier tak terbukti -> peringatan unresolved tampil, SEMUA paket off, tombol konfirmasi disabled (tidak ada paket/harga yang ditawarkan)', pass: chkHtml.indexOf('tier template undangan ini tidak dapat dibuktikan') >= 0 && chkHtml.indexOf('Tier template tidak dapat dibuktikan — checkout ditahan') >= 0 && chkHtml.indexOf('co-confirm" style="margin-top:8px" disabled') >= 0 && chkHtml.indexOf('Checkout Ditahan — Tier Template Tidak Dapat Dibuktikan') >= 0, exp:'peringatan + semua paket off + tombol disabled', act:'peringatan=' + (chkHtml.indexOf('tier template undangan ini tidak dapat dibuktikan') >= 0) + '; off=' + (chkHtml.indexOf('Tier template tidak dapat dibuktikan — checkout ditahan') >= 0) + '; disabled=' + (chkHtml.indexOf('co-confirm" style="margin-top:8px" disabled') >= 0)});
+        } finally { CO.invId = coBak22.invId; CO.pkgId = coBak22.pkgId; S.invitations.splice(S.invitations.indexOf(invChk), 1); }
+        /* 22c: Paid fail-closed — orphan */
+        const svcOrph = {id:'fx-svc-22o', orderId:'fx-o-22o', invitationId:'fx-inv-22o', status:'New'};
+        const ordOrph = {id:'fx-o-22o', invitationId:'fx-inv-22o', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
+        const payOrph = {id:'fx-p-22o', orderId:'fx-o-22o', invitationId:'fx-inv-22o', status:'Success'};
+        out.push({name:'v21.1 — Bukti Paid ORPHAN: order + payment Success tertaut sempurna TAPI record undangan proyek HILANG dari S.invitations -> null (celah fallback v21 ditutup)', pass: kiServicePaidProof(svcOrph, [ordOrph], [payOrph]) === null, exp:'null', act: String(kiServicePaidProof(svcOrph, [ordOrph], [payOrph]))});
+        const invOrph = {id:'fx-inv-22o', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Orphan', status:'draft', ownerId:'cust-1'};
+        S.invitations.push(invOrph);
+        try {
+          const proofOrphOk = kiServicePaidProof(svcOrph, [ordOrph], [payOrph]);
+          out.push({name:'v21.1 — Bukti Paid ORPHAN (kontrol positif): record undangan ADA + tier terbukti + order/payment tertaut -> bukti dikembalikan (jalur sah tidak ikut tertutup)', pass: !!proofOrphOk && proofOrphOk.id === 'fx-p-22o', exp:'fx-p-22o', act: proofOrphOk ? proofOrphOk.id : 'null'});
+        } finally { S.invitations.splice(S.invitations.indexOf(invOrph), 1); }
+        /* 22d: isolasi — probe global + timer */
+        try { window.__kiProbe211 = 'probe-211'; } catch(e){}
+        out.push({name:'v21.1 — Isolasi (probe): property global __kiProbe211 ditambahkan selama suite — pemulihan di akhir suite WAJIB menghapusnya (diperiksa kasus isolasi)', pass: (function(){ try { return window.__kiProbe211 === 'probe-211'; } catch(e){ return false; } })(), exp:'__kiProbe211=probe-211 selama suite', act: String((function(){ try { return window.__kiProbe211; } catch(e){ return 'err'; } })())});
+        const invTimer = {id:'fx-inv-22t', templateId:'luxury-ivory', templateVersion:1, slug:'fx-22t', title:'Fixture Timer', categoryId:'pernikahan', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+        S.invitations.push(invTimer);
+        scheduleAutosave(invTimer);
+        const timerSet = (function(){ try { return typeof _saveTimers['fx-inv-22t'] !== 'undefined'; } catch(e){ return false; } })();
+        S.invitations.splice(S.invitations.indexOf(invTimer), 1);
+        out.push({name:'v21.1 — Isolasi (timer): autosave dijadwalkan selama suite (timer nyata di _saveTimers) — pemulihan di akhir suite WAJIB membatalkannya (diperiksa kasus isolasi)', pass: timerSet === true, exp:'timer fx-inv-22t terjadwal selama suite', act:'terjadwal=' + timerSet});
+        /* 22e: penanda CSS overflow — orderCard KI-2026-1008 memakai pill wrap */
+        const o1008x = S2.orders.find(o => o.id === 'seed-order-8');
+        const html1008x = o1008x ? orderCard(o1008x, false) : '';
+        out.push({name:'v21.1 — Overflow Pesanan (penanda in-page): baris KI-2026-1008 memakai pill hold yang bisa wrap (class pill wrap) — pengukuran lebar 360/375/390/430 px dilakukan di Playwright, lihat REPORT-v21.1.md', pass: html1008x.indexOf('pill exp wrap') >= 0, exp:'pill exp wrap ada di baris hold', act: html1008x ? ('wrap=' + (html1008x.indexOf('pill exp wrap') >= 0)) : 'order tidak ditemukan'});
+      } catch(e){ out.push({name:'Uji v21.1 (tier fail-closed, Paid orphan, isolasi probe, penanda overflow)', pass:false}); }
       /* PEMULIHAN ISOLASI (v18): kembalikan SEMUA state sesi yang dapat
          disentuh suite ke snapshot awal — peran, desainer aktif, flag &
          GENERASI grant (grup 11/12 menaikkan generasi lewat
@@ -543,11 +666,31 @@
          koleksi fixture), dan daftar undangan (buang record fixture
          yang mungkin tertinggal). Timer nyata tidak pernah dijadwalkan
          suite; storage nyata tidak pernah ditulis suite. */
+      /* v21.1 — PEMULIHAN ISOLASI DIPERKETAT: property global yang
+         sebelumnya TIDAK ADA dihapus (bukan diubah jadi false/0);
+         timer autosave yang dibuat suite dibatalkan + dibuang; state
+         checkout (CO), dashboard (D2), Builder (B), dan status simpan
+         (SAVE_STATE) dipulihkan; kunci window tambahan berawalan __ki
+         yang muncul selama suite dibuang. */
       S2.role = sessBak.role; S2.designerId = sessBak.designerId;
-      try { window.__kiAdminWrite = sessBak.grant; window.__kiGrantGen = sessBak.gen; } catch(e){}
+      try {
+        if (sessBak.grantHad) window.__kiAdminWrite = sessBak.grant; else delete window.__kiAdminWrite;
+        if (sessBak.genHad) window.__kiGrantGen = sessBak.gen; else delete window.__kiGrantGen;
+        Object.keys(window).forEach(k => { if (k.indexOf('__ki') === 0 && !sessBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
+      } catch(e){}
       S2.orders = sessBak.orders; S2.payments = sessBak.payments; S2.services = sessBak.services; S2.activity = sessBak.activity; S2.notifications = sessBak.notifications; S2.guests = sessBak.guests; S2.rsvps = sessBak.rsvps;
       if (S.invitations.some(i => !sessBak.invIds.has(i.id))) S.invitations = S.invitations.filter(i => sessBak.invIds.has(i.id));
-      out.push({name:'Isolasi suite: setelah suite selesai, peran, desainer aktif, flag grant, GENERASI grant, referensi koleksi, dan daftar undangan pulih PERSIS seperti sebelum suite (state sesi tidak berubah oleh pengujian)', pass: S2.role === sessBak.role && S2.designerId === sessBak.designerId && kiGrantGen() === sessBak.gen && (function(){ try { return (window.__kiAdminWrite === true) === sessBak.grant; } catch(e){ return false; } })() && S2.orders === sessBak.orders && S2.payments === sessBak.payments && S2.services === sessBak.services && S2.guests === sessBak.guests && S2.rsvps === sessBak.rsvps && S.invitations.every(i => sessBak.invIds.has(i.id))});
+      Object.assign(CO, sessBak.co);
+      Object.assign(D2, sessBak.d2); D2.guestSel = new Set(sessBak.d2.guestSel);
+      Object.assign(B, sessBak.b);
+      SAVE_STATE.status = sessBak.saveStatus; SAVE_STATE.at = sessBak.saveAt;
+      Object.keys(_saveTimers).forEach(k => { if (!sessBak.timers.has(k)){ try { clearTimeout(_saveTimers[k]); } catch(e){} delete _saveTimers[k]; } });
+      const isoGrant = (() => { try { return ('__kiAdminWrite' in window) === sessBak.grantHad && (window.__kiAdminWrite === true) === sessBak.grant && ('__kiGrantGen' in window) === sessBak.genHad && kiGrantGen() === sessBak.gen; } catch(e){ return false; } })();
+      const isoWin = (() => { try { const now = Object.keys(window); return now.length === sessBak.winKeys.size && now.every(k => sessBak.winKeys.has(k)); } catch(e){ return false; } })();
+      const isoSess = (() => { try { const ss = window.sessionStorage; if (!ss) return Object.keys(sessBak.sessKeys).length === 0; if (ss.length !== Object.keys(sessBak.sessKeys).length) return false; for (let i = 0; i < ss.length; i++){ const k = ss.key(i); if (!(k in sessBak.sessKeys) || ss.getItem(k) !== sessBak.sessKeys[k]) return false; } return true; } catch(e){ return false; } })();
+      const isoTimers = Object.keys(_saveTimers).length === sessBak.timers.size && Object.keys(_saveTimers).every(k => sessBak.timers.has(k));
+      const isoProbe = (() => { try { return !('__kiProbe211' in window); } catch(e){ return false; } })();
+      out.push({name:'Isolasi suite v21.1: peran, desainer aktif, flag + GENERASI grant (termasuk KEBERADAAN property: yang sebelumnya tidak ada benar-benar HILANG, bukan false/0 — dibuktikan probe __kiProbe211 yang ditambahkan grup 22 kini HILANG), referensi koleksi, daftar undangan, state checkout/dashboard/Builder, status simpan, timer, kunci window & sessionStorage pulih PERSIS seperti sebelum suite', pass: S2.role === sessBak.role && S2.designerId === sessBak.designerId && isoGrant && S2.orders === sessBak.orders && S2.payments === sessBak.payments && S2.services === sessBak.services && S2.guests === sessBak.guests && S2.rsvps === sessBak.rsvps && S.invitations.every(i => sessBak.invIds.has(i.id)) && CO.invId === sessBak.co.invId && CO.pkgId === sessBak.co.pkgId && CO.coupon === sessBak.co.coupon && CO.couponCode === sessBak.co.couponCode && CO.method === sessBak.co.method && D2.invFilter === sessBak.d2.invFilter && D2.guestSel.size === sessBak.d2.guestSel.size && B.tab === sessBak.b.tab && B.inv === sessBak.b.inv && SAVE_STATE.status === sessBak.saveStatus && isoTimers && isoWin && isoSess && isoProbe, exp:'semua state sesi identik dengan snapshot awal (termasuk property global yang tadinya tidak ada tetap tidak ada)', act:'grant=' + isoGrant + '; win=' + isoWin + '; sess=' + isoSess + '; timers=' + isoTimers + '; probe211-hilang=' + isoProbe});
       /* VERIFIKASI SNAPSHOT SELURUH KEY (v19): storage sesi harus
          identik byte-per-byte dengan sebelum suite berjalan — tidak
          ada key yang ditambah, diubah, atau dihapus oleh pengujian,
@@ -583,6 +726,20 @@
       const restoreStore = () => { if (!store) return; const cur = []; for (let i = 0; i < store.length; i++) cur.push(store.key(i)); cur.forEach(k => { if (!(k in dump)){ try { store.removeItem(k); } catch(e){} } }); Object.keys(dump).forEach(k => { try { if (store.getItem(k) !== dump[k]) store.setItem(k, dump[k]); } catch(e){} }); };
       const roleBak = S2.role;
       const coBak = {invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock};
+      /* v21.1: snapshot isolasi lengkap (pola yang sama dengan suite
+         fixture) — keberadaan property global, desainer aktif, D2, B,
+         SAVE_STATE, timer, kunci window, sessionStorage. */
+      const hBak = { designerId:S2.designerId,
+        grant:(() => { try { return window.__kiAdminWrite === true; } catch(e){ return false; } })(),
+        grantHad:(() => { try { return '__kiAdminWrite' in window; } catch(e){ return false; } })(),
+        gen:kiGrantGen(),
+        genHad:(() => { try { return '__kiGrantGen' in window; } catch(e){ return false; } })(),
+        d2:{invFilter:D2.invFilter, invQuery:D2.invQuery, guestInv:D2.guestInv, guestQuery:D2.guestQuery, guestStatus:D2.guestStatus, guestGroup:D2.guestGroup, guestSel:new Set(D2.guestSel), guestEdit:D2.guestEdit, bulkPreview:D2.bulkPreview, rsvpInv:D2.rsvpInv, svcEdit:D2.svcEdit},
+        b:{tab:B.tab, inv:B.inv, readonly:B.readonly},
+        saveStatus:SAVE_STATE.status, saveAt:SAVE_STATE.at,
+        timers:new Set(Object.keys(_saveTimers)),
+        winKeys:new Set(Object.keys(window)),
+        sessKeys:(() => { const d = {}; try { const ss = window.sessionStorage; if (ss) for (let i = 0; i < ss.length; i++){ const k = ss.key(i); d[k] = ss.getItem(k); } } catch(e){} return d; })() };
       const origHash = location.hash;
       const fire = attrs => { const b = document.createElement('button'); Object.keys(attrs).forEach(k => b.setAttribute(k, attrs[k])); b.textContent = 'fx'; document.body.appendChild(b); b.click(); b.remove(); };
       try {
@@ -1003,13 +1160,111 @@
         const o14 = S2.orders.find(o => o.id === fxOrder14.id) || {};
         const pays14 = S2.payments.filter(p => p.orderId === fxOrder14.id);
         out.push({name:'Handler penuh — batal terminal: order dibatalkan lewat handler, lalu pay-result Success/Failed/Expired SEMUA ditolak -> status tetap Dibatalkan, paymentStatus tetap Pending, tidak ada record pembayaran baru', pass: o14c.status === 'Dibatalkan' && o14.status === 'Dibatalkan' && o14.paymentStatus === 'Pending' && pays14.length === 1, exp:'status=Dibatalkan; paymentStatus=Pending; record=1', act:'status=' + o14.status + '; paymentStatus=' + o14.paymentStatus + '; record=' + pays14.length});
+        /* (H15) v21.1 — Checkout fail-closed lewat handler ASLI: undangan
+           bertier tak terbukti -> co-pkg ditolak handler (CO.pkgId tidak
+           berubah) dan co-confirm ditolak (tidak ada pesanan tercipta). */
+        const fxInv15 = {id:'fx-inv-22u', templateId:'template-tidak-ada', templateVersion:1, slug:'fx-22u-hdl', title:'Fixture Checkout Unresolved', categoryId:'pernikahan', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+        S.invitations.push(fxInv15);
+        try {
+          CO.invId = fxInv15.id; CO.pkgId = 'basic';
+          fire({'data-s2':'co-pkg', 'data-id':'premium'});
+          const toast15a = (document.getElementById('toast') || {}).textContent || '';
+          out.push({name:'Handler penuh — checkout fail-closed: klik paket Premium untuk undangan bertier tak terbukti -> DITOLAK handler, CO.pkgId tetap basic, toast menyebut tier tidak dapat dibuktikan', pass: CO.pkgId === 'basic' && toast15a.indexOf('tidak dapat dibuktikan') >= 0, exp:'CO.pkgId=basic; toast tier tidak dapat dibuktikan', act:'CO.pkgId=' + CO.pkgId + '; toast="' + toast15a.slice(0, 60) + '"'});
+          const ordersBefore15 = S2.orders.length;
+          fire({'data-s2':'co-confirm'});
+          const toast15b = (document.getElementById('toast') || {}).textContent || '';
+          out.push({name:'Handler penuh — checkout fail-closed: klik Konfirmasi untuk undangan bertier tak terbukti -> DITOLAK handler, tidak ada pesanan tercipta', pass: S2.orders.length === ordersBefore15 && !S2.orders.some(o => o.invitationId === fxInv15.id) && toast15b.indexOf('DITOLAK') >= 0, exp:'0 pesanan baru; toast DITOLAK', act:'pesanan=' + S2.orders.length + ' (sebelum ' + ordersBefore15 + '); toast="' + toast15b.slice(0, 60) + '"'});
+        } finally { S.invitations.splice(S.invitations.indexOf(fxInv15), 1); }
+        /* (H16) v21.1 — Paid fail-closed ORPHAN lewat handler penugasan
+           ASLI (event change pada select [data-s2-assign]): proyek New
+           dengan order + payment Success tertaut TAPI record undangan
+           proyek hilang -> penugasan DITOLAK (tidak ada bukti Paid);
+           setelah record undangan ada + tier terbukti -> Assigned. */
+        const roleBak16 = S2.role;
+        S2.role = 'admin';
+        try { window.__kiAdminWrite = true; } catch(e){}
+        const fireAssign16 = (svcId, val) => { const sel = document.createElement('select'); sel.setAttribute('data-s2-assign', svcId); sel.innerHTML = '<option value=""></option><option value="des-1">Rani</option><option value="des-2">Dewa</option>'; sel.value = val; document.body.appendChild(sel); sel.dispatchEvent(new Event('change', {bubbles:true})); sel.remove(); };
+        const fxOrder16 = {id:'fx-o-22o', number:'KI-FX-22O', invitationId:'fx-inv-22o', customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Diproses', paymentStatus:'Success', createdAt:Date.now()};
+        const fxPay16 = {id:'fx-p-22o', orderId:'fx-o-22o', invitationId:'fx-inv-22o', method:'Virtual Account', status:'Success', amount:59000, code:'8808 2222 2222', createdAt:Date.now(), paidAt:Date.now(), attempt:1};
+        const fxSvc16 = {id:'fx-svc-hdl22o', number:'REQ-FX-22O', customerId:'cust-1', title:'Fixture Orphan', status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:'fx-inv-22o', orderId:'fx-o-22o', createdAt:Date.now(), updatedAt:Date.now()};
+        S2.orders.push(fxOrder16); saveColl('orders');
+        S2.payments.push(fxPay16); saveColl('payments');
+        S2.services.push(fxSvc16); saveColl('services');
+        try {
+          fireAssign16(fxSvc16.id, 'des-1');
+          const s16a = S2.services.find(s => s.id === fxSvc16.id) || {};
+          const toast16a = (document.getElementById('toast') || {}).textContent || '';
+          out.push({name:'Handler penuh — Paid ORPHAN: penugasan proyek New + order/payment Success tertaut TAPI record undangan hilang -> DITOLAK handler (status tetap New, tanpa desainer)', pass: s16a.status === 'New' && s16a.designerId === null && toast16a.indexOf('belum dapat ditugaskan') >= 0, exp:'status=New; desainer=null; toast belum dapat ditugaskan', act:'status=' + s16a.status + '; desainer=' + s16a.designerId + '; toast="' + toast16a.slice(0, 50) + '"'});
+          const inv16 = {id:'fx-inv-22o', templateId:'luxury-ivory', templateVersion:1, title:'Fixture Orphan', status:'draft', ownerId:'cust-1'};
+          S.invitations.push(inv16);
+          fireAssign16(fxSvc16.id, 'des-1');
+          const s16b = S2.services.find(s => s.id === fxSvc16.id) || {};
+          out.push({name:'Handler penuh — Paid ORPHAN (kontrol positif): record undangan ADA + tier terbukti -> penugasan lolos (Assigned ke des-1)', pass: s16b.status === 'Assigned' && s16b.designerId === 'des-1', exp:'status=Assigned; desainer=des-1', act:'status=' + s16b.status + '; desainer=' + s16b.designerId});
+          S.invitations.splice(S.invitations.indexOf(inv16), 1);
+        } finally {
+          S2.orders = S2.orders.filter(o => o.id !== fxOrder16.id);
+          S2.payments = S2.payments.filter(p => p.id !== fxPay16.id);
+          S2.services = S2.services.filter(s => s.id !== fxSvc16.id);
+          saveColl('orders'); saveColl('payments'); saveColl('services');
+          S2.role = roleBak16;
+          try { window.__kiAdminWrite = false; } catch(e){}
+        }
+        /* (H17) v21.1 — Reset backup aman lewat handler reset-demo ASLI +
+           modal asli: fault injection pada Storage.prototype.setItem
+           untuk kunci cadangan. (A) commit lempar saat tulis -> toast
+           "backup lama dipertahankan", storage utuh. (B) commit robek +
+           pemulihan backup lama gagal -> toast "TIDAK terverifikasi". */
+        const fireReset17 = () => { fire({'data-s2':'reset-demo'}); const ok = document.querySelector('#s2-modal-ok'); if (ok) ok.click(); };
+        const toast17 = () => (document.getElementById('toast') || {}).textContent || '';
+        const origSet17 = Storage.prototype.setItem;
+        try {
+          Storage.prototype.setItem = function(k, v){ if (k === K2.backup) throw new Error('commit-quota-fixture'); return origSet17.call(this, k, v); };
+          /* v21.1: "storage utuh" dibandingkan dengan nilai SEBELUM fire
+             (bukan snapshot awal suite — kasus handler sebelumnya sudah
+             menulis koleksi secara sah). */
+          const ordersBefore17a = store.getItem(K2.orders);
+          fireReset17();
+          const t17a = toast17();
+          out.push({name:'Handler penuh — reset backup aman (commit lempar): cadangan baru gagal ditulis -> reset DIBATALKAN, toast "backup lama dipertahankan", storage utuh', pass: t17a.indexOf('DIBATALKAN') >= 0 && t17a.indexOf('backup lama dipertahankan') >= 0 && store.getItem(K2.orders) === ordersBefore17a, exp:'toast DIBATALKAN + backup lama dipertahankan; storage utuh', act:'toast="' + t17a.slice(0, 130) + '"; orders-utuh=' + (store.getItem(K2.orders) === ordersBefore17a)});
+        } finally { Storage.prototype.setItem = origSet17; }
+        try {
+          let commitWrites17 = 0;
+          /* v21.1: sub-kasus ini menguji restored=false — jadi backup LAMA
+             harus benar-benar ADA dulu di storage (halaman seed segar
+             tidak punya kunci backup; tanpa backup lama, nilai robek
+             cukup dibersihkan dan restored=true adalah jawaban yang
+             jujur). Set backup lama SEBELUM override dipasang. */
+          store.setItem(K2.backup, '{"lama":true}');
+          Storage.prototype.setItem = function(k, v){ if (k === K2.backup){ commitWrites17++; if (commitWrites17 === 1){ return origSet17.call(this, k, '{"torn":1}'); } throw new Error('restore-quota-fixture'); } return origSet17.call(this, k, v); };
+          const ordersBefore17b = store.getItem(K2.orders);
+          fireReset17();
+          const t17b = toast17();
+          out.push({name:'Handler penuh — reset backup aman (commit robek + pemulihan gagal): cadangan baru robek dan backup lama TIDAK terverifikasi pulih -> toast "TIDAK terverifikasi", nilai robek tertinggal di kunci cadangan (dilaporkan apa adanya), storage utuh', pass: t17b.indexOf('DIBATALKAN') >= 0 && t17b.indexOf('TIDAK terverifikasi') >= 0 && store.getItem(K2.backup) === '{"torn":1}' && store.getItem(K2.orders) === ordersBefore17b, exp:'toast DIBATALKAN + TIDAK terverifikasi; backup={"torn":1}; storage utuh', act:'toast="' + t17b.slice(0, 130) + '"; backup=' + store.getItem(K2.backup) + '; orders-utuh=' + (store.getItem(K2.orders) === ordersBefore17b)});
+        } finally { Storage.prototype.setItem = origSet17; }
       } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); }
       S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl' && i.id !== 'fx-inv-hdl2' && i.id !== 'fx-inv-hdl3' && i.id !== 'fx-inv-hdl3b');
       Object.assign(CO, coBak);
       S2.role = roleBak;
+      /* v21.1 — pemulihan isolasi yang sama dengan suite fixture:
+         grant/gen dihapus bila sebelumnya tidak ada; desainer aktif,
+         D2, B, SAVE_STATE, timer, dan kunci window dipulihkan. */
+      S2.designerId = hBak.designerId;
+      try {
+        if (hBak.grantHad) window.__kiAdminWrite = hBak.grant; else delete window.__kiAdminWrite;
+        if (hBak.genHad) window.__kiGrantGen = hBak.gen; else delete window.__kiGrantGen;
+        Object.keys(window).forEach(k => { if (k.indexOf('__ki') === 0 && !hBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
+      } catch(e){}
+      Object.assign(D2, hBak.d2); D2.guestSel = new Set(hBak.d2.guestSel);
+      Object.assign(B, hBak.b);
+      SAVE_STATE.status = hBak.saveStatus; SAVE_STATE.at = hBak.saveAt;
+      Object.keys(_saveTimers).forEach(k => { if (!hBak.timers.has(k)){ try { clearTimeout(_saveTimers[k]); } catch(e){} delete _saveTimers[k]; } });
       restoreStore();
       kiRefreshCollections();
       const isoOk = store ? Object.keys(dump).every(k => store.getItem(k) === dump[k]) : false;
-      out.push({name:'Handler penuh — isolasi: storage pulih byte-per-byte sesudah suite handler; peran & state checkout dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && !S2.orders.some(o => o.id === 'fx-o-hdl' || o.id === 'fx-o-hdl2' || o.id === 'fx-o-hdl3' || o.id === 'fx-o-hdl8' || o.id === 'fx-o-hdl8ok' || o.id === 'fx-o-hdl9' || o.id === 'fx-o-hdl9ok' || o.id === 'fx-o-hdl10' || o.id === 'fx-o-hdl14') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2' || s.id === 'fx-svc-hdl12' || s.id === 'fx-svc-hdl13a' || s.id === 'fx-svc-hdl13b' || s.id === 'fx-svc-hdl13c' || s.id === 'fx-svc-hdl13d') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl' || g.invitationId === 'fx-inv-hdl2' || g.invitationId === 'fx-inv-hdl3' || g.invitationId === 'fx-inv-hdl3b') && !S.invitations.some(i => i.id === 'fx-inv-hdl' || i.id === 'fx-inv-hdl2' || i.id === 'fx-inv-hdl3' || i.id === 'fx-inv-hdl3b')});
+      const isoGrantH = (() => { try { return ('__kiAdminWrite' in window) === hBak.grantHad && (window.__kiAdminWrite === true) === hBak.grant && ('__kiGrantGen' in window) === hBak.genHad && kiGrantGen() === hBak.gen; } catch(e){ return false; } })();
+      const isoWinH = (() => { try { const now = Object.keys(window); return now.length === hBak.winKeys.size && now.every(k => hBak.winKeys.has(k)); } catch(e){ return false; } })();
+      const isoSessH = (() => { try { const ss = window.sessionStorage; if (!ss) return Object.keys(hBak.sessKeys).length === 0; if (ss.length !== Object.keys(hBak.sessKeys).length) return false; for (let i = 0; i < ss.length; i++){ const k = ss.key(i); if (!(k in hBak.sessKeys) || ss.getItem(k) !== hBak.sessKeys[k]) return false; } return true; } catch(e){ return false; } })();
+      const isoTimersH = Object.keys(_saveTimers).length === hBak.timers.size && Object.keys(_saveTimers).every(k => hBak.timers.has(k));
+      out.push({name:'Handler penuh — isolasi v21.1: storage pulih byte-per-byte; peran, desainer aktif, flag + GENERASI grant (property yang tadinya tidak ada benar-benar HILANG), state checkout/dashboard/Builder, status simpan, timer, kunci window & sessionStorage dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && S2.designerId === hBak.designerId && isoGrantH && isoWinH && isoSessH && isoTimersH && D2.invFilter === hBak.d2.invFilter && D2.guestSel.size === hBak.d2.guestSel.size && B.tab === hBak.b.tab && B.inv === hBak.b.inv && SAVE_STATE.status === hBak.saveStatus && !S2.orders.some(o => o.id === 'fx-o-hdl' || o.id === 'fx-o-hdl2' || o.id === 'fx-o-hdl3' || o.id === 'fx-o-hdl8' || o.id === 'fx-o-hdl8ok' || o.id === 'fx-o-hdl9' || o.id === 'fx-o-hdl9ok' || o.id === 'fx-o-hdl10' || o.id === 'fx-o-hdl14' || o.id === 'fx-o-22o') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2' || s.id === 'fx-svc-hdl12' || s.id === 'fx-svc-hdl13a' || s.id === 'fx-svc-hdl13b' || s.id === 'fx-svc-hdl13c' || s.id === 'fx-svc-hdl13d' || s.id === 'fx-svc-hdl22o') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl' || g.invitationId === 'fx-inv-hdl2' || g.invitationId === 'fx-inv-hdl3' || g.invitationId === 'fx-inv-hdl3b') && !S.invitations.some(i => i.id === 'fx-inv-hdl' || i.id === 'fx-inv-hdl2' || i.id === 'fx-inv-hdl3' || i.id === 'fx-inv-hdl3b' || i.id === 'fx-inv-22u' || i.id === 'fx-inv-22o'), exp:'storage identik; grant/gen/dll pulih persis (termasuk property yang tadinya tidak ada tetap tidak ada)', act:'store=' + isoOk + '; grant=' + isoGrantH + '; win=' + isoWinH + '; sess=' + isoSessH + '; timers=' + isoTimersH});
       return out;
     }

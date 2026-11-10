@@ -209,7 +209,7 @@
         </div>
         <span style="display:flex;gap:7px;flex-wrap:wrap">
         ${!held21 && o.status !== 'Dibatalkan' && (o.paymentStatus === 'Pending' || o.paymentStatus === 'Failed' || o.paymentStatus === 'Expired') ? `<a class="btn gold sm" href="#/bayar/${o.id}">${o.paymentStatus==='Pending' ? 'Bayar Sekarang' : 'Coba Bayar Lagi'}</a>` : ''}
-        ${held21 ? `<a class="btn gold sm" href="#/checkout">Buat Pesanan Baru</a>` : ''}
+        ${held21 ? `<a class="btn gold sm" href="#/checkout?inv=${o.invitationId}">Buat Pesanan Baru</a>` : ''}
         <a class="btn ghost sm" href="#/faktur/${o.id}">Faktur</a>
         ${o.status === 'Menunggu Pembayaran' ? `<button class="btn ghost sm" data-s2="order-cancel" data-id="${o.id}" style="color:var(--err)">Batalkan</button>` : ''}
         ${adminMode && o.paymentStatus === 'Success' && o.status === 'Diproses' ? `<button class="btn ghost sm" data-s2="order-done" data-id="${o.id}">Tandai Selesai</button>` : ''}
@@ -225,11 +225,28 @@
       ${mine.length ? `<div class="list-rows">${mine.map(o => orderCard(o, false)).join('')}</div>` : '<p style="color:var(--ink-2)">Belum ada pesanan. Mulai checkout pertama Anda di atas.</p>'}
       </div>`;
     }
-    const CO = { invId:null, pkgId:'premium', coupon:null, couponCode:'', method:'Virtual Account' };
-    function viewCheckout(){
+    const CO = { invId:null, pkgId:'premium', coupon:null, couponCode:'', method:'Virtual Account', ctxHash:null, ctxMissing:false };
+    function viewCheckout(params){
       const mine = myInvitations().filter(i => !i.archived);
       if (!mine.length) return shell(`<div class="wrap" style="padding:40px 20px 90px"><div class="empty"><h3>Belum ada undangan untuk dipesan</h3><p>Buat undangan dari marketplace, lalu kembali ke sini untuk memilih paketnya.</p><a class="btn gold" href="#/template">Jelajahi Template</a></div></div>`, 'dashboard');
-      if (!CO.invId || !mine.some(i => i.id === CO.invId)) CO.invId = mine[0].id;
+      /* v21.2 — KONTEKS UNDANGAN dari URL (?inv=<id>, diparse parseHash
+         seperti ?tab=): diterapkan saat HASH BERUBAH (bukan tiap render —
+         pilihan manual di dropdown tidak boleh ditimpa render ulang).
+         Bila ID tidak ditemukan di undangan milik pengguna -> checkout
+         DITAHAN dengan penjelasan (ctxMissing); bila tier versinya tak
+         terbukti -> UI tierUnresolved v21.1. Tanpa ?inv=, perilaku lama
+         (default undangan pertama) dipertahankan. */
+      const ctxId = (params && params.inv) || null;
+      const ctxHash = location.hash || '';
+      if (ctxId){
+        if (CO.ctxHash !== ctxHash){
+          CO.ctxHash = ctxHash;
+          const ctx = mine.find(i => i.id === ctxId);
+          if (ctx){ CO.invId = ctxId; CO.ctxMissing = false; }
+          else { CO.invId = null; CO.ctxMissing = true; }
+        }
+      } else { CO.ctxHash = null; CO.ctxMissing = false; }
+      if (!CO.ctxMissing && (!CO.invId || !mine.some(i => i.id === CO.invId))) CO.invId = mine[0].id;
       /* v18: paket checkout TERKUNCI ke tier template undangan terpilih —
          pilihan paket diselaraskan ke paket tier itu setiap render, dan
          handler konfirmasi memvalidasi ulang (kiCheckoutValidate), jadi
@@ -242,26 +259,30 @@
          konfirmasi disabled. Handler co-confirm sudah menolak lewat
          kiCheckoutValidate; ini lapisan tampilan yang sama. */
       const tierUnresolved = !lockPkg;
+      /* v21.2 — pesan penahanan dibedakan: undangan tidak ditemukan
+         (ctxMissing) vs tier tidak terbukti (tierUnresolved). */
+      const holdNote = CO.ctxMissing ? 'Undangan tidak ditemukan — pilih undangan yang valid dari daftar di atas' : 'Tier template tidak dapat dibuktikan — checkout ditahan';
+      const holdTitle = CO.ctxMissing ? 'Checkout Ditahan — Undangan Tidak Ditemukan' : 'Checkout Ditahan — Tier Template Tidak Dapat Dibuktikan';
       if (lockPkg && CO.pkgId !== lockPkg.id) CO.pkgId = lockPkg.id;
       const pkg = pkgById(CO.pkgId) || DB.packages[1];
       const disc = CO.coupon ? Math.round(pkg.price * CO.coupon.pct / 100) : 0;
       const METHODS = [['Virtual Account','Nomor VA dibuat otomatis untuk simulasi'],['QRIS','Kode QR simulasi di layar pembayaran'],['E-Wallet','Saldo dompet elektronik (simulasi)'],['Bank Transfer','Transfer manual dengan kode unik (simulasi)']];
       const inner = `<div class="wrap" style="padding-bottom:90px"><div class="s2-head"><div class="rule"><span>Checkout — Simulasi</span></div><h1>Pesan Paket Undangan</h1><p>Alur: pilih undangan → pilih paket → kupon → ringkasan → metode pembayaran → konfirmasi pesanan simulasi.</p></div>
       <div class="sim-banner">Ini <b>checkout simulasi</b>. Tidak ada pembayaran nyata yang diproses.</div>
-      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${lockPkg ? ' — ' + esc((kiInvTemplate(selInv) || {}).name || '') + ' (versi yang dipakai undangan ini) adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ' — <b style="color:var(--err)">tier template undangan ini tidak dapat dibuktikan dari versi template yang dipakai, jadi checkout DITAHAN sampai tier dapat dibuktikan.</b>'}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
-        <div class="field"><label for="co-inv">Undangan</label><select class="input" id="co-inv">${mine.map(i => `<option value="${i.id}" ${i.id===CO.invId?'selected':''}>${esc(i.title)} — ${esc(tplOf(i).name)}</option>`).join('')}</select></div>
-        <div class="pkg-pick">${DB.packages.map(p => { const off = tierUnresolved || (lockPkg && p.id !== lockPkg.id); const body = `<b>${esc(p.name)}</b><span class="amt2">${p.from ? '<small style="font-size:13px;font-family:var(--font-ui)">Mulai </small>' : ''}${rp(p.price)}</span><span style="font-size:13px;color:var(--ink-2)">${esc(p.note)}</span><ul>${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${off ? '<span style="font-size:12.5px;font-weight:700;color:var(--ink-3)">' + (tierUnresolved ? 'Tier template tidak dapat dibuktikan — checkout ditahan' : 'Tidak tersedia untuk tier template undangan ini') + '</span>' : ''}`; return off ? `<div class="pkg-opt" style="opacity:.45" aria-disabled="true">${body}</div>` : `<button type="button" class="pkg-opt ${CO.pkgId===p.id?'on':''}" data-s2="co-pkg" data-id="${p.id}">${body}</button>`; }).join('')}</div>
+      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${CO.ctxMissing ? ' — <b style="color:var(--err)">undangan yang dituju lewat tautan ini tidak ditemukan (mungkin sudah dihapus atau bukan milik Anda) — checkout DITAHAN. Pilih undangan dari daftar di bawah untuk melanjutkan.</b>' : lockPkg ? ' — ' + esc((kiInvTemplate(selInv) || {}).name || '') + ' (versi yang dipakai undangan ini) adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ' — <b style="color:var(--err)">tier template undangan ini tidak dapat dibuktikan dari versi template yang dipakai, jadi checkout DITAHAN sampai tier dapat dibuktikan.</b>'}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
+        <div class="field"><label for="co-inv">Undangan</label><select class="input" id="co-inv">${CO.ctxMissing ? '<option value="" selected disabled>— pilih undangan —</option>' : ''}${mine.map(i => `<option value="${i.id}" ${i.id===CO.invId?'selected':''}>${esc(i.title)} — ${esc(tplOf(i).name)}</option>`).join('')}</select></div>
+        <div class="pkg-pick">${DB.packages.map(p => { const off = tierUnresolved || (lockPkg && p.id !== lockPkg.id); const body = `<b>${esc(p.name)}</b><span class="amt2">${p.from ? '<small style="font-size:13px;font-family:var(--font-ui)">Mulai </small>' : ''}${rp(p.price)}</span><span style="font-size:13px;color:var(--ink-2)">${esc(p.note)}</span><ul>${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${off ? '<span style="font-size:12.5px;font-weight:700;color:var(--ink-3)">' + (tierUnresolved ? holdNote : 'Tidak tersedia untuk tier template undangan ini') + '</span>' : ''}`; return off ? `<div class="pkg-opt" style="opacity:.45" aria-disabled="true">${body}</div>` : `<button type="button" class="pkg-opt ${CO.pkgId===p.id?'on':''}" data-s2="co-pkg" data-id="${p.id}">${body}</button>`; }).join('')}</div>
       </div>
       <div class="card"><h2>2 · Kupon & Ringkasan</h2>
         <div class="toolbar2"><input class="input" id="co-coupon" placeholder="Kode kupon, cth. HEMAT10" value="${esc(CO.couponCode)}" style="text-transform:uppercase"><button class="btn ghost" data-s2="co-coupon-apply">Pakai Kupon</button></div>
         ${CO.coupon ? `<p style="color:var(--ok);font-weight:700;font-size:14px">Kupon ${esc(CO.coupon.code)} aktif — diskon ${CO.coupon.pct}%.</p>` : '<p style="font-size:13.5px;color:var(--ink-3)">Kupon demo yang valid: HEMAT10 dan LAUNCH20.</p>'}
-        ${tierUnresolved ? `<div class="sum-row"><span>Paket belum dapat ditentukan — tier template tidak terbukti</span><span>—</span></div>` : `<div class="sum-row"><span>Paket ${esc(pkg.name)} untuk “${esc((mine.find(i => i.id === CO.invId) || {}).title || '')}”</span><span>${rp(pkg.price)}</span></div>`}
+        ${tierUnresolved ? `<div class="sum-row"><span>Paket belum dapat ditentukan — ${CO.ctxMissing ? 'undangan tidak ditemukan' : 'tier template tidak terbukti'}</span><span>—</span></div>` : `<div class="sum-row"><span>Paket ${esc(pkg.name)} untuk “${esc((mine.find(i => i.id === CO.invId) || {}).title || '')}”</span><span>${rp(pkg.price)}</span></div>`}
         <div class="sum-row"><span>Diskon kupon</span><span>${tierUnresolved ? '—' : '−' + rp(disc)}</span></div>
         <div class="sum-row total"><span>Total bayar (simulasi)</span><span>${tierUnresolved ? '—' : rp(pkg.price - disc)}</span></div>
       </div>
       <div class="card"><h2>3 · Metode Pembayaran (Simulasi)</h2>
         ${METHODS.map(m => `<button type="button" class="meth-opt ${CO.method===m[0]?'on':''}" data-s2="co-method" data-id="${esc(m[0])}"><span>${esc(m[0])}<small>${esc(m[1])}</small></span></button>`).join('')}
-        <button class="btn gold block" data-s2="co-confirm" style="margin-top:8px"${tierUnresolved ? ' disabled' : ''}>${tierUnresolved ? 'Checkout Ditahan — Tier Template Tidak Dapat Dibuktikan' : 'Konfirmasi Pesanan Simulasi — ' + rp(pkg.price - disc)}</button>
+        <button class="btn gold block" data-s2="co-confirm" style="margin-top:8px"${tierUnresolved ? ' disabled' : ''}>${tierUnresolved ? holdTitle : 'Konfirmasi Pesanan Simulasi — ' + rp(pkg.price - disc)}</button>
         <p class="hint" style="margin-top:10px">Setelah konfirmasi, Anda masuk ke layar pembayaran simulasi dengan status awal <b>Pending</b>. Dari sana Anda dapat mensimulasikan pembayaran berhasil, gagal, atau kedaluwarsa.</p>
       </div></div>`;
       return shell(inner, 'dashboard');
@@ -293,7 +314,7 @@
       : done ? `<div class="card" style="text-align:center"><h2>Pembayaran Simulasi Berhasil</h2><p class="sub" style="margin-bottom:14px">Paket ${esc(order.packageName)} kini aktif untuk undangan “${esc(inv ? inv.title : '')}”. Pesanan dan dashboard Anda sudah diperbarui dari record yang sama.</p>
         <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/faktur/${order.id}">Lihat Faktur</a>${inv && inv.status !== 'published' ? `<button class="btn" data-s2="pay-publish" data-id="${order.id}">Publikasikan Undangan Sekarang</button>` : ''}<a class="btn ghost" href="#/dashboard">Ke Dashboard</a></div></div>`
       : (order.needsNewOrder || hold21.held) ? `<div class="card" style="text-align:center"><h2>Pembayaran Ditahan — Paket Tidak Sesuai Tier Template</h2><p class="sub" style="margin-bottom:14px">${hold21.unresolved && !order.tierHold ? 'Tier template undangan “' + esc(inv ? inv.title : '') + '” tidak dapat dibuktikan dari versi template yang dipakai, jadi pembayaran untuk pesanan ini <b>ditahan</b>.' : 'Pesanan ini memakai paket <b>' + esc(order.packageName) + '</b>, tetapi undangan “' + esc(inv ? inv.title : '') + '” memakai template tier <b>' + esc(holdExpectedName) + '</b>.'} Hasil pembayaran untuk pesanan ini <b>ditahan</b>: paket yang salah tidak diaktifkan, dan snapshot pesanan ini (paket, harga, total) <b>tidak diubah</b> sebagai riwayat. Buat pesanan baru dengan paket yang benar lewat checkout — checkout kini terkunci ke tier template undangan.</p>
-        <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout">Buat Pesanan Baru yang Sesuai</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
+        <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout?inv=${order.invitationId}">Buat Pesanan Baru yang Sesuai</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
       : `<div class="card"><h2>Simulasikan Hasil Pembayaran</h2><p class="sub">Pilih skenario untuk melihat bagaimana status pesanan, undangan, dan dashboard bereaksi. Pembayaran gagal atau kedaluwarsa <b>tidak</b> menerbitkan undangan.</p>
         <div style="display:grid;gap:9px">
           <button class="btn gold block" data-s2="pay-result" data-id="${order.id}" data-res="Success">Simulasikan: Pembayaran Berhasil</button>
@@ -359,7 +380,7 @@
       return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
       <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
       <p style="font-size:14px;margin:0 0 12px"><b>Reproduksi uji:</b> klik kedua tombol uji di bawah pada halaman ini — hasil tampil per kasus (LOLOS/GAGAL) dengan <i>expected</i> vs <i>actual</i> untuk kasus-kasus v19. Kedua suite berjalan pada stub/record sintetis disposable dan memulihkan seluruh storage &amp; state sesi sesudahnya (kasus isolasi + snapshot seluruh key memverifikasinya).</p>
-      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Tier Order Lama · Versi Template · Expiry Clamp · Identitas RSVP · Kode Bayar · Isolasi · Snapshot Key · v21: Tier Ditahan Tampil · Fail-Closed · Bukti Silang · Kode Baru QRIS · RSVP Multi-Tamu · Rollback Jujur · State Machine · Badge Nusantara)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP · Tier Ditahan · RSVP Dua Tamu · Kode Bayar · v21: Hold Tampil · Tolak Percobaan Baru · Kode Baru QRIS · RSVP Nama Sama · Rollback Gagal · Assign/Unassign · Batal Terminal)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Tier Order Lama · Versi Template · Expiry Clamp · Identitas RSVP · Kode Bayar · Isolasi · Snapshot Key · v21: Tier Ditahan Tampil · Fail-Closed · Bukti Silang · Kode Baru QRIS · RSVP Multi-Tamu · Rollback Jujur · State Machine · Badge Nusantara · v21.2: Konteks Checkout · Reset Kunci Sementara · Demo Layout)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP · Tier Ditahan · RSVP Dua Tamu · Kode Bayar · v21: Hold Tampil · Tolak Percobaan Baru · Kode Baru QRIS · RSVP Nama Sama · Rollback Gagal · Assign/Unassign · Batal Terminal · v21.2: Konteks Checkout · Reset Kunci Sementara)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
     }
     function dashSettings(){
       return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
@@ -553,7 +574,7 @@
       if (!seg.length || seg[0] === 'u' || seg[0] === 'studio' || seg[0] === 'template' || seg[0] === 'demo' || seg[0] === 'buat') return;
       let html = null;
       if (seg[0] === 'dashboard') html = viewDashboard(params);
-      else if (seg[0] === 'checkout') html = viewCheckout();
+      else if (seg[0] === 'checkout') html = viewCheckout(params);
       else if (seg[0] === 'bayar' && seg[1]){ const o = S2.orders.find(x => x.id === seg[1]); html = o && !kiOrderViewAllowed(o) ? orderForbidden() : viewPay(o); }
       else if (seg[0] === 'faktur' && seg[1]){ const o = S2.orders.find(x => x.id === seg[1]); html = o && !kiOrderViewAllowed(o) ? orderForbidden() : viewInvoice(o); }
       else if (seg[0] === 'admin') html = S2.role === 'admin' ? viewAdmin(params) : roleForbidden('Admin');

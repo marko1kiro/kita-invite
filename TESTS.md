@@ -1,71 +1,81 @@
-# Kita Invite V21.1 — TESTS.md
+# Kita Invite V21.2 — TESTS.md
 
-Ronde perbaikan atas temuan audit V21. Baseline: branch
-`muse-fix-v21`, commit `a6d0ea5bf0a3b9bf35bf72e1c57943a90f151f45`.
-Tree ini (`v21.1/`) mempertahankan struktur modular V20/V21 (18 file:
-`index.html` + 4 CSS + 13 JS, classic `<script src>`, bukan ES modules)
-+ direktori `harness/` (harness yang dapat dijalankan, disertakan di
-branch — lihat § Reproduksi).
+Ronde perbaikan sempit atas koreksi Agent Lora untuk v21.1. Baseline:
+branch `muse-fix-v21.1`, commit
+`55203bee2bf625a38c026fce8e5240a62499d6ad`. Tree ini (`v21.2/`)
+mempertahankan struktur modular V20/V21/V21.1 (18 file: `index.html` +
+4 CSS + 13 JS, classic `<script src>`, bukan ES modules) + direktori
+`harness/` (harness yang dapat dijalankan, disertakan di branch — lihat
+§ Reproduksi).
 
-## File yang berubah vs V21 (6 file + harness + TESTS.md; 12 file lain byte-identical)
+## File yang berubah vs V21.1 (7 file + harness + TESTS.md; 11 file lain byte-identical)
 
 | File | Perubahan | Alasan (satu baris) |
 |---|---|---|
-| `js/07-s2-access.js` | −14 / +45 baris | `kiInvTemplateProven` (fail-closed, tanpa fallback template terkini); `kiResolvePackageId` fail-closed juga tanpa record undangan; `kiServicePaidProof` menolak bukti Paid bila record undangan hilang |
-| `js/08-s2-reset.js` | −4 / +25 baris | `kiResetCore` mempertahankan + memverifikasi pemulihan backup lama bila commit cadangan gagal (tulis / baca-balik / restore); flag `restored` jujur; kunci tmp dibersihkan di semua jalur gagal |
-| `js/09-s2-fixtures.js` | −18 / +273 baris | Grup (22) baru (12 kasus) + 5 kasus reset commit + mode stub `commit-torn`/`commit-write`/`commit-restore-fail`/`backup-read` + isolasi hardened (hapus property global yang tadinya tidak ada, pulihkan timer/role/grant/storage/state) + H15–H17 (6 kasus) |
-| `js/12-s2-views.js` | −7 / +13 baris | `viewCheckout` fail-closed bila tier tak terbukti (peringatan + semua paket off + tombol konfirmasi disabled); `orderCard` pill hold memakai class `wrap` |
-| `js/13-s2-handlers.js` | −3 / +4 baris | Toast reset membedakan backup lama dipertahankan vs pemulihan TIDAK terverifikasi; teks modal reset menyebut verifikasi restore |
-| `css/stage2.css` | −1 / +11 baris | `.pill.wrap` baru (`white-space:normal`, `overflow-wrap:anywhere`); `.lrow.grow` `min-width:0` + `overflow-wrap:anywhere` (tanpa `overflow:hidden` — tidak ada info yang dipotong) |
-| `harness/run-v21.1.js` | baru (221 baris) | Harness Node (jsdom) yang disertakan di branch — salinan `harness/run-v21.js` di luar branch dengan ROOT = tree ini; perbandingan baseline opsional (argumen ke-2) |
-| `harness/package.json` | baru (16 baris) | Dependensi harness: `acorn` + `jsdom` (install via `npm install`; `node_modules` TIDAK disertakan) |
+| `js/05-builder.js` | −1 / +1 baris | Tombol "Pesan Paket Ini (Simulasi)" membawa konteks `?inv=${inv.id}` |
+| `js/12-s2-views.js` | −12 / +33 baris | `viewCheckout(params)` membaca konteks `?inv=` (memo hash, `ctxMissing` bila ID tak ditemukan); `s2Render` meneruskan `params`; tautan "Buat Pesanan Baru" (orderCard + viewPay) membawa `?inv=<invitationId>`; label tombol uji diperbarui |
+| `js/13-s2-handlers.js` | −3 / +4 baris | Handler `co-inv` membersihkan `ctxMissing` saat pilih manual; toast reset menambah cabang `backup-cleanup` + catatan tmp-cleanup |
+| `js/08-s2-reset.js` | −7 / +22 baris | `cleanTmp()` terverifikasi baca-balik menggantikan `dropTmp`; hasil jujur `tmpCleanup` / `backupValid`; stage baru `backup-cleanup` (berhenti sebelum hapus data bila kunci sementara tertinggal) |
+| `js/04-views.js` | −1 / +1 baris | `viewDemo` memakai class `detail-grid demo-layout`, inline grid dihapus |
+| `css/design-system.css` | −0 / +9 baris | `.demo-layout`: dua kolom `400px 1fr` di desktop/tablet, satu kolom ≤820 px (tanpa `overflow:hidden`) |
+| `js/09-s2-fixtures.js` | −10 / +223 baris | Grup (23) baru (16 kasus: konteks checkout, reset kunci sementara, probe cleanup, penanda demo) + H18–H19 (6 kasus) + `mk()` mode gabungan Set + tmp-throw/tmp-silent + kedua suite di-restructure try/finally dengan pemulihan sessionStorage + penghapusan SEMUA kunci window baru |
+| `harness/run-v21.2.js` | baru (249 baris; `run-v21.1.js` DIHAPUS) | Rename + keluar NONZERO bila ada kasus gagal / suite melempar / cleanup tidak pulih + verifikasi sessionStorage & kunci window pra/pasca-suite (hasil: `result.cleanup`, `result.exitCode`) |
+| `harness/package-lock.json` | baru (355 baris) | Lockfile deterministik (acorn 8.19.0, jsdom 31.0.0 — sama persis dengan `package.json`); `npm ci` terverifikasi dari clone bersih |
 | `TESTS.md` | ditulis ulang | Dokumen ini |
 
-Tidak ada perubahan pada: `index.html`, 3 CSS lain (`design-system.css`,
-`renderer.css`, `builder.css`), `01-core.js`, `02-catalog.js`,
-`03-state.js`, `04-views.js`, `05-builder.js`, `06-s2-core.js`,
-`10-s2-rsvp.js`, `11-s2-seed.js`. Tidak ada perubahan seed data,
-harga, durasi masa aktif, skema storage, KI-2026-1008 (hold v21
-dipertahankan apa adanya), atau tanggal Nusantara Tech / Nadia–Reza /
-Salsa.
+Tidak ada perubahan pada: `index.html`, 3 CSS lain (`renderer.css`,
+`builder.css`, `stage2.css`), `01-core.js`, `02-catalog.js`,
+`03-state.js`, `06-s2-core.js`, `07-s2-access.js`, `10-s2-rsvp.js`,
+`11-s2-seed.js`. Tidak ada perubahan seed data, harga, durasi masa
+aktif, skema storage, aturan expiry V20, KI-2026-1008 (hold v21
+dipertahankan apa adanya — hanya tautan "Buat Pesanan Baru"-nya kini
+membawa konteks), atau tanggal Nusantara Tech / Nadia–Reza / Salsa.
+Tombol "Buat Pesanan Baru" pada kartu pesanan DIBATALKAN
+(`js/12-s2-views.js`, viewPay) SENGAJA tidak diubah — backlog v22.
 
-## Reproduksi — harness di branch (cara yang diutamakan)
+## Reproduksi — instalasi deterministik + harness di branch (cara yang diutamakan)
 
-Harness disertakan di branch (`v21.1/harness/`) supaya audit dapat
-mereproduksi tanpa file luar. Dari direktori tree ini:
+Harness disertakan di branch (`v21.2/harness/`) supaya audit dapat
+mereproduksi tanpa file luar. Dari clone bersih tree ini:
 
 ```bash
-cd v21.1/harness
-npm install            # acorn + jsdom; node_modules TIDAK ikut di-push
-node run-v21.1.js ../../after-v21.1/suite-result-inbranch.json
+cd v21.2/harness
+npm ci                 # instalasi deterministik dari package-lock.json
+                       # (acorn 8.19.0 + jsdom 31.0.0; 29 paket)
+                       # node_modules TIDAK ikut di-push
+node run-v21.2.js ../../after-v21.2/suite-result.json
 # Dengan perbandingan baseline (opsional): beri direktori baseline
 # yang berisi suite-result.json + index.html + state-*.json, mis.:
-node run-v21.1.js ../../after-v21.1/suite-result-inbranch-v19base.json ../../baseline-v19
+node run-v21.2.js ../../after-v21.2/suite-result.json ../../baseline-v19
 ```
 
-Perintah ini MENJALANKAN suite in-page yang sebenarnya (`kiFixtureTests`
-+ `kiHandlerTests`) di jsdom atas tree yang disajikan lewat HTTP lokal,
-bukan sekadar memeriksa sintaks. Hasil run yang benar-benar dijalankan
-dari layout branch (10 Nov 2026, 20:52 WIB):
+Perintah ini MENJALANKAN suite in-page yang sebenarnya
+(`kiFixtureTests` + `kiHandlerTests`) di jsdom atas tree yang disajikan
+lewat HTTP lokal, bukan sekadar memeriksa sintaks. **Harness keluar
+NONZERO bila ada kasus gagal, suite melempar, atau cleanup tidak
+memulihkan sessionStorage/global persis** (`process.exitCode = 1`;
+lempar runner tetap keluar 2). Hasil run yang benar-benar dijalankan
+dari layout branch (10 Nov 2026, ~23:00 WIB — run final; run
+sebelumnya 160/162 + 45/46 karena 3 kesalahan ekspektasi tes, bukan
+bug aplikasi — lihat REPORT-v21.2.md §6):
 
-- `kiFixtureTests`: **146/146 PASS**
-- `kiHandlerTests`: **40/40 PASS**
+- `kiFixtureTests`: **162/162 PASS** (baseline V21.1: 146/146; +16 kasus)
+- `kiHandlerTests`: **46/46 PASS** (baseline V21.1: 40/40; +6 kasus)
 - HTTP lokal 19/19 → 200 (semua file tree)
 - 5 rute render (`#/`, `#/dashboard`, `#/admin`, `#/u/nadia-dan-reza`,
   `#/template`); storage keys 16
+- `result.cleanup.ok: true` (sessionStorage + kunci window kembali
+  identik dengan snapshot pra-suite); `result.exitCode: 0`
 - Tanpa argumen baseline: `compare` berisi catatan "Baseline tidak
-  diberikan/ditemukan — perbandingan dilewati."
-- Dengan baseline `baseline-v19/`: suite 100/100 (v19) vs 146/146 (v21.1)
-  dan handler 11/11 vs 40/40 — `identical:false` karena suite BERTAMBAH
-  46 kasus (diharapkan, bukan regresi); **kelima rute
-  appHtmlShaFresh IDENTICAL, counts/invitations/orders/storage-keys/
-  storage-ternormalisasi IDENTICAL** vs monolit v19. Boot errors: hanya
-  1 jsdomError Google Fonts (artefak harness — font eksternal diblokir
-  interceptor; bukan error aplikasi).
+  diberikan/ditemukan — perbandingan dilewati." (Perbandingan rute
+  v21.1-vs-v21.2 dilakukan terpisah dari dua file suite-result —
+  lihat § Perbandingan rute.)
 
-Setelah menjalankan, HAPUS `v21.1/harness/node_modules` (dan
-`package-lock.json` bila terbentuk) supaya tree yang di-push tetap
-bersih — hanya `run-v21.1.js` + `package.json` yang masuk commit.
+Setelah menjalankan, HAPUS `v21.2/harness/node_modules` supaya tree
+yang di-push tetap bersih — yang masuk commit: `run-v21.2.js` +
+`package.json` + `package-lock.json`. **`package-lock.json` WAJIB
+tetap ada di branch** (bukan artefak instalasi — ini bagian dari
+deliverable item 3).
 
 ## Reproduksi — harness luar (cara lama, tetap berlaku)
 
@@ -73,58 +83,58 @@ Perintah dijalankan dari `~/workspace/kita-invite-refactor/`:
 
 ```bash
 # Syntax check semua file yang diubah
-for f in 07-s2-access.js 08-s2-reset.js 09-s2-fixtures.js 12-s2-views.js 13-s2-handlers.js; do
-  node --check v21.1/js/$f
+for f in 04-views.js 05-builder.js 08-s2-reset.js 09-s2-fixtures.js 12-s2-views.js 13-s2-handlers.js; do
+  node --check v21.2/js/$f
 done
-node --check v21.1/harness/run-v21.1.js
+node --check v21.2/harness/run-v21.2.js
+# (CSS tidak punya checker — perubahan design-system.css diperiksa
+# lewat pengukuran Playwright, lihat § Demo.)
 
-# Suite lengkap pada tree v21.1 (tanpa baseline — perbandingan dilewati)
-node harness/run-v21.1.js after-v21.1/suite-result.json
+# Suite lengkap pada tree v21.2 (NODE_PATH menunjuk node_modules luar
+# supaya tidak perlu npm install di dalam tree)
+cd v21.2/harness
+NODE_PATH=/home/hatch/workspace/kita-invite-refactor/harness/node_modules \
+  node run-v21.2.js ../../after-v21.2/suite-result.json
 ```
 
-Hasil run yang benar-benar dijalankan (10 Nov 2026, 20:51 WIB — run
-ketiga/final; run 1–2 sebelumnya gagal dengan diagnosis di bawah):
+Hasil run yang benar-benar dijalankan (10 Nov 2026, ~22:55 WIB):
 
-- `kiFixtureTests`: **146/146 PASS** (baseline V21: 128/128; +18 kasus)
-- `kiHandlerTests`: **40/40 PASS** (baseline V21: 34/34; +6 kasus)
-- HTTP lokal 19/19 → 200; storage keys 16
+- `kiFixtureTests`: **162/162 PASS**
+- `kiHandlerTests`: **46/46 PASS**
+- HTTP lokal 19/19 → 200; storage keys 16; cleanup ok; exit 0
 - Boot errors: hanya 1 jsdomError Google Fonts (artefak harness)
 
-Catatan run: run pertama 141/145 + 38/40 (6 gagal — semuanya kesalahan
-ekspektasi tes, bukan bug aplikasi: 4 kasus fixture lama memakai
-invitasi tanpa `templateVersion` / invitationId sintetis yang tidak ada
-di `S.invitations` setelah fail-closed diberlakukan, dan 2 kasus H17
-membandingkan storage dengan snapshot yang sudah basi); run kedua
-145/145 + 39/40 (satu kasus H17-B gagal karena tes mengasumsikan ada
-backup lama padahal halaman fresh tidak punya — setelah tes diperbaiki
-dengan preset backup lama, run ketiga 146/146 + 40/40). Detail run
-1–3 ada di REPORT-v21.1.md §6.
+## Reproduksi — bukti exit code harness (salinan disposable)
 
-File hasil run (di `~/workspace/kita-invite-refactor/`):
+Dua run paksa-gagal pada salinan disposable di `/tmp` (bukan tree
+branch; salinan sudah dihapus sesudah run):
 
-- `after-v21.1-baseline/suite-result.json` + `cases.json` — baseline V21
-  SEBELUM perubahan (kiFixtureTests 128/128, kiHandlerTests 34/34;
-  162 kasus, 0 gagal)
-- `after-v21.1/suite-result.json` + `cases.json` — hasil SESUDAH
-  perubahan (kiFixtureTests 146/146, kiHandlerTests 40/40; 186 kasus,
-  0 gagal; per kasus: nama, pass, expected, actual)
-- `after-v21.1/suite-result-inbranch.json` — run harness DARI layout
-  branch, tanpa baseline (146/146 + 40/40)
-- `after-v21.1/suite-result-inbranch-v19base.json` — run harness DARI
-  layout branch dengan baseline v19 (perbandingan rute identik, lihat
-  di atas)
-- `after-v21.1/overflow-v21.json`, `overflow-v21.1.json`,
-  `overflow-v20.json` — pengukuran overflow Playwright (lihat § Overflow)
+```bash
+# (a) Satu kasus fixture dipaksa gagal -> harness keluar 1
+#     hasil: kiFixtureTests 162/163, kiHandlerTests 46/46, exit 1
+# (b) Throw dilempar setelah mutasi grup 23 (probe sessionStorage +
+#     global sudah ditambahkan) -> harness keluar 1 DAN cleanup ok
+#     (kasus isolasi PASS, probe212 hilang — finally berjalan)
+#     hasil: kiFixtureTests 162/163, kiHandlerTests 46/46, exit 1
+```
+
+File hasil run (di `~/workspace/kita-invite-refactor/after-v21.2/`):
+
+- `suite-result-forced-fail.json` — run (a), `exitCode: 1`
+- `suite-result-forced-throw.json` — run (b), `exitCode: 1`,
+  `cleanup.ok: true`
 
 ## Reproduksi — tombol fixture in-page (browser, disposable)
 
-Buka preview Pages branch `muse-fix-v21.1`, lalu:
+Buka preview Pages branch `muse-fix-v21.2`, lalu:
 
 1. Dashboard → Pengaturan (tab Pengaturan).
-2. Klik **"Jalankan Uji Fixture Terisolasi (…)"** — menjalankan
-   `kiFixtureTests` (146 kasus, termasuk grup 22).
-3. Klik **"Jalankan Uji Handler Penuh (…)"** — menjalankan
-   `kiHandlerTests` (40 kasus, termasuk H15–H17).
+2. Klik **"Jalankan Uji Fixture Terisolasi (… v21.2: Konteks Checkout ·
+   Reset Kunci Sementara · Demo Layout)"** — menjalankan
+   `kiFixtureTests` (162 kasus, termasuk grup 23).
+3. Klik **"Jalankan Uji Handler Penuh (… v21.2: Konteks Checkout ·
+   Reset Kunci Sementara)"** — menjalankan `kiHandlerTests` (46 kasus,
+   termasuk H18–H19).
 4. Hasil tampil di bawah tombol (`#fixture-results` / `#handler-results`).
 
 PENTING — aturan audit yang berlaku (dari Lora): tombol fixture/grant
@@ -134,69 +144,119 @@ publik. Suite ini terisolasi penuh: sebelum berjalan, seluruh state sesi
 ID undangan, dump storage, kunci window, sessionStorage, timer autosave)
 di-snapshot; sesudah berjalan semuanya dipulihkan — termasuk MENGHAPUS
 property global yang sebelumnya tidak ada (bukan mengubahnya menjadi
-`false`/`0`) — dan kasus isolasi terakhir MEMVERIFIKASI pemulihan itu
-(storage byte-per-byte, set kunci window identik, sessionStorage
-identik, timer identik, tidak ada record fixture tertinggal).
+`false`/`0`) dan MEMULIHKAN sessionStorage persis (hapus yang
+ditambahkan, kembalikan yang diubah/dihapus) — dan pemulihan kini
+berjalan di `finally`, jadi TETAP BERJALAN walau ada kasus yang
+melempar; kasus isolasi terakhir MEMVERIFIKASI pemulihan itu (storage
+byte-per-byte, set kunci window identik, sessionStorage identik, timer
+identik, tidak ada record fixture tertinggal).
 
-## Overflow — pengukuran Playwright (browser nyata, bukan jsdom)
+## Perbandingan rute (v21.1 baseline vs v21.2 sesudah)
 
-Skrip `~/workspace/kita-invite-refactor/browser-test/measure-overflow.js`
-(Chromium Playwright, binary Chrome for Testing 158.0.8127.18 yang
-diunduh via curl ke `~/.cache/ms-playwright/chromium-1254/` —
-`npx playwright install chromium` gagal dua kali karena CDN menutup
-koneksi; `executablePath` eksplisit dipakai karena Playwright default
-memakai headless-shell yang belum terunduh). Route
-`#/dashboard?tab=pesanan`, data seed lengkap, viewport 360/375/390/430.
+Lima rute yang dirender segar oleh harness pada kedua tree
+(`after-v21.2-baseline/suite-result.json` vs
+`after-v21.2/suite-result.json`):
 
-| Lebar | V21 (baseline) | V21.1 | V20 |
-|---|---|---|---|
-| 360 px | OVERFLOW +111 px (docScrollWidth 471) | OK (360) | OK (360) |
-| 375 px | OVERFLOW +96 px (471) | OK (375) | OK (375) |
-| 390 px | OVERFLOW +81 px (471) | OK (390) | OK (390) |
-| 430 px | OVERFLOW +41 px (471) | OK (430) | OK (430) |
+| Rute | appHtmlSha | counts | invitations | orders | storageKeys | storageNorm |
+|---|---|---|---|---|---|---|
+| `#/` | IDENTICAL | identik | identik | identik | identik | beda urutan 1 koleksi* |
+| `#/dashboard` | IDENTICAL | identik | identik | identik | identik | identik |
+| `#/admin` | IDENTICAL | identik | identik | identik | identik | identik |
+| `#/u/nadia-dan-reza` | IDENTICAL | identik | identik | identik | identik | identik |
+| `#/template` | IDENTICAL | identik | identik | identik | identik | identik |
 
-Penyebab (V21): satu-satunya elemen pendorong adalah
-`span.pill.exp` "Perlu pesanan baru — paket tidak sesuai tier template"
-(`white-space:nowrap`, ujung kanan 453,7 px pada viewport 360) di dalam
-`.lrow.grow` (`min-width:180px`) — `.lrow` berakhir 470,7 px =
-docScrollWidth 471 px. Semua baris pesanan ikut melebar karena
-`.list-rows` mengikuti lebar konten terlebar. **Regresi V21** (V20 tidak
-overflow — pill hold baru ada di V21). Kontrol: `#/dashboard`
-(ringkasan) dan `#/admin` bersih 0 px di ketiga tree pada keempat lebar.
-Pill di strip tab `.s2-tabs` (`.chip`) memang melampaui viewport tapi
-berada di dalam container `overflow-x:auto` yang disengaja — diklasifikasi
-benign dan tidak dihitung sebagai overflow halaman.
+\* `#/` storageNorm: satu-satunya perbedaan adalah URUTAN record di
+`vowora:v1:activity` (baseline: seed-act-2, seed-act-4, seed-act-1,
+seed-act-3; sesudah: seed-act-2, seed-act-1, seed-act-4, seed-act-3) —
+himpunan record SAMA PERSIS (4 record, isi identik). Ini volatilitas
+urutan seed activity yang sudah diketahui sejak v11 (seed activity
+bervariasi per boot), BUKAN perubahan v21.2. Render `#/` sendiri
+byte-identik (appHtmlSha IDENTICAL).
+
+## Demo Luxury Ivory — pengukuran Playwright (browser nyata, bukan jsdom)
+
+Skrip `~/workspace/kita-invite-refactor/browser-test/measure-demo.js`
+(Chromium Playwright, binary Chrome for Testing 158.0.8127.18 di
+`~/.cache/ms-playwright/chromium-1254/chrome-linux64/chrome`,
+`executablePath` eksplisit). Route `#/demo/luxury-ivory`, data seed
+lengkap. Metrik: `documentElement.scrollWidth` vs `clientWidth` +
+bounding rect `.phone-shell` / `.detail-info` / `.buybox` +
+`grid-template-columns` terkomputasi + screenshot tiap lebar.
+
+| Lebar | V21.1 (baseline) | V21.2 |
+|---|---|---|
+| 320 px | OVERFLOW +373 px (doc 693) | OK (320), 1 kolom, preview → detail → buybox |
+| 360 px | OVERFLOW +333 px (693) | OK (360), 1 kolom |
+| 375 px | OVERFLOW +318 px (693) | OK (375), 1 kolom |
+| 390 px | OVERFLOW +303 px (693) | OK (390), 1 kolom |
+| 430 px | OVERFLOW +263 px (693) | OK (430), 1 kolom |
+| 820 px | OK (820) tapi tetap 2 kolom | OK (820), 1 kolom |
+| 1024 px | OK (1024), 2 kolom | OK (1024), 2 kolom (400px 548px) |
+| 821 px | OVERFLOW +23 px (tombol header) | OVERFLOW +23 px (tombol header — HANYA LAPORAN, tidak diperbaiki) |
+
+Penyebab (V21.1): inline `grid-template-columns:400px 1fr` di `viewDemo`
+mengalahkan aturan mobile `.detail-grid` (satu kolom ≤820 px) — grid
+tetap 400 px + 1fr sehingga dokumen melebar ke 693 px di semua lebar
+mobile. Perbaikan: inline dihapus, class `.demo-layout` + CSS responsif
+(dua kolom `400px 1fr` di desktop/tablet, satu kolom ≤820 px). Urutan
+mobile dibuktikan bounding rect: preview (top 89, bottom 752,4) →
+detail (top 788,4) → buybox di dalam detail. File:
+`after-v21.2/demo-measure.json` + `after-v21.2/shots/demo-<lebar>.png`.
+
+**821 px (HANYA LAPORAN, bukan bagian perbaikan):** overflow +23 px di
+V21.1 DAN V21.2 (tidak berubah) — satu-satunya pelanggar nyata
+`a.btn.gold.sm.desk` "Buat Undangan" (tombol header), ujung kanan
+844,4 px pada viewport 821 px. Angka yang sama terukur di halaman
+beranda `#/` (+23 px, pelanggar yang sama) — jadi ini masalah header
+global, bukan halaman demo. Angka 23 px adalah hasil ukur langsung di
+Chromium nyata; instruksi menyebut "~6 px" — selisih itu dicatat apa
+adanya, tidak dianalisis lebih lanjut karena di luar scope. Header
+TIDAK diubah.
 
 ## Cakupan kasus baru
 
-- **Grup (22) `kiFixtureTests` (12 kasus):** 22a tier fail-closed
-  (tanpa `templateVersion` → null; versi 99 → null; templateId tak
-  dikenal → null; kontrol positif luxury-ivory v1 → Premium; gate
-  unresolved; hold held+unresolved), 22b checkout fail-closed lewat
-  render `viewCheckout` asli (peringatan + semua paket off + tombol
-  konfirmasi disabled), 22c bukti Paid orphan (null bila record undangan
-  hilang; kontrol positif bila record ada), 22d isolasi (probe
-  `__kiProbe211` + timer autosave nyata harus HILANG setelah suite),
-  22e penanda overflow in-page (`pill exp wrap` pada baris KI-2026-1008).
-- **Kasus reset `kiFixtureTests` (5 kasus):** commit cadangan robek
-  (baca-balik tidak cocok) → backup lama dipulihkan terverifikasi;
-  commit lempar saat tulis → backup lama tidak pernah tertimpa; commit
-  robek + pemulihan gagal → `restored=false` jujur; backup lama tidak
-  bisa dibaca → stage `backup-read`; commit robek tanpa backup lama →
-  nilai robek dibersihkan, kunci kembali tidak ada (`restored=true` —
-  tidak ada yang hilang).
-- **Kasus yang diubah namanya (4):** resolver tanpa record undangan kini
-  2 kasus fail-closed (aturan lama dihapus — lihat keputusan di
-  REPORT-v21.1.md §2); kasus seed "dua paket → null" diganti
-  filter-tier (dua bukti harus sama dengan tier, jadi ambiguitas
-  mustahil bila tier terbukti); kedua kasus isolasi ditulis ulang
-  (memeriksa keberadaan property, set kunci window, sessionStorage,
-  timer).
-- **H15–H17 `kiHandlerTests` (6 kasus, handler produksi asli + event DOM
-  nyata):** H15 checkout fail-closed (klik paket ditolak + klik
-  konfirmasi ditolak, 0 pesanan tercipta), H16 Paid orphan lewat handler
-  assign asli (ditolak bila record hilang; lolos bila record ada),
-  H17 reset backup aman lewat handler reset-demo + modal + fault
-  injection `Storage.prototype.setItem` (commit lempar → toast "backup
-  lama dipertahankan"; commit robek + restore gagal → toast "TIDAK
-  terverifikasi").
+- **Grup (23) `kiFixtureTests` (16 kasus):** 23a konteks checkout (7):
+  tautan entry Builder; tautan entry order tertahan (orderCard +
+  viewPay); navigasi nyata `#/checkout?inv=seed-inv-2` → Kirana +
+  Basic Rp29.000, 0 order baru; ID tak ditemukan → ditahan +
+  tombol disabled + placeholder; tier tak terbukti → ditahan;
+  tanpa konteks → default lama; pilihan manual bertahan setelah
+  render ulang. 23b reset kunci sementara (6): removeItem melempar →
+  `backup-cleanup` + `tmpCleanup:false` + `backupValid:true` + data
+  utuh; removeItem diam-diam gagal → sama; gabungan commit-torn +
+  tmp-throw → `backup-commit` + `restored:true` + `tmpCleanup:false`;
+  corrupt (baca-balik tmp mengembalikan sampah) → `backup-verify` +
+  `tmpCleanup:false`; kontrol positif commit-torn → `tmpCleanup:true`;
+  jalur normal → sukses + tmp hilang. 23c probe cleanup-setelah-throw
+  (1): throw di tengah grup tidak merusak state; probe (sessionStorage
+  `__kiFx23Sess` + global `__kiProbe212` + `kiProbe212Global`) sengaja
+  ditinggalkan grup dan WAJIB hilang di kasus isolasi. 23d penanda
+  demo (2): viewDemo memakai `detail-grid demo-layout` tanpa inline +
+  urutan DOM preview → detail → buybox; viewDetail TIDAK tersentuh.
+- **H18–H19 `kiHandlerTests` (6 kasus, handler produksi asli + event
+  DOM nyata):** H18 konteks checkout (4): navigasi
+  `#/checkout?inv=seed-inv-2` + klik Konfirmasi ASLI → pesanan BARU
+  Kirana Basic Rp29.000 (lalu dibersihkan); ID tak ditemukan → tombol
+  disabled + klik paksa ditolak handler + `kiCheckoutValidate(null)`
+  menolak, 0 order baru; klik tautan "Buat Pesanan Baru yang Sesuai"
+  di halaman bayar KI-2026-1008 → Kirana/Basic (catatan: jsdom TIDAK
+  melakukan navigasi anchor saat klik — tes mengklik tautan lalu
+  mengikuti href-nya, nilai persis yang akan dinavigasi browser);
+  pilihan manual di dropdown (event change nyata) bertahan setelah
+  render ulang + paket mengikuti (Premium). H19 reset kunci sementara
+  (2): fault injection `Storage.prototype.removeItem` untuk KI_TMP_BK
+  lewat handler reset-demo + modal asli — melempar dan diam-diam gagal
+  sama-sama → toast "kunci sementara … tidak dapat dibersihkan", data
+  utuh, tmp key masih tertinggal, cadangan baru tersimpan.
+- **Isolasi diperketat (kedua suite):** pemulihan kini di `finally`
+  (tetap berjalan walau kasus melempar di luar grup); sessionStorage
+  DIPULIHKAN persis (bukan hanya diperiksa); penghapusan kunci window
+  diperluas ke SEMUA kunci baru (bukan hanya `__ki*` — dibuktikan
+  probe `kiProbe212Global` tanpa awalan `__ki`); snapshot CO kini
+  mencakup `ctxHash`/`ctxMissing` (kasus isolasi memeriksanya).
+- **Stub `mk()` mode gabungan:** menerima string tunggal atau array
+  (`['commit-torn','tmp-throw']`); mode baru `tmp-throw` (removeItem
+  melempar untuk KI_TMP_BK) dan `tmp-silent` (removeItem diam-diam
+  tidak menghapus KI_TMP_BK). Semua pemakaian lama (`mk('read')`,
+  `mk('commit-torn')`, `mk('')`, dst.) berperilaku sama seperti
+  sebelumnya.

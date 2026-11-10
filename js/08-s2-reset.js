@@ -39,7 +39,9 @@
            (true = backup lama utuh kembali, false = pemulihan TIDAK
            terverifikasi — pemanggil WAJIB melaporkannya apa adanya,
            jangan klaim "backup lama dipertahankan"). Kunci sementara
-           selalu dibersihkan saat gagal, agar tidak tertinggal. */
+           selalu dibersihkan saat gagal dan diverifikasi baca-balik
+           (v21.2); bila kunci masih tertinggal, hasilnya melaporkan
+           `tmpCleanup:false` — jangan klaim sukses bila key masih ada. */
         let oldBackup = null, hadOldBackup = false;
         try { oldBackup = store.getItem(K2.backup); hadOldBackup = oldBackup !== null && oldBackup !== undefined; } catch(e){ return {ok:false, stage:'backup-read'}; }
         const restoreOldBackup = () => {
@@ -52,12 +54,25 @@
             return true;
           } catch(e){ return false; }
         };
-        const dropTmp = () => { try { store.removeItem(KI_TMP_BK); } catch(e){} };
-        try { store.setItem(KI_TMP_BK, payload); if (store.getItem(KI_TMP_BK) !== payload){ dropTmp(); return {ok:false, stage:'backup-verify', restored:true}; } }
-        catch(e){ dropTmp(); return {ok:false, stage:'backup-write', restored:true}; }
-        try { store.setItem(K2.backup, payload); if (store.getItem(K2.backup) !== payload){ dropTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored}; } }
-        catch(e){ dropTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored}; }
-        try { store.removeItem(KI_TMP_BK); } catch(e){}
+        /* v21.2 — BACA-BALIK penghapusan kunci sementara: removeItem
+           yang melempar ATAU diam-diam gagal (kunci masih terbaca
+           sesudahnya) dilaporkan jujur lewat `tmpCleanup:false` —
+           pemanggil WAJIB melaporkannya apa adanya, jangan klaim
+           sukses bila key masih tertinggal. */
+        const cleanTmp = () => { try { store.removeItem(KI_TMP_BK); } catch(e){ return false; } try { return store.getItem(KI_TMP_BK) === null; } catch(e){ return false; } };
+        try { store.setItem(KI_TMP_BK, payload); if (store.getItem(KI_TMP_BK) !== payload){ const tmpCleanup = cleanTmp(); return {ok:false, stage:'backup-verify', restored:true, tmpCleanup}; } }
+        catch(e){ const tmpCleanup = cleanTmp(); return {ok:false, stage:'backup-write', restored:true, tmpCleanup}; }
+        try { store.setItem(K2.backup, payload); if (store.getItem(K2.backup) !== payload){ const tmpCleanup = cleanTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored, tmpCleanup}; } }
+        catch(e){ const tmpCleanup = cleanTmp(); const restored = restoreOldBackup(); return {ok:false, stage:'backup-commit', restored, tmpCleanup}; }
+        /* v21.2 — kunci sementara HARUS benar-benar hilang sebelum data
+           dihapus: bila cleanup gagal (lempar / diam-diam tertinggal),
+           reset BERHENTI dengan stage:'backup-cleanup' dan
+           tmpCleanup:false; tidak ada data yang dihapus, dan cadangan
+           baru sudah terverifikasi di tempatnya (backupValid:true —
+           cadangan lama memang sudah diganti oleh salinan baru yang
+           valid, jadi tidak ada `restored` di jalur ini). */
+        const tmpCleanup = cleanTmp();
+        if (!tmpCleanup) return {ok:false, stage:'backup-cleanup', tmpCleanup:false, backupValid:true};
       }
       keys.forEach(k => { try { store.removeItem(k); } catch(e){} });
       const leftover = keys.filter(k => { try { return store.getItem(k) !== null; } catch(e){ return true; } });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Harness v21.1 (disertakan di branch): sajikan tree v21.1/ lewat HTTP
+// Harness v21.2 (disertakan di branch): sajikan tree v21.2/ lewat HTTP
 // lokal, muat di jsdom (script eksternal ikut dimuat), jalankan suite
 // fixture + handler in-page, dump state untuk 5 rute yang SAMA.
 // Perbandingan storage dinormalisasi (buang field timestamp di semua
@@ -7,7 +7,7 @@
 // Perbandingan baseline OPSIONAL: beri direktori baseline sebagai argumen
 // ke-2 (atau env KI_BASELINE); tanpa itu, perbandingan dilewati dan
 // hasil run dilaporkan apa adanya.
-// Penggunaan: node run-v21.1.js [out.json] [baseline-dir]
+// Penggunaan: node run-v21.2.js [out.json] [baseline-dir]
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -108,6 +108,13 @@ async function main() {
     const { window } = dom;
     result.bootErrors = errors;
     await new Promise((r) => setTimeout(r, 300));
+    // v21.2 — snapshot sessionStorage + global window SEBELUM suite:
+    // cleanup harus memulihkannya persis (hapus yang ditambahkan,
+    // kembalikan yang diubah/dihapus, hapus property global baru).
+    const sst = window.sessionStorage;
+    const snapSess = {};
+    for (let i = 0; i < sst.length; i++) { const k = sst.key(i); snapSess[k] = sst.getItem(k); }
+    const snapWinKeys = Object.keys(window).sort();
     for (const name of ['kiFixtureTests', 'kiHandlerTests']) {
       try {
         const out = window[name]();
@@ -121,6 +128,22 @@ async function main() {
     const st = window.localStorage;
     const keys = []; for (let i = 0; i < st.length; i++) keys.push(st.key(i));
     result.storageKeysAfterSuite = keys.sort();
+    // v21.2 — verifikasi cleanup suite: sessionStorage + global window
+    // harus kembali identik dengan snapshot pra-suite; selisih apa pun
+    // = kegagalan cleanup dan membuat harness keluar nonzero.
+    const afterSess = {};
+    for (let i = 0; i < sst.length; i++) { const k = sst.key(i); afterSess[k] = sst.getItem(k); }
+    const afterWinKeys = Object.keys(window).sort();
+    const sessAdded = Object.keys(afterSess).filter((k) => !(k in snapSess));
+    const sessRemoved = Object.keys(snapSess).filter((k) => !(k in afterSess));
+    const sessChanged = Object.keys(snapSess).filter((k) => (k in afterSess) && afterSess[k] !== snapSess[k]);
+    const winAdded = afterWinKeys.filter((k) => !snapWinKeys.includes(k));
+    const winRemoved = snapWinKeys.filter((k) => !afterWinKeys.includes(k));
+    result.cleanup = {
+      sessionStorage: { added: sessAdded, removed: sessRemoved, changed: sessChanged },
+      windowKeys: { added: winAdded, removed: winRemoved },
+      ok: sessAdded.length === 0 && sessRemoved.length === 0 && sessChanged.length === 0 && winAdded.length === 0 && winRemoved.length === 0,
+    };
     dom.window.close();
 
     // 3) State per rute (fresh jsdom per rute, sama seperti dump-state baseline)
@@ -211,11 +234,16 @@ async function main() {
     } else {
       result.compare = { note: 'Baseline tidak diberikan/ditemukan — perbandingan dilewati. Beri argumen ke-2 (direktori baseline) untuk membandingkan.' };
     }
+    // v21.2 — keluar NONZERO bila ada kasus gagal, suite melempar, atau
+    // cleanup tidak memulihkan sessionStorage/global persis.
+    const anyFail = Object.values(result.suites).some((s) => !!s.error || (typeof s.total === 'number' && (s.total - s.passed) > 0));
+    const cleanupOk = !!(result.cleanup && result.cleanup.ok);
+    result.exitCode = (anyFail || !cleanupOk) ? 1 : 0;
     if (OUT) fs.writeFileSync(OUT, JSON.stringify(result, null, 2));
-    console.log(JSON.stringify({ httpStatus: result.httpStatus, compare: result.compare, bootErrors: result.bootErrors, storageKeysAfterSuite: result.storageKeysAfterSuite }, null, 2));
+    console.log(JSON.stringify({ httpStatus: result.httpStatus, compare: result.compare, bootErrors: result.bootErrors, storageKeysAfterSuite: result.storageKeysAfterSuite, suites: Object.fromEntries(Object.entries(result.suites).map(([n, s]) => [n, s.error ? { error: s.error } : { total: s.total, passed: s.passed, failed: s.total - s.passed }])), cleanup: result.cleanup, exitCode: result.exitCode }, null, 2));
   } finally {
     server.close();
   }
-  process.exit(0);
+  process.exitCode = result.exitCode;
 }
 main().catch((e) => { console.error('HARNESS ERROR', e); process.exit(2); });

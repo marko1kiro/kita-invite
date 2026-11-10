@@ -209,6 +209,13 @@
 
       /* ---------- Detail ---------- */
       .detail-grid{display:grid;grid-template-columns:1fr 400px;gap:36px;padding:36px 0 72px;align-items:start}
+      /* v21.2 — layout khusus halaman demo (viewDemo): dua kolom
+         400px + 1fr di desktop/tablet, SAMA seperti inline style lama
+         yang dihapus dari viewDemo; satu kolom di mobile (<=820px)
+         sehingga preview berada di atas detail + harga/CTA.
+         Hanya dipakai halaman demo — detail template lain dan footer
+         tidak tersentuh. */
+      .demo-layout{grid-template-columns:400px 1fr}
       .phone-shell{width:min(380px,100%);margin:0 auto;background:#14120F;border-radius:44px;padding:11px;box-shadow:var(--shadow)}
       .phone-shell.wide{width:100%}
       .phone-screen{border-radius:34px;overflow:hidden;background:#F8F5EF;height:640px;overflow-y:auto;scrollbar-width:thin;position:relative}
@@ -247,6 +254,7 @@
         .pkg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
         .steps{grid-template-columns:repeat(2,1fr)}
         .detail-grid{grid-template-columns:1fr 340px}
+        .demo-layout{grid-template-columns:400px 1fr}
       }
       @media (max-width:820px){
         .nav{display:none}
@@ -261,6 +269,7 @@
         .spot{grid-template-columns:1fr}
         .quote-grid{grid-template-columns:1fr}
         .detail-grid{grid-template-columns:1fr;padding-top:24px}
+        .demo-layout{grid-template-columns:1fr}
         .foot-grid{grid-template-columns:1fr 1fr}
         section.blk{padding:52px 0}
         .toolbar{top:64px}

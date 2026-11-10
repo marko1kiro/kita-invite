@@ -45,13 +45,19 @@
        tidak membocorkan koleksi fixture ke sesi — pemulihan akhir
        menimpa referensi koleksi apa pun yang tertukar. */
     function kiFixtureTests(){
-      const mk = fail => { const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
+      /* v21.2 — stub storage dengan daftar mode GABUNGAN (Set): satu
+         string ('commit-torn') atau array (['commit-torn','tmp-throw'])
+         — mode tmp-* (v21.2): 'tmp-throw' = removeItem melempar untuk
+         KI_TMP_BK; 'tmp-silent' = removeItem diam-diam tidak menghapus
+         KI_TMP_BK (getItem tetap mengembalikan payload sesudahnya). */
+      const mk = fail => { const fails = new Set(Array.isArray(fail) ? fail : (fail ? [fail] : [])); const has = f => fails.has(f);
+        const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
         const reads = {};
         let commitWrites = 0; /* v21.1: hitung penulisan kunci cadangan (commit + pemulihan) untuk mode commit-* */
         return { get length(){ return m.size; }, key:i => [...m.keys()][i] ?? null,
-          getItem:k => { if (fail === 'read') throw new Error('read-fail'); if (fail === 'backup-read' && k === K2.backup) throw new Error('backup-read-fail'); if (fail === 'corrupt' && k === KI_TMP_BK) return '{"rusak":1}'; if (fail === 'mutate' && k === 'vowora:v1:guests'){ reads[k] = (reads[k] || 0) + 1; if (reads[k] > 1) return '["diubah-tab-lain"]'; } return m.has(k) ? m.get(k) : null; },
-          setItem:(k, v) => { if (fail === 'write' && k === KI_TMP_BK) throw new Error('quota'); if (fail === 'restore-fail' && k === 'vowora:v1:orders') throw new Error('restore-quota'); if (fail === 'commit-torn' && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } } if (fail === 'commit-write' && k === K2.backup) throw new Error('commit-quota'); if (fail === 'commit-restore-fail' && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } throw new Error('restore-quota'); } m.set(k, String(v)); },
-          removeItem:k => { if (fail === 'partial' && k === 'vowora:v1:orders') return; if (fail === 'restore-fail' && k === 'vowora:v1:guests') return; m.delete(k); }, _m:m }; };
+          getItem:k => { if (has('read')) throw new Error('read-fail'); if (has('backup-read') && k === K2.backup) throw new Error('backup-read-fail'); if (has('corrupt') && k === KI_TMP_BK) return '{"rusak":1}'; if (has('mutate') && k === 'vowora:v1:guests'){ reads[k] = (reads[k] || 0) + 1; if (reads[k] > 1) return '["diubah-tab-lain"]'; } return m.has(k) ? m.get(k) : null; },
+          setItem:(k, v) => { if (has('write') && k === KI_TMP_BK) throw new Error('quota'); if (has('restore-fail') && k === 'vowora:v1:orders') throw new Error('restore-quota'); if (has('commit-torn') && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } } if (has('commit-write') && k === K2.backup) throw new Error('commit-quota'); if (has('commit-restore-fail') && k === K2.backup){ commitWrites++; if (commitWrites === 1){ m.set(k, '{"torn":1}'); return; } throw new Error('restore-quota'); } m.set(k, String(v)); },
+          removeItem:k => { if (has('tmp-throw') && k === KI_TMP_BK) throw new Error('tmp-remove-fail'); if (has('tmp-silent') && k === KI_TMP_BK) return; if (has('partial') && k === 'vowora:v1:orders') return; if (has('restore-fail') && k === 'vowora:v1:guests') return; m.delete(k); }, _m:m }; };
       const out = [];
       /* Snapshot isolasi sesi (v18) — diambil SEBELUM kasus pertama;
          dipulihkan + diverifikasi di akhir suite (lihat kasus isolasi). */
@@ -65,7 +71,7 @@
         genHad:(() => { try { return '__kiGrantGen' in window; } catch(e){ return false; } })(),
         orders:S2.orders, payments:S2.payments, services:S2.services, activity:S2.activity, notifications:S2.notifications, guests:S2.guests, rsvps:S2.rsvps,
         invIds:new Set(S.invitations.map(i => i.id)),
-        co:{invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock},
+        co:{invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock, ctxHash:CO.ctxHash, ctxMissing:CO.ctxMissing},
         d2:{invFilter:D2.invFilter, invQuery:D2.invQuery, guestInv:D2.guestInv, guestQuery:D2.guestQuery, guestStatus:D2.guestStatus, guestGroup:D2.guestGroup, guestSel:new Set(D2.guestSel), guestEdit:D2.guestEdit, bulkPreview:D2.bulkPreview, rsvpInv:D2.rsvpInv, svcEdit:D2.svcEdit},
         b:{tab:B.tab, inv:B.inv, readonly:B.readonly},
         saveStatus:SAVE_STATE.status, saveAt:SAVE_STATE.at,
@@ -77,6 +83,10 @@
          nyata — diverifikasi byte-per-byte pada kasus terakhir suite. */
       const kiDumpAllKeys = () => { const st = storageBackend(); const d = {}; if (!st) return d; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k != null) d[k] = st.getItem(k); } return d; };
       const keySnapBefore = kiDumpAllKeys();
+      /* v21.2 — seluruh kasus berjalan di dalam try/finally: pemulihan
+         isolasi di finally TETAP BERJALAN walau ada kasus yang melempar
+         di luar grup (bukan hanya bila grup menangkapnya sendiri). */
+      try {
       let st = mk('read'); let r = kiResetCore(st); out.push({name:'Reset: snapshot tak terbaca -> berhenti, data utuh', pass: r.ok === false && r.stage === 'snapshot-unreadable' && st._m.get('vowora:v1:guests') === '["g1"]'});
       st = mk('mutate'); r = kiResetCore(st); out.push({name:'Reset: snapshot berubah saat diverifikasi -> berhenti sebelum menghapus apa pun', pass: r.ok === false && r.stage === 'snapshot-verify' && st._m.get('vowora:v1:guests') === '["g1"]' && st._m.get(K2.backup) === '{"lama":true}'});
       st = mk('write'); r = kiResetCore(st); out.push({name:'Reset: backup gagal ditulis -> berhenti, backup lama dipertahankan', pass: r.ok === false && r.stage === 'backup-write' && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:orders')});
@@ -658,6 +668,102 @@
         const html1008x = o1008x ? orderCard(o1008x, false) : '';
         out.push({name:'v21.1 — Overflow Pesanan (penanda in-page): baris KI-2026-1008 memakai pill hold yang bisa wrap (class pill wrap) — pengukuran lebar 360/375/390/430 px dilakukan di Playwright, lihat REPORT-v21.1.md', pass: html1008x.indexOf('pill exp wrap') >= 0, exp:'pill exp wrap ada di baris hold', act: html1008x ? ('wrap=' + (html1008x.indexOf('pill exp wrap') >= 0)) : 'order tidak ditemukan'});
       } catch(e){ out.push({name:'Uji v21.1 (tier fail-closed, Paid orphan, isolasi probe, penanda overflow)', pass:false}); }
+      /* --- 23: v21.2 — konteks checkout, reset kunci sementara,
+         probe cleanup-setelah-throw, penanda layout demo --- */
+      try {
+        /* 23a: konteks checkout — render nyata lewat router hash */
+        const kir23 = S.invitations.find(i => i.id === 'seed-inv-2');
+        const o1008 = S2.orders.find(o => o.id === 'seed-order-8');
+        const hashBak23 = location.hash;
+        const ordersBefore23 = S2.orders.length;
+        try {
+          /* (a1) Entry point Builder: panel Terbitkan Kirana membawa
+             konteks ?inv=seed-inv-2 */
+          const tabBak23 = B.tab;
+          B.tab = 'terbit';
+          const edHtml23 = editorPanel(kir23);
+          B.tab = tabBak23;
+          out.push({name:'v21.2 — Konteks checkout (entry Builder): panel Terbitkan Kirana memuat tautan "#/checkout?inv=seed-inv-2"', pass: edHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0, exp:'href="#/checkout?inv=seed-inv-2"', act: edHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0 ? 'tautan konteks ada' : 'tautan konteks TIDAK ada'});
+          /* (a2) Entry point order tertahan: orderCard + viewPay KI-2026-1008
+             membawa konteks yang sama */
+          const ocHtml23 = o1008 ? orderCard(o1008, false) : '';
+          const payHtml23 = o1008 ? viewPay(o1008) : '';
+          out.push({name:'v21.2 — Konteks checkout (entry order tertahan): baris + halaman bayar KI-2026-1008 memuat tautan "#/checkout?inv=seed-inv-2"', pass: ocHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0 && payHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0, exp:'kedua tautan membawa ?inv=seed-inv-2', act:'orderCard=' + (ocHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0) + '; viewPay=' + (payHtml23.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0)});
+          /* (a3) Navigasi nyata ke #/checkout?inv=seed-inv-2 -> Kirana
+             terpilih, paket terkunci BASIC Rp29.000, tombol konfirmasi
+             aktif; TIDAK ada order baru */
+          CO.ctxHash = null; CO.ctxMissing = false; CO.coupon = null; CO.couponCode = '';
+          location.hash = '#/checkout?inv=seed-inv-2'; s2Render();
+          const appHtml23 = (document.getElementById('app') || {}).innerHTML || '';
+          out.push({name:'v21.2 — Konteks checkout (router): navigasi #/checkout?inv=seed-inv-2 memilih Kirana + kunci BASIC Rp29.000 (bukan Aurelia & Bimo / Signature), tombol konfirmasi aktif, tanpa order baru', pass: CO.invId === 'seed-inv-2' && CO.ctxMissing === false && CO.pkgId === 'basic' && appHtml23.indexOf('Konfirmasi Pesanan Simulasi — Rp29.000') >= 0 && appHtml23.indexOf('Tidak tersedia untuk tier template undangan ini') >= 0 && S2.orders.length === ordersBefore23, exp:'inv=seed-inv-2; pkg=basic; konfirmasi Rp29.000; order tetap ' + ordersBefore23, act:'inv=' + CO.invId + '; pkg=' + CO.pkgId + '; konfirmasi=' + (appHtml23.indexOf('Konfirmasi Pesanan Simulasi — Rp29.000') >= 0) + '; order=' + S2.orders.length});
+          /* (a4) ID tidak ditemukan -> checkout DITAHAN dengan penjelasan,
+             tombol disabled, TIDAK ada order baru */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/checkout?inv=tidak-ada'; s2Render();
+          const appHtml23b = (document.getElementById('app') || {}).innerHTML || '';
+          out.push({name:'v21.2 — Konteks checkout (ID tak ditemukan): #/checkout?inv=tidak-ada -> checkout DITAHAN ("Undangan Tidak Ditemukan"), tombol disabled, tanpa order baru', pass: CO.invId === null && CO.ctxMissing === true && appHtml23b.indexOf('Checkout Ditahan — Undangan Tidak Ditemukan') >= 0 && appHtml23b.indexOf('co-confirm" style="margin-top:8px" disabled') >= 0 && appHtml23b.indexOf('— pilih undangan —') >= 0 && S2.orders.length === ordersBefore23, exp:'ctxMissing=true; ditahan; order tetap ' + ordersBefore23, act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing + '; order=' + S2.orders.length});
+          /* (a5) Tier tak terbukti -> checkout DITAHAN (UI tierUnresolved),
+             tanpa order baru — lewat konteks nyata, bukan render langsung */
+          const invUnprov = {id:'fx-inv-23u', templateId:'template-tidak-ada', templateVersion:1, slug:'fx-23u', title:'Fixture Checkout Unprov', categoryId:'pernikahan', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+          S.invitations.push(invUnprov);
+          try {
+            CO.ctxHash = null; CO.ctxMissing = false;
+            location.hash = '#/checkout?inv=fx-inv-23u'; s2Render();
+            const appHtml23c = (document.getElementById('app') || {}).innerHTML || '';
+            out.push({name:'v21.2 — Konteks checkout (tier tak terbukti): undangan ditemukan TAPI tier versinya tak terbukti -> checkout DITAHAN (tier unresolved), tanpa order baru', pass: CO.invId === 'fx-inv-23u' && CO.ctxMissing === false && appHtml23c.indexOf('tier template undangan ini tidak dapat dibuktikan') >= 0 && appHtml23c.indexOf('co-confirm" style="margin-top:8px" disabled') >= 0 && S2.orders.length === ordersBefore23, exp:'inv=fx-inv-23u; ditahan (tier); order tetap ' + ordersBefore23, act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing + '; order=' + S2.orders.length});
+          } finally { S.invitations.splice(S.invitations.indexOf(invUnprov), 1); }
+          /* (a6) Tanpa konteks -> default lama dipertahankan (undangan
+             pertama milik pengguna), bukan Kirana secara paksa */
+          CO.ctxHash = null; CO.ctxMissing = false; CO.invId = null;
+          const firstMine23 = myInvitations().filter(i => !i.archived)[0].id;
+          location.hash = '#/checkout'; s2Render();
+          out.push({name:'v21.2 — Konteks checkout (tanpa ?inv=): navigasi #/checkout polos tetap memakai default lama (undangan pertama milik pengguna), tidak dipaksa ke Kirana', pass: CO.invId === firstMine23 && CO.ctxMissing === false, exp:'inv=' + firstMine23, act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing});
+          /* (a7) Pilihan manual di dropdown TIDAK ditimpa render ulang
+             pada hash yang sama (memo hash): pilih undangan lain secara
+             manual, render ulang -> pilihan manual bertahan */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/checkout?inv=seed-inv-2'; s2Render();
+          const sel23 = document.getElementById('co-inv');
+          let manualOk23 = false;
+          if (sel23){
+            sel23.value = 'seed-inv-1';
+            sel23.dispatchEvent(new Event('change', {bubbles:true}));
+            s2Render();
+            manualOk23 = CO.invId === 'seed-inv-1' && CO.ctxMissing === false;
+          }
+          out.push({name:'v21.2 — Konteks checkout (pilihan manual): setelah konteks diterapkan, pilih manual undangan lain di dropdown lalu render ulang -> pilihan manual BERTAHAN (tidak ditimpa konteks ?inv=)', pass: CO.invId === 'seed-inv-1' && manualOk23, exp:'inv=seed-inv-1 setelah pilih manual + render ulang', act:'inv=' + CO.invId + '; manualOk=' + manualOk23});
+        } finally { try { history.replaceState(null, '', hashBak23); } catch(e){ location.hash = hashBak23; } render(); }
+        /* 23b: reset — kegagalan hapus kunci sementara (tmp-throw,
+           tmp-silent, gabungan commit-torn + tmp-throw, corrupt) */
+        st = mk(['tmp-throw']); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (removeItem MELEMPAR): reset BERHENTI stage backup-cleanup, tmpCleanup=false, backup baru VALID di tempatnya, data utuh, kunci sementara masih tertinggal (dilaporkan apa adanya)', pass: r.ok === false && r.stage === 'backup-cleanup' && r.tmpCleanup === false && r.backupValid === true && st._m.has('vowora:v1:guests') && st._m.has('vowora:v1:orders') && st._m.has(KI_TMP_BK) && (st._m.get(K2.backup) || '').indexOf('vowora:v1:guests') >= 0, exp:'stage=backup-cleanup; tmpCleanup=false; backupValid=true; data utuh; tmp masih ada; backup baru berisi snapshot', act:'stage=' + r.stage + '; tmpCleanup=' + r.tmpCleanup + '; backupValid=' + r.backupValid + '; tmp-ada=' + st._m.has(KI_TMP_BK)});
+        st = mk(['tmp-silent']); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (removeItem DIAM-DIAM GAGAL — kunci masih terbaca sesudahnya): reset BERHENTI stage backup-cleanup, tmpCleanup=false, backup baru VALID, data utuh', pass: r.ok === false && r.stage === 'backup-cleanup' && r.tmpCleanup === false && r.backupValid === true && st._m.has('vowora:v1:guests') && st._m.has(KI_TMP_BK), exp:'stage=backup-cleanup; tmpCleanup=false; backupValid=true; data utuh', act:'stage=' + r.stage + '; tmpCleanup=' + r.tmpCleanup + '; backupValid=' + r.backupValid});
+        st = mk(['commit-torn','tmp-throw']); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (GABUNGAN commit robek + hapus tmp melempar): stage backup-commit, backup LAMA dipulihkan (restored=true), tmpCleanup=false juga dilaporkan, data utuh', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === true && r.tmpCleanup === false && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:guests'), exp:'stage=backup-commit; restored=true; tmpCleanup=false; backup={"lama":true}', act:'stage=' + r.stage + '; restored=' + r.restored + '; tmpCleanup=' + r.tmpCleanup + '; backup=' + st._m.get(K2.backup)});
+        st = mk('corrupt'); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (baca-balik tmp masih mengembalikan sampah — stub corrupt): stage backup-verify DAN tmpCleanup=false (baca-balik jujur: kunci tampak masih ada), backup lama utuh, data utuh', pass: r.ok === false && r.stage === 'backup-verify' && r.tmpCleanup === false && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:guests'), exp:'stage=backup-verify; tmpCleanup=false; backup={"lama":true}', act:'stage=' + r.stage + '; tmpCleanup=' + r.tmpCleanup + '; backup=' + st._m.get(K2.backup)});
+        st = mk(['commit-torn']); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (kontrol positif): commit robek TANPA gangguan tmp -> tmpCleanup=true (cleanup terverifikasi bersih), restored=true', pass: r.ok === false && r.stage === 'backup-commit' && r.restored === true && r.tmpCleanup === true && !st._m.has(KI_TMP_BK), exp:'stage=backup-commit; tmpCleanup=true; tmp hilang', act:'stage=' + r.stage + '; tmpCleanup=' + r.tmpCleanup + '; tmp-ada=' + st._m.has(KI_TMP_BK)});
+        st = mk(''); r = kiResetCore(st);
+        out.push({name:'v21.2 — Reset kunci sementara (jalur normal): sukses DAN kunci sementara benar-benar hilang sesudahnya', pass: r.ok === true && !st._m.has(KI_TMP_BK) && !!st._m.get(K2.backup), exp:'ok=true; tmp hilang; backup baru ada', act:'ok=' + r.ok + '; tmp-ada=' + st._m.has(KI_TMP_BK)});
+        /* 23c: probe cleanup-setelah-throw — nilai sengaja DITINGGALKAN
+           grup ini (tidak dibersihkan grup); pemulihan akhir suite
+           (finally) WAJIB menghapusnya — diperiksa kasus isolasi. */
+        try { window.sessionStorage.setItem('__kiFx23Sess', 'probe-23'); } catch(e){}
+        try { window.__kiProbe212 = 'probe-212'; window.kiProbe212Global = 'probe-212-global'; } catch(e){}
+        try { throw new Error('fx23-throw-probe'); } catch(e){
+          out.push({name:'v21.2 — Cleanup setelah throw (probe): throw di tengah grup TIDAK merusak state — sessionStorage + global probe masih tercatat saat throw ditangkap (pemulihan akhir suite yang akan menghapusnya)', pass: (function(){ try { return window.sessionStorage.getItem('__kiFx23Sess') === 'probe-23' && window.__kiProbe212 === 'probe-212' && window.kiProbe212Global === 'probe-212-global'; } catch(err){ return false; } })(), exp:'probe sess + 2 global tercatat', act:'sess=' + (function(){ try { return window.sessionStorage.getItem('__kiFx23Sess'); } catch(err){ return 'err'; } })()});
+        }
+        /* 23d: penanda layout demo — class khusus + urutan DOM, dan
+           halaman detail template lain TIDAK tersentuh */
+        const tplLux23 = templateBySlug('luxury-ivory');
+        const demoHtml23 = tplLux23 ? viewDemo(tplLux23) : '';
+        out.push({name:'v21.2 — Layout demo (penanda in-page): viewDemo memakai class "detail-grid demo-layout", TANPA inline grid-template-columns, urutan DOM preview (.phone-shell) -> detail (.detail-info) -> harga/CTA (.buybox)', pass: demoHtml23.indexOf('detail-grid demo-layout') >= 0 && demoHtml23.indexOf('grid-template-columns:400px 1fr') === -1 && demoHtml23.indexOf('phone-shell') >= 0 && demoHtml23.indexOf('phone-shell') < demoHtml23.indexOf('detail-info') && demoHtml23.indexOf('detail-info') < demoHtml23.indexOf('buybox'), exp:'class demo-layout; tanpa inline; urutan preview->detail->buybox', act:'class=' + (demoHtml23.indexOf('detail-grid demo-layout') >= 0) + '; inline=' + (demoHtml23.indexOf('grid-template-columns:400px 1fr') >= 0) + '; urutan=' + (demoHtml23.indexOf('phone-shell') < demoHtml23.indexOf('detail-info')) + '/' + (demoHtml23.indexOf('detail-info') < demoHtml23.indexOf('buybox'))});
+        const detHtml23 = tplLux23 ? viewDetail(tplLux23) : '';
+        out.push({name:'v21.2 — Layout demo (kontrol): halaman detail template Luxury Ivory TIDAK tersentuh — tetap "detail-grid" polos tanpa demo-layout', pass: detHtml23.indexOf('detail-grid') >= 0 && detHtml23.indexOf('demo-layout') === -1, exp:'detail-grid polos, tanpa demo-layout', act:'detail-grid=' + (detHtml23.indexOf('detail-grid') >= 0) + '; demo-layout=' + (detHtml23.indexOf('demo-layout') >= 0)});
+      } catch(e){ out.push({name:'Uji v21.2 (konteks checkout, reset kunci sementara, probe cleanup, penanda demo)', pass:false}); }
+      } catch(e){ out.push({name:'Uji fixture — lempar tak tertangkap di luar grup (cleanup tetap dijalankan)', pass:false}); } finally {
       /* PEMULIHAN ISOLASI (v18): kembalikan SEMUA state sesi yang dapat
          disentuh suite ke snapshot awal — peran, desainer aktif, flag &
          GENERASI grant (grup 11/12 menaikkan generasi lewat
@@ -672,11 +778,17 @@
          checkout (CO), dashboard (D2), Builder (B), dan status simpan
          (SAVE_STATE) dipulihkan; kunci window tambahan berawalan __ki
          yang muncul selama suite dibuang. */
+      /* v21.2 — PEMULIHAN DI finally + DIPERLUAS: restore berjalan
+         walau ada kasus yang melempar di luar grup; sessionStorage
+         dipulihkan PERSIS (hapus yang ditambahkan, kembalikan yang
+         diubah/dihapus — bukan hanya diperiksa); SEMUA kunci window
+         yang tidak ada di snapshot dihapus (bukan hanya __ki*). */
+      try {
       S2.role = sessBak.role; S2.designerId = sessBak.designerId;
       try {
         if (sessBak.grantHad) window.__kiAdminWrite = sessBak.grant; else delete window.__kiAdminWrite;
         if (sessBak.genHad) window.__kiGrantGen = sessBak.gen; else delete window.__kiGrantGen;
-        Object.keys(window).forEach(k => { if (k.indexOf('__ki') === 0 && !sessBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
+        Object.keys(window).forEach(k => { if (!sessBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
       } catch(e){}
       S2.orders = sessBak.orders; S2.payments = sessBak.payments; S2.services = sessBak.services; S2.activity = sessBak.activity; S2.notifications = sessBak.notifications; S2.guests = sessBak.guests; S2.rsvps = sessBak.rsvps;
       if (S.invitations.some(i => !sessBak.invIds.has(i.id))) S.invitations = S.invitations.filter(i => sessBak.invIds.has(i.id));
@@ -685,12 +797,21 @@
       Object.assign(B, sessBak.b);
       SAVE_STATE.status = sessBak.saveStatus; SAVE_STATE.at = sessBak.saveAt;
       Object.keys(_saveTimers).forEach(k => { if (!sessBak.timers.has(k)){ try { clearTimeout(_saveTimers[k]); } catch(e){} delete _saveTimers[k]; } });
+      try { const ss = window.sessionStorage; if (ss){ const cur = {}; for (let i = 0; i < ss.length; i++){ const k = ss.key(i); cur[k] = ss.getItem(k); } Object.keys(cur).forEach(k => { if (!(k in sessBak.sessKeys)){ try { ss.removeItem(k); } catch(e){} } }); Object.keys(sessBak.sessKeys).forEach(k => { try { if (ss.getItem(k) !== sessBak.sessKeys[k]) ss.setItem(k, sessBak.sessKeys[k]); } catch(e){} }); } } catch(e){}
+      } catch(e){}
+      }
       const isoGrant = (() => { try { return ('__kiAdminWrite' in window) === sessBak.grantHad && (window.__kiAdminWrite === true) === sessBak.grant && ('__kiGrantGen' in window) === sessBak.genHad && kiGrantGen() === sessBak.gen; } catch(e){ return false; } })();
       const isoWin = (() => { try { const now = Object.keys(window); return now.length === sessBak.winKeys.size && now.every(k => sessBak.winKeys.has(k)); } catch(e){ return false; } })();
       const isoSess = (() => { try { const ss = window.sessionStorage; if (!ss) return Object.keys(sessBak.sessKeys).length === 0; if (ss.length !== Object.keys(sessBak.sessKeys).length) return false; for (let i = 0; i < ss.length; i++){ const k = ss.key(i); if (!(k in sessBak.sessKeys) || ss.getItem(k) !== sessBak.sessKeys[k]) return false; } return true; } catch(e){ return false; } })();
       const isoTimers = Object.keys(_saveTimers).length === sessBak.timers.size && Object.keys(_saveTimers).every(k => sessBak.timers.has(k));
       const isoProbe = (() => { try { return !('__kiProbe211' in window); } catch(e){ return false; } })();
-      out.push({name:'Isolasi suite v21.1: peran, desainer aktif, flag + GENERASI grant (termasuk KEBERADAAN property: yang sebelumnya tidak ada benar-benar HILANG, bukan false/0 — dibuktikan probe __kiProbe211 yang ditambahkan grup 22 kini HILANG), referensi koleksi, daftar undangan, state checkout/dashboard/Builder, status simpan, timer, kunci window & sessionStorage pulih PERSIS seperti sebelum suite', pass: S2.role === sessBak.role && S2.designerId === sessBak.designerId && isoGrant && S2.orders === sessBak.orders && S2.payments === sessBak.payments && S2.services === sessBak.services && S2.guests === sessBak.guests && S2.rsvps === sessBak.rsvps && S.invitations.every(i => sessBak.invIds.has(i.id)) && CO.invId === sessBak.co.invId && CO.pkgId === sessBak.co.pkgId && CO.coupon === sessBak.co.coupon && CO.couponCode === sessBak.co.couponCode && CO.method === sessBak.co.method && D2.invFilter === sessBak.d2.invFilter && D2.guestSel.size === sessBak.d2.guestSel.size && B.tab === sessBak.b.tab && B.inv === sessBak.b.inv && SAVE_STATE.status === sessBak.saveStatus && isoTimers && isoWin && isoSess && isoProbe, exp:'semua state sesi identik dengan snapshot awal (termasuk property global yang tadinya tidak ada tetap tidak ada)', act:'grant=' + isoGrant + '; win=' + isoWin + '; sess=' + isoSess + '; timers=' + isoTimers + '; probe211-hilang=' + isoProbe});
+      /* v21.2 — probe grup 23: global __kiProbe212 + kiProbe212Global
+         (TANPA awalan __ki — membuktikan penghapusan kunci window
+         kini mencakup SEMUA kunci baru, bukan hanya __ki*) dan key
+         sessionStorage __kiFx23Sess yang sengaja ditinggalkan grup 23
+         — ketiganya WAJIB hilang sesudah finally. */
+      const isoProbe212 = (() => { try { return !('__kiProbe212' in window) && !('kiProbe212Global' in window) && !(window.sessionStorage && window.sessionStorage.getItem('__kiFx23Sess')); } catch(e){ return false; } })();
+      out.push({name:'Isolasi suite v21.1: peran, desainer aktif, flag + GENERASI grant (termasuk KEBERADAAN property: yang sebelumnya tidak ada benar-benar HILANG, bukan false/0 — dibuktikan probe __kiProbe211 yang ditambahkan grup 22 kini HILANG), referensi koleksi, daftar undangan, state checkout/dashboard/Builder, status simpan, timer, kunci window & sessionStorage pulih PERSIS seperti sebelum suite — plus probe v21.2 (grup 23: __kiProbe212 + kiProbe212Global + sessionStorage __kiFx23Sess juga HILANG)', pass: S2.role === sessBak.role && S2.designerId === sessBak.designerId && isoGrant && S2.orders === sessBak.orders && S2.payments === sessBak.payments && S2.services === sessBak.services && S2.guests === sessBak.guests && S2.rsvps === sessBak.rsvps && S.invitations.every(i => sessBak.invIds.has(i.id)) && CO.invId === sessBak.co.invId && CO.pkgId === sessBak.co.pkgId && CO.coupon === sessBak.co.coupon && CO.couponCode === sessBak.co.couponCode && CO.method === sessBak.co.method && CO.ctxHash === sessBak.co.ctxHash && CO.ctxMissing === sessBak.co.ctxMissing && D2.invFilter === sessBak.d2.invFilter && D2.guestSel.size === sessBak.d2.guestSel.size && B.tab === sessBak.b.tab && B.inv === sessBak.b.inv && SAVE_STATE.status === sessBak.saveStatus && isoTimers && isoWin && isoSess && isoProbe && isoProbe212, exp:'semua state sesi identik dengan snapshot awal (termasuk property global yang tadinya tidak ada tetap tidak ada)', act:'grant=' + isoGrant + '; win=' + isoWin + '; sess=' + isoSess + '; timers=' + isoTimers + '; probe211-hilang=' + isoProbe + '; probe212-hilang=' + isoProbe212});
       /* VERIFIKASI SNAPSHOT SELURUH KEY (v19): storage sesi harus
          identik byte-per-byte dengan sebelum suite berjalan — tidak
          ada key yang ditambah, diubah, atau dihapus oleh pengujian,
@@ -725,7 +846,7 @@
       if (store){ for (let i = 0; i < store.length; i++){ const k = store.key(i); dump[k] = store.getItem(k); } }
       const restoreStore = () => { if (!store) return; const cur = []; for (let i = 0; i < store.length; i++) cur.push(store.key(i)); cur.forEach(k => { if (!(k in dump)){ try { store.removeItem(k); } catch(e){} } }); Object.keys(dump).forEach(k => { try { if (store.getItem(k) !== dump[k]) store.setItem(k, dump[k]); } catch(e){} }); };
       const roleBak = S2.role;
-      const coBak = {invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock};
+      const coBak = {invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, _lock:CO._lock, ctxHash:CO.ctxHash, ctxMissing:CO.ctxMissing};
       /* v21.1: snapshot isolasi lengkap (pola yang sama dengan suite
          fixture) — keberadaan property global, desainer aktif, D2, B,
          SAVE_STATE, timer, kunci window, sessionStorage. */
@@ -1241,7 +1362,96 @@
           const t17b = toast17();
           out.push({name:'Handler penuh — reset backup aman (commit robek + pemulihan gagal): cadangan baru robek dan backup lama TIDAK terverifikasi pulih -> toast "TIDAK terverifikasi", nilai robek tertinggal di kunci cadangan (dilaporkan apa adanya), storage utuh', pass: t17b.indexOf('DIBATALKAN') >= 0 && t17b.indexOf('TIDAK terverifikasi') >= 0 && store.getItem(K2.backup) === '{"torn":1}' && store.getItem(K2.orders) === ordersBefore17b, exp:'toast DIBATALKAN + TIDAK terverifikasi; backup={"torn":1}; storage utuh', act:'toast="' + t17b.slice(0, 130) + '"; backup=' + store.getItem(K2.backup) + '; orders-utuh=' + (store.getItem(K2.orders) === ordersBefore17b)});
         } finally { Storage.prototype.setItem = origSet17; }
-      } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); }
+        /* (H18) v21.2 — Konteks checkout lewat handler + navigasi NYATA:
+           (a) hash ?inv=seed-inv-2 -> Kirana/Basic; klik Konfirmasi ASLI
+           membuat pesanan Basic untuk Kirana. (b) ID tak ditemukan ->
+           handler co-confirm menolak (tanpa order) walau tombol dipaksa
+           klik. (c) tautan "Buat Pesanan Baru yang Sesuai" di halaman
+           bayar KI-2026-1008 membawa konteks dan memilih Kirana/Basic.
+           (d) pilihan manual di dropdown bertahan setelah render ulang. */
+        const coBak18 = {invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, ctxHash:CO.ctxHash, ctxMissing:CO.ctxMissing};
+        const hashBak18 = location.hash;
+        try {
+          /* (a) */
+          const idsBefore18 = new Set(S2.orders.map(o => o.id));
+          const payIdsBefore18 = new Set(S2.payments.map(p => p.id));
+          const ordersBefore18 = S2.orders.length;
+          CO.ctxHash = null; CO.ctxMissing = false; CO.coupon = null; CO.couponCode = ''; CO._lock = null;
+          location.hash = '#/checkout?inv=seed-inv-2'; s2Render();
+          fire({'data-s2':'co-confirm'});
+          const newOrder18 = S2.orders.find(o => !idsBefore18.has(o.id));
+          const newPay18 = S2.payments.find(p => !payIdsBefore18.has(p.id));
+          out.push({name:'Handler penuh — konteks checkout (Kirana/Basic): navigasi #/checkout?inv=seed-inv-2 lalu klik Konfirmasi ASLI -> pesanan BARU tercipta untuk Kirana (seed-inv-2) paket Basic Rp29.000, bukan Aurelia & Bimo / Signature', pass: !!newOrder18 && newOrder18.invitationId === 'seed-inv-2' && newOrder18.packageId === 'basic' && newOrder18.total === 29000 && S2.orders.length === ordersBefore18 + 1 && !!newPay18 && newPay18.orderId === newOrder18.id, exp:'order baru inv=seed-inv-2 pkg=basic total=29000 + payment tertaut', act: newOrder18 ? ('inv=' + newOrder18.invitationId + '; pkg=' + newOrder18.packageId + '; total=' + newOrder18.total) : 'tidak ada order baru'});
+          /* bersihkan order + payment buatan (a) agar tidak bocor ke
+             kasus berikut; storage dipulihkan restoreStore() di akhir. */
+          if (newOrder18) S2.orders = S2.orders.filter(o => o.id !== newOrder18.id);
+          if (newPay18) S2.payments = S2.payments.filter(p => p.id !== newPay18.id);
+          saveColl('orders'); saveColl('payments');
+          CO._lock = null;
+          /* (b) */
+          CO.ctxHash = null; CO.ctxMissing = false; CO.invId = null; CO.pkgId = 'premium'; CO.coupon = null; CO.couponCode = ''; CO._lock = null;
+          location.hash = '#/checkout?inv=tidak-ada'; s2Render();
+          const ordersBefore18b = S2.orders.length;
+          const confirmDisabled18 = (() => { const b = document.querySelector('[data-s2="co-confirm"]'); return !!b && b.disabled === true; })();
+          fire({'data-s2':'co-confirm'});
+          const v18b = kiCheckoutValidate(null, 'basic', 29000);
+          out.push({name:'Handler penuh — konteks checkout (ID tak ditemukan): checkout DITAHAN (tombol disabled) dan klik Konfirmasi yang dipaksa lewat handler ASLI tetap TIDAK membuat order; kiCheckoutValidate(null) menolak', pass: CO.ctxMissing === true && confirmDisabled18 === true && S2.orders.length === ordersBefore18b && v18b.ok === false, exp:'ctxMissing=true; tombol disabled; 0 order baru; validate ok=false', act:'ctxMissing=' + CO.ctxMissing + '; disabled=' + confirmDisabled18 + '; order=' + S2.orders.length + '; validate-ok=' + v18b.ok});
+          /* (c) */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/bayar/seed-order-8'; s2Render();
+          const link18 = document.querySelector('a[href="#/checkout?inv=seed-inv-2"]');
+          let linkOk18 = false, clickedHash18 = null;
+          /* jsdom TIDAK melakukan navigasi anchor saat klik (klik hanya
+             membuktikan tautan itu anchor nyata di halaman) — ikuti href
+             tautan itu sendiri (nilai persis yang akan dinavigasi
+             browser) agar alur "klik -> checkout berkonten" terbukti. */
+          if (link18){ link18.click(); clickedHash18 = location.hash; if (location.hash !== '#/checkout?inv=seed-inv-2') location.hash = link18.getAttribute('href'); s2Render(); linkOk18 = CO.invId === 'seed-inv-2' && CO.pkgId === 'basic' && CO.ctxMissing === false; }
+          out.push({name:'Handler penuh — konteks checkout (tautan order tertahan): klik "Buat Pesanan Baru yang Sesuai" di halaman bayar KI-2026-1008 -> checkout terbuka dengan Kirana terpilih + paket BASIC', pass: !!link18 && linkOk18, exp:'tautan ada; setelah klik/ikuti-href inv=seed-inv-2 pkg=basic', act:'tautan=' + !!link18 + '; klik-hash=' + clickedHash18 + '; inv=' + CO.invId + '; pkg=' + CO.pkgId});
+          /* (d) */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/checkout?inv=seed-inv-2'; s2Render();
+          const sel18 = document.getElementById('co-inv');
+          let manualOk18 = false;
+          if (sel18){ sel18.value = 'seed-inv-1'; sel18.dispatchEvent(new Event('change', {bubbles:true})); s2Render(); manualOk18 = CO.invId === 'seed-inv-1' && CO.pkgId === 'premium' && CO.ctxMissing === false; }
+          out.push({name:'Handler penuh — konteks checkout (pilihan manual): pilih manual undangan lain di dropdown (event change NYATA) lalu render ulang -> pilihan manual BERTAHAN + paket mengikuti (Premium)', pass: manualOk18, exp:'inv=seed-inv-1; pkg=premium setelah pilih manual + render ulang', act:'inv=' + CO.invId + '; pkg=' + CO.pkgId});
+        } finally {
+          Object.assign(CO, coBak18);
+          try { history.replaceState(null, '', hashBak18); } catch(e){ location.hash = hashBak18; }
+          s2Render();
+        }
+        /* (H19) v21.2 — Reset kunci sementara lewat handler reset-demo
+           ASLI + modal asli: fault injection pada
+           Storage.prototype.removeItem untuk KI_TMP_BK. (A) removeItem
+           MELEMPAR -> toast "kunci sementara ... tidak dapat
+           dibersihkan", data utuh, tmp key masih ada, cadangan baru
+           tersimpan. (B) removeItem diam-diam gagal (no-op) -> hasil
+           yang sama. */
+        const fireReset19 = () => { fire({'data-s2':'reset-demo'}); const ok = document.querySelector('#s2-modal-ok'); if (ok) ok.click(); };
+        const toast19 = () => (document.getElementById('toast') || {}).textContent || '';
+        const origRemove19 = Storage.prototype.removeItem;
+        try {
+          Storage.prototype.removeItem = function(k){ if (k === KI_TMP_BK) throw new Error('tmp-remove-fail-fixture'); return origRemove19.call(this, k); };
+          const ordersBefore19a = store.getItem(K2.orders);
+          const backupBefore19a = store.getItem(K2.backup);
+          fireReset19();
+          const t19a = toast19();
+          const tmpStill19a = store.getItem(KI_TMP_BK) !== null;
+          out.push({name:'Handler penuh — reset kunci sementara (removeItem MELEMPAR): reset DIBATALKAN, toast "kunci sementara ... tidak dapat dibersihkan", data utuh, kunci sementara masih tertinggal, cadangan baru tersimpan', pass: t19a.indexOf('DIBATALKAN') >= 0 && t19a.indexOf('kunci sementara') >= 0 && store.getItem(K2.orders) === ordersBefore19a && tmpStill19a && store.getItem(K2.backup) !== null && store.getItem(K2.backup) !== backupBefore19a, exp:'toast DIBATALKAN + kunci sementara; orders utuh; tmp masih ada; backup baru tersimpan', act:'toast="' + t19a.slice(0, 120) + '"; tmp-ada=' + tmpStill19a});
+        } finally { Storage.prototype.removeItem = origRemove19; }
+        try {
+          Storage.prototype.removeItem = function(k){ if (k === KI_TMP_BK) return; return origRemove19.call(this, k); };
+          const ordersBefore19b = store.getItem(K2.orders);
+          fireReset19();
+          const t19b = toast19();
+          const tmpStill19b = store.getItem(KI_TMP_BK) !== null;
+          out.push({name:'Handler penuh — reset kunci sementara (removeItem DIAM-DIAM GAGAL): reset DIBATALKAN, toast "kunci sementara ... tidak dapat dibersihkan", data utuh, kunci sementara masih tertinggal', pass: t19b.indexOf('DIBATALKAN') >= 0 && t19b.indexOf('kunci sementara') >= 0 && store.getItem(K2.orders) === ordersBefore19b && tmpStill19b, exp:'toast DIBATALKAN + kunci sementara; orders utuh; tmp masih ada', act:'toast="' + t19b.slice(0, 120) + '"; tmp-ada=' + tmpStill19b});
+        } finally { Storage.prototype.removeItem = origRemove19; }
+      } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); } finally {
+      /* v21.2 — pemulihan di finally: berjalan walau ada kasus yang
+         melempar; sessionStorage dipulihkan PERSIS (bukan hanya
+         diperiksa); SEMUA kunci window yang tidak ada di snapshot
+         dihapus (bukan hanya __ki*). */
+      try {
       S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl' && i.id !== 'fx-inv-hdl2' && i.id !== 'fx-inv-hdl3' && i.id !== 'fx-inv-hdl3b');
       Object.assign(CO, coBak);
       S2.role = roleBak;
@@ -1252,14 +1462,17 @@
       try {
         if (hBak.grantHad) window.__kiAdminWrite = hBak.grant; else delete window.__kiAdminWrite;
         if (hBak.genHad) window.__kiGrantGen = hBak.gen; else delete window.__kiGrantGen;
-        Object.keys(window).forEach(k => { if (k.indexOf('__ki') === 0 && !hBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
+        Object.keys(window).forEach(k => { if (!hBak.winKeys.has(k)){ try { delete window[k]; } catch(e){} } });
       } catch(e){}
       Object.assign(D2, hBak.d2); D2.guestSel = new Set(hBak.d2.guestSel);
       Object.assign(B, hBak.b);
       SAVE_STATE.status = hBak.saveStatus; SAVE_STATE.at = hBak.saveAt;
       Object.keys(_saveTimers).forEach(k => { if (!hBak.timers.has(k)){ try { clearTimeout(_saveTimers[k]); } catch(e){} delete _saveTimers[k]; } });
+      try { const ss = window.sessionStorage; if (ss){ const cur = {}; for (let i = 0; i < ss.length; i++){ const k = ss.key(i); cur[k] = ss.getItem(k); } Object.keys(cur).forEach(k => { if (!(k in hBak.sessKeys)){ try { ss.removeItem(k); } catch(e){} } }); Object.keys(hBak.sessKeys).forEach(k => { try { if (ss.getItem(k) !== hBak.sessKeys[k]) ss.setItem(k, hBak.sessKeys[k]); } catch(e){} }); } } catch(e){}
       restoreStore();
       kiRefreshCollections();
+      } catch(e){}
+      }
       const isoOk = store ? Object.keys(dump).every(k => store.getItem(k) === dump[k]) : false;
       const isoGrantH = (() => { try { return ('__kiAdminWrite' in window) === hBak.grantHad && (window.__kiAdminWrite === true) === hBak.grant && ('__kiGrantGen' in window) === hBak.genHad && kiGrantGen() === hBak.gen; } catch(e){ return false; } })();
       const isoWinH = (() => { try { const now = Object.keys(window); return now.length === hBak.winKeys.size && now.every(k => hBak.winKeys.has(k)); } catch(e){ return false; } })();

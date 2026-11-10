@@ -278,7 +278,7 @@
     /* ---------- View: Demo penuh ---------- */
     function viewDemo(t){
       const demoInv = { templateId: t.id, content: demoFor(t.categoryId), design: { paletteId: t.palettes[0].id, fontId: t.fontId, ornament: t.ornament }, sections: Object.fromEntries(t.sections.map(s => [s, true])), categoryId: t.categoryId };
-      const html = `<div class="wrap"><div class="detail-grid" style="grid-template-columns:400px 1fr">
+      const html = `<div class="wrap"><div class="detail-grid demo-layout">
         <div>
           <div class="phone-shell"><div class="phone-screen" style="height:min(76vh,720px)">${renderInvitation(demoInv, {mode:'demo', envelope:true, wishes: S.wishes.filter(w => w.slug === 'demo')})}</div></div>
         </div>

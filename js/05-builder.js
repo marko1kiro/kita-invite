@@ -158,7 +158,7 @@
           ${gateBlock ? `<p class="hint" style="margin-top:10px;color:var(--err)">${esc(gateBlockText(gateBlock))}</p>` : allOk ? `<p class="hint" style="margin-top:10px">Tautan akan dibuat dari nama undangan: <b>/u/${slugify(inv.title)}</b></p>` : `<p class="hint" style="margin-top:10px;color:var(--err)">Lengkapi dulu item bertanda seru di atas untuk menerbitkan.</p>`}`}
           </div>
           <div class="b-panel"><h2>Paket Undangan</h2><p class="sub">Template ini berada di paket <b>${esc(t.tier)}</b> (${rp(t.price)}). Pesan paketnya lewat checkout simulasi — pembayaran yang berhasil mengaktifkan paket untuk undangan ini dan tercatat di Dashboard.</p>
-          <a class="btn gold sm" href="#/checkout">Pesan Paket Ini (Simulasi)</a> <a class="btn ghost sm" href="#/dashboard?tab=pesanan">Lihat Pesanan Saya</a></div>`;
+          <a class="btn gold sm" href="#/checkout?inv=${inv.id}">Pesan Paket Ini (Simulasi)</a> <a class="btn ghost sm" href="#/dashboard?tab=pesanan">Lihat Pesanan Saya</a></div>`;
       }
       return '';
     }

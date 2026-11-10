@@ -1927,19 +1927,27 @@
       const [path, qs] = raw.split('?');
       return { seg: path.split('/').filter(Boolean), params: Object.fromEntries(new URLSearchParams(qs || '')) };
     }
-    function render(){
+      function render(){
       const { seg, params } = parseHash();
+      /* Rute milik Stage 2 (dashboard/admin/desainer/checkout/bayar/
+         faktur/draft-saya) TIDAK pernah dilukis router ini: melukisnya
+         di sini hanya menghasilkan kilasan "Halaman tidak ditemukan"
+         (router ini tidak mengenal rute-rute itu) sebelum s2Render
+         melukis tampilan yang benar — dan pada navigasi hash-yang-sama
+         lewat go() kilasan itu MACET sampai reload. s2Render memiliki
+         rute-rute ini sepenuhnya (hashchange + render awal Stage 2). */
+      if (['dashboard','admin','desainer','checkout','bayar','faktur','draft-saya'].indexOf(seg[0]) >= 0) return;
       let html;
       if (seg.length === 0) html = viewHome();
       else if (seg[0] === 'template' && seg.length === 1) html = viewMarketplace(params);
       else if (seg[0] === 'template' && seg[1]) { const t = templateBySlug(seg[1]); html = t ? viewDetail(t) : notFound(); }
       else if (seg[0] === 'demo' && seg[1]) { const t = templateBySlug(seg[1]); html = t ? viewDemo(t) : notFound(); }
       else if (seg[0] === 'buat' && seg[1]) { const t = templateBySlug(seg[1]); html = t ? viewStart(t) : notFound(); }
-      else if (seg[0] === 'studio' && seg[1]) { const inv = S.invitations.find(i => i.id === seg[1]); html = !inv ? notFound() : kiOwns(inv) ? viewStudio(inv, false) : kiAdmin() ? viewStudio(inv, !kiAdminWrite()) : studioForbidden(); }
+      else if (seg[0] === 'studio' && seg[1]) { const inv = S.invitations.find(i => i.id === seg[1]); if (!inv && !window.__kiS2Ready) return; /* data Stage 2 belum siap (render awal berjalan sebelum seed): jangan lukis "tidak ditemukan" untuk undangan yang sebenarnya ada — render ulang di akhir Stage 2 melukisnya dengan benar */ html = !inv ? notFound() : kiOwns(inv) ? viewStudio(inv, false) : kiAdmin() ? viewStudio(inv, !kiAdminWrite()) : studioForbidden(); }
       else if (seg[0] === 'draft-saya') html = viewDrafts();
       else if (seg[0] === 'peta-jalan') html = viewRoadmap();
       else if (seg[0] === 'rencana-cloudflare') html = viewPlan();
-      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); const expired = !!(inv && typeof invStatus === 'function' && invStatus(inv).key === 'expired'); const pub = inv && inv.status === 'published' && !inv.archived && !expired ? inv : null; app.innerHTML = expired ? viewAccessEnded(inv) : viewPublic(pub, pub ? guestNameFor(pub, params.to) : null, params.to); window.scrollTo(0,0); return; }
+      else if (seg[0] === 'u' && seg[1]) { const inv = S.invitations.find(i => i.slug === seg[1]); if (!inv && !window.__kiS2Ready) return; /* sama seperti studio: slug belum termuat bukan berarti tidak ada */ const expired = !!(inv && typeof invStatus === 'function' && invStatus(inv).key === 'expired'); const pub = inv && inv.status === 'published' && !inv.archived && !expired ? inv : null; app.innerHTML = expired ? viewAccessEnded(inv) : viewPublic(pub, pub ? guestNameFor(pub, params.to) : null, params.to); window.scrollTo(0,0); return; }
       else html = notFound();
       app.innerHTML = html;
       if (seg[0] === 'template' && seg.length === 1) renderMktResults();
@@ -2144,6 +2152,7 @@
       .pill.pub{background:#DCE8DC;color:var(--ok)}
       .pill.exp{background:#F3E3C8;color:var(--warn)}
       .pill.arc{background:var(--champagne);color:var(--ink-2)}
+      .pill.unres{background:#F3E3C8;color:var(--warn)}
       .pill.pay-ok{background:#DCE8DC;color:var(--ok)}
       .pill.pay-pend{background:#F3E3C8;color:var(--warn)}
       .pill.pay-bad{background:#F3D9D2;color:var(--err)}
@@ -2409,6 +2418,13 @@
        - Desainer hanya boleh menulis proyek yang DITUGASKAN kepadanya
          (designerId terisi des-1/des-2) dan hanya transisi kerjanya. */
     function kiAdminWriteOn(){ try { return window.__kiAdminWrite === true; } catch(e){ return false; } }
+    /* Pencabutan grant Admin lintas-pemilik: grant ini berlaku per
+       persona — SETIAP perubahan persona/peran (pemilih peran maupun
+       pemilih desainer aktif) mencabutnya, tanpa kecuali. Grant tidak
+       pernah terbawa ke persona berikutnya; Admin pada persona baru
+       harus mengaktifkannya lagi secara eksplisit. Fungsi yang sama
+       dipanggil handler ganti persona DAN uji fixture. */
+    function kiRevokeAdminGrant(){ try { window.__kiAdminWrite = false; } catch(e){} }
     /* Desainer yang SEDANG AKTIF (persona demo desainer): workspace dan
        semua handler tulis Desainer dibatasi ke proyek yang assignee-nya
        adalah desainer aktif ini — bukan gabungan semua desainer. */
@@ -2528,10 +2544,18 @@
     /* Resolusi paket undangan terbit TANPA packageId: paket HANYA boleh
        disimpulkan dari order terkait yang DAPAT DIBUKTIKAN — order untuk
        undangan ini yang punya record pembayaran Success tertaut ketat
-       (linkedSuccessPayment). Bila paket terbukti TUNGGAL, itulah
-       paketnya; bila tidak ada bukti, atau buktinya menunjuk lebih dari
-       satu paket berbeda, hasilnya null = BELUM TERSELESAIKAN — paket
-       tidak pernah ditebak dan masa akses tidak pernah diklaim. */
+       (linkedSuccessPayment).
+       ATURAN EKSPLISIT untuk beberapa order Success: yang disyaratkan
+       adalah TEPAT SATU package ID UNIK yang terbukti, BUKAN tepat satu
+       order. Beberapa order Success yang menunjuk package ID yang SAMA
+       dihitung sebagai SATU bukti paket yang konsisten — paket itu
+       terbukti dan dipakai. Bila tidak ada bukti sama sekali, atau bukti
+       yang terbukti menunjuk LEBIH DARI SATU package ID berbeda,
+       hasilnya null = BELUM TERSELESAIKAN — paket tidak pernah ditebak,
+       tidak dipilih sembarang di antara kandidat, dan masa akses tidak
+       pernah diklaim. Order Success yang record pembayarannya tidak
+       tertaut ketat (tanpa invitationId yang cocok) TIDAK dihitung
+       sebagai bukti sama sekali. */
     function kiResolvePackageId(invId, orders, payments){
       const proven = new Set();
       (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments)) proven.add(o.packageId); });
@@ -2647,7 +2671,12 @@
        menulis localStorage/data nyata (data nyata hanya dibaca untuk
        pemindaian yatim terakhir). Kelompok uji: (1) reset fail-closed,
        (2) predikat HANDLER tulis dipanggil langsung, (3) payment gate,
-       (4) dedupe impor ID stabil, (5) orphan-reference. */
+       (4) dedupe impor ID stabil, (5) orphan-reference, (6) publish-save
+       failure, (7) owner mismatch route bayar/faktur + Builder,
+       (8) identitas stabil RSVP tanpa kode, (9) transisi layanan,
+       (10) konsistensi seed + aturan multi-order se-paket,
+       (11) siklus hidup grant Admin (tanpa/dengan izin, tersimpan
+       setelah baca-ulang, pencabutan saat persona/peran berubah). */
     function kiFixtureTests(){
       const mk = fail => { const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
         const reads = {};
@@ -2758,7 +2787,37 @@
         out.push({name:'Seed: terbit tanpa packageId + TIDAK ada order Success terbukti -> belum terselesaikan (paket tidak ditebak)', pass: kiResolvePackageId('fx-inv-s', [so('o2','fx-inv-s','premium','Expired')], [sp('p2','o2','fx-inv-s','Expired')]) === null});
         out.push({name:'Seed: bukti menunjuk DUA paket berbeda -> belum terselesaikan (tidak dipilih sembarang)', pass: kiResolvePackageId('fx-inv-s', [so('o3','fx-inv-s','premium','Success'), so('o4','fx-inv-s','signature','Success')], [sp('p3','o3','fx-inv-s','Success'), sp('p4','o4','fx-inv-s','Success')]) === null});
         out.push({name:'Seed: order Success tanpa record pembayaran tertaut ketat -> tidak dihitung sebagai bukti paket', pass: kiResolvePackageId('fx-inv-s', [so('o5','fx-inv-s','premium','Success')], [sp('p5','o5',undefined,'Success')]) === null});
+        out.push({name:'Seed — ATURAN multi-order: DUA order Success dengan package ID yang SAMA (keduanya terbukti) -> SATU bukti paket, paket itu dipakai (syaratnya tepat satu package ID unik, bukan tepat satu order)', pass: kiResolvePackageId('fx-inv-s', [so('o6','fx-inv-s','premium','Success'), so('o7','fx-inv-s','premium','Success')], [sp('p6','o6','fx-inv-s','Success'), sp('p7','o7','fx-inv-s','Success')]) === 'premium'});
+        out.push({name:'Seed — ATURAN multi-order: dua order Success se-paket, hanya SATU yang terbukti tertaut -> yang terbukti tetap dihitung, paket teresolusi', pass: kiResolvePackageId('fx-inv-s', [so('o8','fx-inv-s','premium','Success'), so('o9','fx-inv-s','premium','Success')], [sp('p8','o8','fx-inv-s','Success'), sp('p9','o9',undefined,'Success')]) === 'premium'});
       } catch(e){ out.push({name:'Uji konsistensi seed (kiResolvePackageId)', pass:false}); }
+      /* (11) Siklus hidup grant Admin lintas-pemilik — fungsi yang SAMA
+         dengan handler nyata: predikat handler (kiWriteAllowed),
+         predikat persistensi Builder (kiCanPersist), dan pencabut grant
+         yang dipanggil handler ganti persona/peran (kiRevokeAdminGrant).
+         "Setelah reload" dibuktikan dengan baca-ulang dari stub storage:
+         yang tertulis lewat jalur ber-grant masih terbaca persis; jalur
+         tanpa grant tidak menulis apa pun sejak awal. Semua pada stub —
+         data nyata tidak disentuh; peran & grant dipulihkan sesudahnya. */
+      try {
+        const roleBak3 = S2.role;
+        let grantBak3 = null; try { grantBak3 = window.__kiAdminWrite === true; } catch(e){}
+        const fxOther = {id:'fx-inv-grant', ownerId:'cust-2', title:'Fixture Grant'};
+        const gStore = new Map();
+        const gStub = { getItem:k => gStore.has(k) ? gStore.get(k) : null, setItem:(k, v) => { gStore.set(k, String(v)); } };
+        const gatedPersist = inv => { if (!kiCanPersist(inv)) return false; gStub.setItem('fx:grant-write', inv.id); return gStub.getItem('fx:grant-write') === inv.id; };
+        S2.role = 'admin'; kiRevokeAdminGrant();
+        out.push({name:'Grant: Admin TANPA grant -> handler menolak tulis lintas-pemilik (kiWriteAllowed=false)', pass: kiWriteAllowed(fxOther) === false});
+        out.push({name:'Grant: Admin TANPA grant -> persistensi Builder ikut tertutup (kiCanPersist=false, bukan hanya UI)', pass: kiCanPersist(fxOther) === false});
+        out.push({name:'Grant: TANPA grant, jalur simpan yang digerbang predikat persistensi TIDAK menulis apa pun ke storage', pass: gatedPersist(fxOther) === false && gStub.getItem('fx:grant-write') === null});
+        try { window.__kiAdminWrite = true; } catch(e){}
+        out.push({name:'Grant: Admin DENGAN grant eksplisit -> handler mengizinkan tulis lintas-pemilik', pass: kiWriteAllowed(fxOther) === true});
+        out.push({name:'Grant: DENGAN grant, penulisan lolos persistensi dan MASIH TERBACA setelah baca-ulang storage (simulasi reload)', pass: gatedPersist(fxOther) === true && gStub.getItem('fx:grant-write') === 'fx-inv-grant'});
+        kiRevokeAdminGrant();
+        out.push({name:'Grant: persona/peran berubah -> kiRevokeAdminGrant (fungsi yang dipanggil handler ganti peran) mencabut grant; handler & persistensi menolak lagi', pass: kiAdminWriteOn() === false && kiWriteAllowed(fxOther) === false && kiCanPersist(fxOther) === false});
+        out.push({name:'Grant: setelah dicabut, jalur simpan kembali tidak menulis (record hasil grant sebelumnya tidak ditimpa diam-diam)', pass: gatedPersist(fxOther) === false && gStub.getItem('fx:grant-write') === 'fx-inv-grant'});
+        S2.role = roleBak3;
+        try { window.__kiAdminWrite = grantBak3 === true; } catch(e){}
+      } catch(e){ out.push({name:'Uji siklus hidup grant Admin (tanpa/dengan izin, reload, pencabutan)', pass:false}); }
       return out;
     }
     function gateBlockText(blk){
@@ -3403,7 +3462,7 @@
       const bk = load2(K2.backup, null);
       return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
       <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
-      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div></div>`;
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div></div>`;
     }
     function dashSettings(){
       return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
@@ -3541,7 +3600,7 @@
     }
     function adminSimple(tab){
       if (tab === 'pelanggan') return `<div class="card"><h2>Pelanggan & Akun Demo</h2><p class="sub">Akun-akun demo platform, termasuk peran admin dan desainer.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nama</th><th>Email</th><th>Peran</th><th>Undangan</th><th>Pesanan</th><th>Bergabung</th></tr></thead><tbody>${S2.users.map(u => `<tr><td data-l="Nama"><b>${esc(u.name)}</b></td><td data-l="Email">${esc(u.email)}</td><td data-l="Peran">${esc(u.role)}</td><td data-l="Undangan">${S.invitations.filter(i => i.ownerId === u.id).length}</td><td data-l="Pesanan">${S2.orders.filter(o => o.customerId === u.id).length}</td><td data-l="Bergabung">${new Date(u.joined).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}</td></tr>`).join('')}</tbody></table></div></div>`;
-      if (tab === 'undangan') return `<div class="card"><h2>Semua Undangan</h2><p class="sub">Record yang sama dengan milik pelanggan — perubahan di Builder pelanggan langsung tercermin di sini.</p><div class="list-rows">${S.invitations.map(inv => { const st = invStatus(inv); return `<div class="lrow"><div class="grow"><b>${esc(inv.title)}</b> <span class="pill ${st.cls}">${st.label}</span><div class="mut">${esc(userById(inv.ownerId).name)} · ${esc(tplOf(inv).name)} v${inv.templateVersion}.0 · ${guestsOf(inv.id).length} tamu · ${rsvpsOf(inv.id).length} RSVP${inv.slug ? ' · /u/' + esc(inv.slug) : ''}</div></div><a class="btn ghost sm" href="#/studio/${inv.id}">Lihat Builder (Admin)</a></div>`; }).join('')}</div></div>`;
+      if (tab === 'undangan') return `<div class="card"><h2>Semua Undangan</h2><p class="sub">Record yang sama dengan milik pelanggan — perubahan di Builder pelanggan langsung tercermin di sini.</p><div class="list-rows">${S.invitations.map(inv => { const st = invStatus(inv); const unres = inv.status === 'published' && !inv.packageId; return `<div class="lrow"><div class="grow"><b>${esc(inv.title)}</b> <span class="pill ${st.cls}">${st.label}</span>${unres ? ' <span class="pill unres">Paket belum terselesaikan</span>' : ''}<div class="mut">${esc(userById(inv.ownerId).name)} · ${esc(tplOf(inv).name)} v${inv.templateVersion}.0 · ${guestsOf(inv.id).length} tamu · ${rsvpsOf(inv.id).length} RSVP${inv.slug ? ' · /u/' + esc(inv.slug) : ''}${unres ? ' · masa akses belum terhitung — tidak ada paket yang terbukti dari pesanan terkait' : ''}</div></div><a class="btn ghost sm" href="#/studio/${inv.id}">Lihat Builder (Admin)</a></div>`; }).join('')}</div></div>`;
       if (tab === 'pesanan') return `<div class="card"><h2>Semua Pesanan</h2><p class="sub">Kelola status pesanan lintas pelanggan. Status pembayaran tetap terpisah dan hanya berubah lewat simulasi pembayaran.</p><div class="list-rows">${S2.orders.slice().sort((a,b) => b.createdAt - a.createdAt).map(o => orderCard(o, true)).join('')}</div></div>`;
       if (tab === 'pembayaran') return `<div class="card"><h2>Pembayaran (Simulasi)</h2><p class="sub">Semua record pembayaran simulasi beserta pesanan induknya.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Kode</th><th>Pesanan</th><th>Metode</th><th>Jumlah</th><th>Status</th><th>Waktu</th></tr></thead><tbody>${S2.payments.slice().sort((a,b) => b.createdAt - a.createdAt).map(p => { const o = S2.orders.find(x => x.id === p.orderId); return `<tr><td data-l="Kode">${esc(p.code)}</td><td data-l="Pesanan">${esc(o ? o.number : '—')}</td><td data-l="Metode">${esc(p.method)}</td><td data-l="Jumlah">${rp(p.amount)}</td><td data-l="Status">${payPill(p.status)}</td><td data-l="Waktu">${new Date(p.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}</td></tr>`; }).join('')}</tbody></table></div></div>`;
       if (tab === 'layanan') return `<div class="card"><h2>Antrean Layanan Bantuan</h2><p class="sub">Tugaskan desainer dan pantau alur New → Paid → Assigned → In Progress → Review → Revision → Approved → Published → Completed pada record yang sama dengan milik pelanggan.</p>
@@ -4059,11 +4118,13 @@
     });
     document.addEventListener('change', e => {
       if (e.target.id === 's2-role'){
+        kiRevokeAdminGrant(); /* persona/peran berubah -> grant Admin lintas-pemilik DICABUT, tidak terbawa ke persona baru */
         S2.role = e.target.value; save2(K2.role, S2.role);
         toast('Peran demo: ' + (S2.role === 'admin' ? 'Admin' : S2.role === 'designer' ? 'Desainer' : 'Pelanggan'));
-        go(S2.role === 'admin' ? '#/admin' : S2.role === 'designer' ? '#/desainer' : '#/dashboard'); return;
+        go(S2.role === 'admin' ? '#/admin' : S2.role === 'designer' ? '#/desainer' : '#/dashboard'); rerender2(); return;
       }
       if (e.target.id === 's2-designer-pick'){
+        kiRevokeAdminGrant(); /* persona desainer aktif berubah -> grant Admin (bila ada) ikut dicabut */
         S2.designerId = e.target.value === 'des-2' ? 'des-2' : 'des-1'; save2(K2.designer, S2.designerId);
         toast('Desainer aktif: ' + userById(S2.designerId).name + ' — workspace kini hanya menampilkan proyek yang ditugaskan kepadanya.');
         rerender2(); return;
@@ -4405,6 +4466,11 @@
       toast('RSVP terkirim. Terima kasih!');
     });
 
+    /* Penanda data Stage 2 selesai dimuat & dimigrasi: sebelum ini,
+       router Stage 1 menahan lukisan "tidak ditemukan" untuk rute yang
+       datanya berasal dari Stage 2 (lihat render()); sesudah ini,
+       record yang benar-benar tidak ada tetap menghasilkan 404. */
+    try { window.__kiS2Ready = true; } catch(e){}
     s2Render();
     /* Rute Stage 1 yang bergantung pada data Stage 2 dirender sekali lagi
        setelah data siap: render awal Stage 1 berjalan SEBELUM seed Stage 2,

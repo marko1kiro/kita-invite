@@ -1294,7 +1294,7 @@
          status terkirimnya — bukan formulir kosong — setelah muat ulang,
          dengan tombol ubah respons yang jelas. */
       if (ex && !opts.rsvpEdit){
-        return `<div class="ok-box"><b>Respons Anda sudah terkirim</b><p class="muted small" style="margin:4px 0 12px">Atas nama <b>${esc(ex.name)}</b> — konfirmasi: <b>${esc(ex.status)}</b>${ex.status !== 'Tidak Hadir' ? ' · ' + (ex.count || 1) + ' orang' : ''}. Terima kasih! Bila ada perubahan, perbarui respons Anda lewat tombol di bawah.</p><button class="submit-btn" type="button" data-rsvp-edit>Ubah Respons</button></div>`;
+        return `<div class="ok-box"><b>Respons Anda sudah terkirim</b><p class="muted small" style="margin:4px 0 12px">Atas nama <b>${esc(ex.name)}</b> — konfirmasi: <b>${esc(ex.status)}</b>${ex.status !== 'Tidak Hadir' ? ' · ' + (ex.count || 1) + ' orang' : ''}. Terima kasih! Bila ada perubahan, perbarui respons Anda lewat tombol di bawah.</p><button class="submit-btn" type="button" data-rsvp-edit>Ubah Respons</button>${opts.webIdentity ? `<p class="muted small" style="margin:12px 0 8px">Perangkat ini dipakai bersama? Orang lain yang membuka undangan ini dari peramban yang sama adalah responden <b>terpisah</b> — responsnya tidak menimpa respons Anda.</p><button class="submit-btn" type="button" data-rsvp-new-person style="background:var(--i-surface);color:var(--i-ink);border:1px solid var(--i-line)">Isi sebagai tamu lain</button>` : ''}</div>`;
       }
       const cur = ex ? ex.status : 'Hadir';
       const nm = ex ? ex.name : (opts.mode === 'demo' ? '' : (opts.guest === 'Bapak/Ibu/Saudara/i' ? '' : opts.guest));
@@ -1523,7 +1523,7 @@
         </div>
         <div class="filters2">
           <select id="mkt-gaya" aria-label="Filter gaya"><option value="semua">Semua Gaya</option>${DB.styles.map(s => `<option value="${s.id}" ${MKT.gaya===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
-          <select id="mkt-tier" aria-label="Filter paket"><option value="semua">Semua Paket</option>${['Basic','Premium','Signature'].map(t => `<option ${MKT.tier===t?'selected':''}>${t}</option>`).join('')}</select>
+          <select id="mkt-tier" aria-label="Filter paket"><option value="semua">Semua Paket</option>${['Basic','Premium','Signature','Exclusive'].map(t => `<option ${MKT.tier===t?'selected':''}>${t}</option>`).join('')}</select>
           <select id="mkt-urut" aria-label="Urutkan"><option value="unggulan" ${MKT.urut==='unggulan'?'selected':''}>Paling Unggulan</option><option value="murah" ${MKT.urut==='murah'?'selected':''}>Harga Terendah</option><option value="mahal" ${MKT.urut==='mahal'?'selected':''}>Harga Tertinggi</option><option value="nama" ${MKT.urut==='nama'?'selected':''}>Nama A–Z</option></select>
           ${S.invitations.length ? `<a href="#/draft-saya" style="margin-left:auto;font-weight:800;font-size:13.5px;color:var(--gold-ink)">Draft saya (${S.invitations.length}) →</a>` : ''}
         </div>
@@ -1693,7 +1693,7 @@
       if (!inv) return `<div style="min-height:100vh;display:grid;place-items:center;padding:24px"><div class="empty" style="max-width:440px"><h3>Undangan tidak ditemukan</h3><p>Tautan ini belum diterbitkan atau sudah tidak tersedia.</p><a class="btn gold" href="#/">Ke Beranda Kita Invite</a></div></div>`;
       let existing = null;
       try { if (typeof s2ExistingRsvp === 'function') existing = s2ExistingRsvp(inv, code); } catch(e){}
-      const render = renderInvitation(inv, {mode:'public', envelope:true, guest: guestName || 'Bapak/Ibu/Saudara/i', wishes: publicWishesFor(inv), existingRsvp: existing});
+      const render = renderInvitation(inv, {mode:'public', envelope:true, guest: guestName || 'Bapak/Ibu/Saudara/i', wishes: publicWishesFor(inv), existingRsvp: existing, webIdentity: !!(existing && existing.viaWeb)});
       return `<a href="#/" style="position:fixed;top:14px;left:14px;z-index:80;background:rgba(20,17,12,.72);color:#F8F5EF;padding:9px 15px;border-radius:999px;font-size:13px;font-weight:700;backdrop-filter:blur(6px)">← Kita Invite</a>
       <div style="background:var(--surface-2);min-height:100vh;padding:0">
         <div style="max-width:480px;margin:0 auto;box-shadow:var(--shadow);min-height:100vh">${render}</div>
@@ -2013,6 +2013,25 @@
           const code = new URLSearchParams((location.hash.split('?')[1] || '')).get('to');
           const ex = s2ExistingRsvp(inv, code);
           if (ex) zone.innerHTML = rsvpFormHTML({mode:'public', guest: guestNameFor(inv, code) || 'Bapak/Ibu/Saudara/i', existingRsvp: ex, rsvpEdit: true});
+        }
+        return;
+      }
+      /* "Isi sebagai tamu lain" (v19): perangkat bersama — buat
+         identitas responden BARU untuk undangan ini dan jadikan aktif,
+         lalu tampilkan formulir kosong. Identitas & respons orang
+         sebelumnya tetap utuh pada tokennya sendiri. */
+      const rsvpNewBtn = e.target.closest('[data-rsvp-new-person]');
+      if (rsvpNewBtn){
+        const zone = rsvpNewBtn.closest('[data-rsvp-zone]');
+        const slug = location.hash.slice(4).split('?')[0];
+        const inv = S.invitations.find(i => i.slug === slug);
+        if (zone && inv && typeof kiRespondentNewPerson === 'function'){
+          if (kiRespondentNewPerson(inv.id)){
+            zone.innerHTML = rsvpFormHTML({mode:'public', guest:'Bapak/Ibu/Saudara/i'});
+            toast('Identitas responden baru dibuat di perangkat ini — silakan isi respons Anda sendiri. Respons tamu sebelumnya tidak berubah.');
+          } else {
+            toast('Gagal membuat identitas responden baru di perangkat ini (penyimpanan tidak tersedia).', true);
+          }
         }
         return;
       }
@@ -2388,19 +2407,36 @@
        sebagai cadangan). Undangan draft dan undangan tanpa paket terkait
        tidak kedaluwarsa. Tanggal acara tidak pernah menutup halaman
        publik; yang menutupnya hanya berakhirnya masa akses paket. */
+    /* Helper expiry DETERMINISTIK (v19 — keputusan Marko 10 Nov 2026,
+       mengikuti rekomendasi Agent Lora): masa aktif ditambah dalam
+       BULAN KALENDER pada zona waktu WIB (UTC+7, tanpa DST), tanggal
+       hari DIBATASI (clamp) ke hari terakhir bulan tujuan — 31 Okt +
+       6 bulan = 30 April, BUKAN meluap ke 1 Mei seperti overflow
+       Date.setMonth — dan batas akhirnya adalah AKHIR HARI pukul
+       23:59:59.999 WIB pada tanggal hasil. Perhitungan memakai aritmetika
+       UTC di atas waktu dinding WIB, jadi hasilnya sama di perangkat
+       mana pun dan tidak bergantung zona waktu peramban. */
+    const KI_WIB_MS = 7 * 3600 * 1000;
+    function kiAddMonthsClampWIB(ts, months){
+      if (typeof ts !== 'number' || !isFinite(ts) || typeof months !== 'number' || !isFinite(months)) return null;
+      const wall = new Date(ts + KI_WIB_MS); /* waktu dinding WIB dibaca lewat field UTC */
+      const total = wall.getUTCFullYear() * 12 + wall.getUTCMonth() + Math.trunc(months);
+      const ty = Math.floor(total / 12), tm = total - ty * 12;
+      const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+      const day = Math.min(wall.getUTCDate(), lastDay);
+      return Date.UTC(ty, tm, day, 23, 59, 59, 999) - KI_WIB_MS;
+    }
     function invAccessEndsAt(inv){
       /* Expiry dihitung dari publishedAt + durasi paket di SEMUA status
          (terbit, draft pasca-terbit, maupun arsip) — status tidak pernah
          menunda atau melewati expiry. Yang dibutuhkan hanya publishedAt
-         dan paket terkait; tanggal acara tidak terlibat sama sekali. */
+         dan paket terkait; tanggal acara tidak terlibat sama sekali.
+         Jalur bulan memakai helper clamp deterministik di atas (v19);
+         jalur accessDays (cadangan lama) dipertahankan apa adanya. */
       if (!inv || !inv.publishedAt) return null;
       const pkg = inv.packageId ? pkgById(inv.packageId) : null;
       if (!pkg) return null;
-      if (typeof pkg.accessMonths === 'number' && isFinite(pkg.accessMonths)){
-        const end = new Date(inv.publishedAt);
-        end.setMonth(end.getMonth() + pkg.accessMonths);
-        return end.getTime();
-      }
+      if (typeof pkg.accessMonths === 'number' && isFinite(pkg.accessMonths)) return kiAddMonthsClampWIB(inv.publishedAt, pkg.accessMonths);
       if (typeof pkg.accessDays === 'number' && isFinite(pkg.accessDays)) return inv.publishedAt + pkg.accessDays * 864e5;
       return null;
     }
@@ -2530,8 +2566,7 @@
     function kiSvcUnassignDecision(s, orders, pays){
       if (!s) return {ok:false, toStatus:null};
       if (s.status === 'Assigned'){
-        const lo = s.orderId ? (orders || []).find(x => x.id === s.orderId) : null;
-        const proven = !!(lo && linkedSuccessPayment(lo, s.invitationId || lo.invitationId, pays));
+        const proven = !!kiServicePaidProof(s, orders, pays); /* v19: bukti ketat yang sama — tanpa fallback invitationId dari pesanan */
         return {ok:true, toStatus: proven ? 'Paid' : 'New'};
       }
       if (s.status === 'New' || s.status === 'Paid') return {ok:true, toStatus:s.status};
@@ -2547,8 +2582,7 @@
     function kiSvcGateDecision(s, orders, pays){
       const POST = ['Assigned','In Progress','Review','Revision','Approved','Published','Completed'];
       if (!s || POST.indexOf(s.status) < 0) return {action:'keep'};
-      const o = s.orderId ? (orders || []).find(x => x.id === s.orderId) : null;
-      const paidOk = !!(o && linkedSuccessPayment(o, s.invitationId || o.invitationId, pays));
+      const paidOk = !!kiServicePaidProof(s, orders, pays); /* v19: bukti ketat yang sama — tanpa fallback invitationId dari pesanan */
       if (paidOk && s.designerId) return {action:'keep'};
       if (s.status !== 'Assigned') return {action:'keep'};
       return {action:'downgrade', toStatus: paidOk ? 'Paid' : 'New', releaseDesigner: !paidOk};
@@ -2579,8 +2613,14 @@
          terhubung ke pesanan itu. Status "Success" yang menggantung —
          pesanan batal, atau tanpa record pembayaran yang cocok — tidak
          pernah meloloskan publikasi. */
-      if (os.some(o => linkedSuccessPayment(o, inv.id))) return null;
+      /* v19: order Success pun TIDAK meloloskan gerbang bila paketnya
+         tidak cocok dengan tier template versi undangan ini
+         (kiOrderTierGate) — order Pending/Success lama dari sebelum
+         checkout dikunci tidak boleh mengaktifkan paket yang salah. */
+      if (os.some(o => linkedSuccessPayment(o, inv.id) && !kiOrderTierGate(o, inv).mismatch)) return null;
       if (!os.length) return { noOrder:true, number:null };
+      const held = os.filter(o => o.paymentStatus === 'Success' && kiOrderTierGate(o, inv).mismatch).sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (held) return Object.assign({}, held, {tierMismatch:true});
       return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
     }
     /* Record pembayaran Success yang SAH untuk sebuah pesanan: record-nya
@@ -2613,9 +2653,14 @@
        pernah diklaim. Order Success yang record pembayarannya tidak
        tertaut ketat (tanpa invitationId yang cocok) TIDAK dihitung
        sebagai bukti sama sekali. */
-    function kiResolvePackageId(invId, orders, payments){
+    function kiResolvePackageId(invId, orders, payments, inv){
       const proven = new Set();
-      (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments)) proven.add(o.packageId); });
+      /* v19: bila record undangan diberikan, hanya order yang paketnya
+         COCOK dengan tier template versi undangan itu yang dihitung
+         sebagai bukti — order lama bertier salah tidak pernah menjadi
+         dasar penetapan packageId, walau statusnya Success. */
+      const exp = inv ? kiTemplatePackage(inv) : null;
+      (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments) && (!exp || o.packageId === exp.id)) proven.add(o.packageId); });
       return proven.size === 1 ? Array.from(proven)[0] : null;
     }
     /* ---------- v18: kunci paket checkout, inti pembatalan, bukti
@@ -2631,11 +2676,46 @@
        faktur (yang membaca snapshot pesanan), penetapan packageId
        undangan saat pembayaran Success, dan gerbang publikasi semuanya
        memakai paket yang sama dengan tier template. */
+    /* Template yang BENAR-BENAR dipakai undangan (v19): snapshot versi
+       yang tersimpan pada record undangan (templateId@templateVersion
+       di TPL_VERSIONS) — BUKAN template terkini. CMS dapat menaikkan
+       versi/tier template kapan pun; undangan lama tetap pada tier
+       versinya sendiri untuk checkout, gerbang, dan rekonsiliasi.
+       Jatuh kembali ke template terkini hanya bila snapshot versi
+       tidak ada (record sangat lama). */
+    function kiInvTemplate(inv){
+      if (!inv) return null;
+      const snap = (typeof inv.templateVersion === 'number' && typeof TPL_VERSIONS !== 'undefined' && TPL_VERSIONS[inv.templateId + '@' + inv.templateVersion]) || null;
+      return snap || TEMPLATES.find(t => t.id === inv.templateId) || null;
+    }
     function kiTemplatePackage(inv){
       if (!inv) return null;
-      const t = tplOf(inv);
+      const t = kiInvTemplate(inv);
       if (!t || !t.tier) return null;
       return pkgById(String(t.tier).toLowerCase()) || DB.packages.find(p => p.name === t.tier) || null;
+    }
+    /* Gerbang tier pesanan (v19) — dipakai handler hasil pembayaran,
+       payment gate, dan resolver paket: sebuah pesanan MISMATCH bila
+       paket pada snapshot pesanan berbeda dari paket tier template
+       VERSI undangan pemiliknya. Snapshot pesanan (packageId/harga/
+       total) TIDAK pernah ditulis ulang oleh gerbang ini — mismatch
+       hanya menahan aktivasi dan menandai pesanan untuk dibuat ulang. */
+    function kiOrderTierGate(o, inv){
+      if (!o || !inv) return {mismatch:false, expected:null};
+      const exp = kiTemplatePackage(inv);
+      if (!exp) return {mismatch:false, expected:null};
+      return {mismatch: o.packageId !== exp.id, expected:exp};
+    }
+    /* Record pembayaran AKTIF sebuah pesanan (v19): percobaan terakhir
+       dalam urutan pembuatan. Semua permukaan (halaman bayar, faktur,
+       handler hasil) membaca record yang sama lewat fungsi ini, dan
+       kode pembayaran HANYA hidup pada record ini — tidak pernah
+       dibuat ulang saat render atau muat ulang. Kode berubah hanya
+       bila percobaan BARU dibuat (percobaan lama sudah Failed/Expired
+       dan tetap tersimpan sebagai riwayat). */
+    function kiActivePayment(orderId, pays){
+      const list = (pays || S2.payments).filter(p => p.orderId === orderId);
+      return list.length ? list[list.length - 1] : null;
     }
     function kiCheckoutValidate(inv, pkgId, price){
       const exp = kiTemplatePackage(inv);
@@ -2673,10 +2753,19 @@
        menggantung saja TIDAK pernah cukup. */
     function kiServicePaidProof(s, orders, pays){
       if (!s || !s.orderId) return null;
+      /* v19: invitationId proyek WAJIB ada dan WAJIB sama dengan
+         invitationId pesanan — TIDAK ada fallback ke invitationId
+         pesanan bila proyek tidak membawanya. Proyek tanpa tautan
+         undangan yang tegas tidak pernah terbukti lunas. */
+      if (!s.invitationId) return null;
       const o = (orders || []).find(x => x.id === s.orderId);
       if (!o) return null;
-      if (s.invitationId && o.invitationId !== s.invitationId) return null;
-      return linkedSuccessPayment(o, s.invitationId || o.invitationId, pays);
+      if (o.invitationId !== s.invitationId) return null;
+      /* v19: Success dari pesanan yang paketnya tidak cocok dengan
+         tier template versi undangan ini juga TIDAK menjadi bukti —
+         hasil pembayaran pesanan semacam itu ditahan di handler. */
+      try { const iv = (typeof S !== 'undefined' && S.invitations || []).find(i => i.id === s.invitationId); if (iv && kiOrderTierGate(o, iv).mismatch) return null; } catch(e){}
+      return linkedSuccessPayment(o, s.invitationId, pays);
     }
     /* (6) KEPUTUSAN NAMA RSVP (v18, ditegaskan): nama pada record RSVP
        adalah SNAPSHOT nama kanonis tamu PADA SAAT SUBMIT — bukan
@@ -2860,7 +2949,13 @@
        snapshot-first (simpan gagal & rollback gagal terpisah),
        (18) bukti rekonsiliasi layanan ketat di semua jalur
        (kiServicePaidProof), (19) semantik nama RSVP: snapshot saat
-       submit, dedupe per guestId — bukan nama.
+       submit, dedupe per guestId — bukan nama, (20) blocker v19:
+       gerbang tier order lama (kiOrderTierGate), tier dari VERSI
+       template (kiInvTemplate), bukti Paid tanpa fallback
+       invitationId, expiry clamp WIB (kiAddMonthsClampWIB), identitas
+       RSVP per orang, kode pembayaran stabil (kiActivePayment) —
+       kasus grup 20 membawa expected vs actual. Kasus terakhir suite
+       memverifikasi snapshot SELURUH key storage tidak berubah.
        ISOLASI PENUH (v18): sebelum suite berjalan, seluruh state sesi
        yang dapat disentuh suite di-snapshot (peran, desainer aktif,
        flag grant, GENERASI grant, referensi semua koleksi, daftar ID
@@ -2886,6 +2981,11 @@
         gen:kiGrantGen(),
         orders:S2.orders, payments:S2.payments, services:S2.services, activity:S2.activity, notifications:S2.notifications, guests:S2.guests, rsvps:S2.rsvps,
         invIds:new Set(S.invitations.map(i => i.id)) };
+      /* Snapshot SELURUH key storage sesi (v19): suite fixture tidak
+         boleh menambah/mengubah/menghapus satu key pun di storage
+         nyata — diverifikasi byte-per-byte pada kasus terakhir suite. */
+      const kiDumpAllKeys = () => { const st = storageBackend(); const d = {}; if (!st) return d; for (let i = 0; i < st.length; i++){ const k = st.key(i); if (k != null) d[k] = st.getItem(k); } return d; };
+      const keySnapBefore = kiDumpAllKeys();
       let st = mk('read'); let r = kiResetCore(st); out.push({name:'Reset: snapshot tak terbaca -> berhenti, data utuh', pass: r.ok === false && r.stage === 'snapshot-unreadable' && st._m.get('vowora:v1:guests') === '["g1"]'});
       st = mk('mutate'); r = kiResetCore(st); out.push({name:'Reset: snapshot berubah saat diverifikasi -> berhenti sebelum menghapus apa pun', pass: r.ok === false && r.stage === 'snapshot-verify' && st._m.get('vowora:v1:guests') === '["g1"]' && st._m.get(K2.backup) === '{"lama":true}'});
       st = mk('write'); r = kiResetCore(st); out.push({name:'Reset: backup gagal ditulis -> berhenti, backup lama dipertahankan', pass: r.ok === false && r.stage === 'backup-write' && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:orders')});
@@ -3179,6 +3279,65 @@
         const refreshed = kiRsvpSnapshotName(gSnap, 'Apa Pun', false);
         out.push({name:'Nama RSVP: rename tamu TIDAK menulis ulang snapshot RSVP lama; submit berikutnya menyegarkan snapshot ke nama kanonis baru', pass: rSnapRec.name === 'Nama Submit' && refreshed === 'Nama Hasil Rename'});
       } catch(e){ out.push({name:'Uji semantik nama RSVP (snapshot per guestId)', pass:false}); }
+      /* (20) v19 — Blocker v18: gerbang tier untuk order lama, tier
+         dari VERSI template yang dipakai undangan, bukti Paid tanpa
+         fallback invitationId, helper expiry clamp WIB, identitas
+         RSVP per orang pada perangkat bersama, dan kode pembayaran
+         stabil per percobaan aktif. Setiap kasus membawa expected vs
+         actual; reproduksi: buka Pengaturan → tombol uji fixture ini. */
+      try {
+        const fxTplId = 'fx-tpl-ver';
+        TEMPLATES.push(tpl({id:fxTplId, slug:fxTplId, name:'Fixture Versi', categoryId:'pernikahan', styleId:'luxury-editorial', tier:'Premium', price:59000, version:2, status:'published', thumb:'rings', ornament:'garis', fontId:'modern', desc:'', palettes:TEMPLATES[0].palettes, sections:TEMPLATES[0].sections, features:[]}));
+        TPL_VERSIONS[fxTplId + '@1'] = {id:fxTplId, name:'Fixture Versi', tier:'Basic', price:29000, version:1};
+        TPL_VERSIONS[fxTplId + '@2'] = TEMPLATES[TEMPLATES.length - 1];
+        TPL_VERSIONS[fxTplId + '@3'] = {id:fxTplId, name:'Fixture Versi', tier:'Exclusive', price:149000, version:3};
+        try {
+          const invV1 = {id:'fx-inv-v1', templateId:fxTplId, templateVersion:1};
+          const invV2 = {id:'fx-inv-v2', templateId:fxTplId, templateVersion:2};
+          const invV3 = {id:'fx-inv-v3', templateId:fxTplId, templateVersion:3};
+          const pkV1 = kiTemplatePackage(invV1), pkV2 = kiTemplatePackage(invV2), pkV3 = kiTemplatePackage(invV3);
+          out.push({name:'Versi template: undangan pada v1 (Basic) -> paket Basic Rp29.000, BUKAN tier template terkini (v2 = Premium)', pass: !!pkV1 && pkV1.id === 'basic' && pkV1.price === 29000, exp:'basic / 29000', act: pkV1 ? pkV1.id + ' / ' + pkV1.price : 'null'});
+          out.push({name:'Versi template: undangan v2 -> Premium; undangan v3 bertier Exclusive -> paket Exclusive Rp149.000 (tier Exclusive dapat dimodelkan & ditag konsisten)', pass: !!pkV2 && pkV2.id === 'premium' && !!pkV3 && pkV3.id === 'exclusive' && pkV3.price === 149000, exp:'premium + exclusive / 149000', act: (pkV2 ? pkV2.id : 'null') + ' + ' + (pkV3 ? pkV3.id + ' / ' + pkV3.price : 'null')});
+          const ordPremium = {id:'fx-o-tier', invitationId:'fx-inv-v1', packageId:'premium', packageName:'Premium', price:59000, total:59000, paymentStatus:'Pending', status:'Menunggu Pembayaran'};
+          const gMis = kiOrderTierGate(ordPremium, invV1), gOk = kiOrderTierGate(Object.assign({}, ordPremium, {packageId:'basic'}), invV1);
+          out.push({name:'Gerbang tier: order Premium untuk undangan template v1 Basic -> MISMATCH (hasil Success wajib ditahan; pesanan ditandai untuk dibuat ulang, snapshot tidak ditulis ulang)', pass: gMis.mismatch === true && !!gMis.expected && gMis.expected.id === 'basic', exp:'mismatch=true, expected=basic', act:'mismatch=' + gMis.mismatch + ', expected=' + (gMis.expected ? gMis.expected.id : 'null')});
+          out.push({name:'Gerbang tier: order Basic untuk undangan yang sama -> cocok, tidak ditahan', pass: gOk.mismatch === false, exp:'mismatch=false', act:'mismatch=' + gOk.mismatch});
+        } finally {
+          const ix = TEMPLATES.findIndex(t => t.id === fxTplId); if (ix >= 0) TEMPLATES.splice(ix, 1);
+          delete TPL_VERSIONS[fxTplId + '@1']; delete TPL_VERSIONS[fxTplId + '@2']; delete TPL_VERSIONS[fxTplId + '@3'];
+        }
+        const svcNoInv = {id:'fx-svc-nofb', orderId:'fx-o-fb', invitationId:'', status:'New'};
+        const ordFb = {id:'fx-o-fb', invitationId:'fx-inv-fb', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
+        const payFb = {id:'fx-p-fb', orderId:'fx-o-fb', invitationId:'fx-inv-fb', status:'Success'};
+        const proofNoFb = kiServicePaidProof(svcNoInv, [ordFb], [payFb]);
+        out.push({name:'Rekonsiliasi v19: proyek dengan invitationId KOSONG + order & record Success tertaut ke undangan milik order -> TIDAK terbukti Paid (fallback dari order dilarang)', pass: proofNoFb === null, exp:'null', act: String(proofNoFb)});
+        const proofStrict = kiServicePaidProof({id:'fx-svc-fb2', orderId:'fx-o-fb', invitationId:'fx-inv-fb', status:'New'}, [ordFb], [payFb]);
+        out.push({name:'Rekonsiliasi v19: invitationId proyek sama persis dengan order + record Success-nya -> terbukti (jalur sah tidak ikut tertutup)', pass: !!proofStrict, exp:'record pembayaran fx-p-fb', act: proofStrict ? proofStrict.id : 'null'});
+        const e1 = kiAddMonthsClampWIB(Date.UTC(2026, 9, 31, 3, 0, 0), 6);
+        const e1Exp = Date.UTC(2027, 3, 30, 16, 59, 59, 999);
+        out.push({name:'Expiry clamp: 31 Okt 2026 + 6 bulan -> 30 April 2027 23:59:59 WIB (BUKAN overflow Date.setMonth ke 1 Mei)', pass: e1 === e1Exp, exp:'2027-04-30T23:59:59.999 (WIB)', act: e1 ? new Date(e1 + KI_WIB_MS).toISOString().replace('T', ' ').replace('Z', ' (WIB)') : 'null'});
+        const e2 = kiAddMonthsClampWIB(Date.UTC(2027, 0, 31, 3, 0, 0), 1);
+        const e2Exp = Date.UTC(2027, 1, 28, 16, 59, 59, 999);
+        out.push({name:'Expiry clamp: 31 Jan 2027 + 1 bulan -> 28 Februari 2027 23:59:59 WIB (hari dibatasi ke hari terakhir bulan tujuan)', pass: e2 === e2Exp, exp:'2027-02-28T23:59:59.999 (WIB)', act: e2 ? new Date(e2 + KI_WIB_MS).toISOString().replace('T', ' ').replace('Z', ' (WIB)') : 'null'});
+        const e3 = invAccessEndsAt({publishedAt: Date.UTC(2026, 9, 31, 3, 0, 0), packageId:'premium'});
+        out.push({name:'Expiry terapan: undangan Premium terbit 31 Okt 2026 -> masa aktif berakhir 30 April 2027 (invAccessEndsAt memakai helper clamp yang sama)', pass: e3 === e1Exp, exp:'2027-04-30T23:59:59.999 (WIB)', act: e3 ? new Date(e3 + KI_WIB_MS).toISOString().replace('T', ' ').replace('Z', ' (WIB)') : 'null'});
+        const fxRespInv = 'fx-inv-resp';
+        const respRawBefore = kiRespondentRaw(fxRespInv);
+        try {
+          const t1 = kiRespondentToken(fxRespInv, true);
+          const t1Again = kiRespondentToken(fxRespInv, false);
+          const t2 = kiRespondentNewPerson(fxRespInv);
+          const listFx = kiRespondentList(fxRespInv);
+          const idP1 = kiPublicGuestId(fxRespInv, t1), idP2 = kiPublicGuestId(fxRespInv, t2);
+          out.push({name:'Identitas RSVP: token orang pertama stabil saat dibaca ulang; “tamu lain” membuat token BERBEDA yang menjadi aktif; token orang pertama tetap tersimpan (dua orang berbagi peramban = dua identitas, tanpa dedupe nama)', pass: !!t1 && t1Again === t1 && !!t2 && t2 !== t1 && listFx.tokens.length === 2 && listFx.tokens[listFx.active] === t2 && idP1 !== idP2, exp:'token1 stabil; token2 != token1; daftar 2 token; aktif = token2; guestId berbeda', act:'stabil=' + (t1Again === t1) + '; token2!=token1=' + (t2 !== t1) + '; daftar=' + listFx.tokens.length + '; guestId berbeda=' + (idP1 !== idP2)});
+        } finally { kiRespondentRestoreRaw(fxRespInv, respRawBefore); }
+        out.push({name:'Identitas RSVP: kunci identitas fixture dipulihkan persis ke snapshot pra-uji', pass: kiRespondentRaw(fxRespInv) === respRawBefore, exp: String(respRawBefore), act: String(kiRespondentRaw(fxRespInv))});
+        const paysFx = [{id:'fx-pay-a1', orderId:'fx-o-att', status:'Failed', code:'8808 1111 2222', attempt:1}, {id:'fx-pay-a2', orderId:'fx-o-att', status:'Pending', code:'8808 3333 4444', attempt:2}];
+        const actBeforeReload = kiActivePayment('fx-o-att', paysFx);
+        const paysReloaded = JSON.parse(JSON.stringify(paysFx));
+        const actAfterReload = kiActivePayment('fx-o-att', paysReloaded);
+        out.push({name:'Kode pembayaran: percobaan aktif = percobaan terakhir; kodenya sama sebelum & sesudah muat ulang; percobaan lama tetap Failed sebagai riwayat (kode baru hanya untuk percobaan baru)', pass: !!actBeforeReload && actBeforeReload.id === 'fx-pay-a2' && !!actAfterReload && actAfterReload.code === '8808 3333 4444' && actAfterReload.code === actBeforeReload.code && paysReloaded[0].status === 'Failed', exp:'aktif=fx-pay-a2; kode 8808 3333 4444 stabil; lama=Failed', act:'aktif=' + (actAfterReload ? actAfterReload.id : 'null') + '; kode=' + (actAfterReload ? actAfterReload.code : 'null') + '; lama=' + paysReloaded[0].status});
+      } catch(e){ out.push({name:'Uji blocker v19 (gerbang tier, versi template, bukti Paid, expiry, identitas, kode bayar)', pass:false}); }
       /* PEMULIHAN ISOLASI (v18): kembalikan SEMUA state sesi yang dapat
          disentuh suite ke snapshot awal — peran, desainer aktif, flag &
          GENERASI grant (grup 11/12 menaikkan generasi lewat
@@ -3192,6 +3351,14 @@
       S2.orders = sessBak.orders; S2.payments = sessBak.payments; S2.services = sessBak.services; S2.activity = sessBak.activity; S2.notifications = sessBak.notifications; S2.guests = sessBak.guests; S2.rsvps = sessBak.rsvps;
       if (S.invitations.some(i => !sessBak.invIds.has(i.id))) S.invitations = S.invitations.filter(i => sessBak.invIds.has(i.id));
       out.push({name:'Isolasi suite: setelah suite selesai, peran, desainer aktif, flag grant, GENERASI grant, referensi koleksi, dan daftar undangan pulih PERSIS seperti sebelum suite (state sesi tidak berubah oleh pengujian)', pass: S2.role === sessBak.role && S2.designerId === sessBak.designerId && kiGrantGen() === sessBak.gen && (function(){ try { return (window.__kiAdminWrite === true) === sessBak.grant; } catch(e){ return false; } })() && S2.orders === sessBak.orders && S2.payments === sessBak.payments && S2.services === sessBak.services && S2.guests === sessBak.guests && S2.rsvps === sessBak.rsvps && S.invitations.every(i => sessBak.invIds.has(i.id))});
+      /* VERIFIKASI SNAPSHOT SELURUH KEY (v19): storage sesi harus
+         identik byte-per-byte dengan sebelum suite berjalan — tidak
+         ada key yang ditambah, diubah, atau dihapus oleh pengujian,
+         termasuk sesudah reload (nilai yang dibaca ulang dari storage
+         adalah nilai yang sama dengan snapshot ini). */
+      const keySnapAfter = kiDumpAllKeys();
+      const driftKeys = Object.keys(keySnapBefore).filter(k => !(k in keySnapAfter) || keySnapAfter[k] !== keySnapBefore[k]).concat(Object.keys(keySnapAfter).filter(k => !(k in keySnapBefore)));
+      out.push({name:'Snapshot seluruh key: storage sesi identik sebelum & sesudah suite fixture (0 key ditambah/diubah/dihapus oleh pengujian)', pass: driftKeys.length === 0, exp:'0 key berubah', act: driftKeys.length ? driftKeys.length + ' key berubah: ' + driftKeys.slice(0, 4).join(', ') : '0 key berubah'});
       return out;
     }
     /* ---------- Uji HANDLER PENUH (v18, harness terpisah dari suite
@@ -3205,7 +3372,12 @@
        tempat, dan SELURUH storage di-snapshot byte-per-byte sebelum
        suite lalu dipulihkan sesudahnya (kunci yang ditambahkan suite
        dihapus; nilai yang berubah ditulis balik persis), ditutup dengan
-       kasus isolasi yang memverifikasi pemulihan itu. */
+       kasus isolasi yang memverifikasi pemulihan itu. Kasus v19:
+       (H5) hasil Success order lama mismatch tier DITAHAN handler
+       pay-result asli, (H6) RSVP dua orang pada satu peramban lewat
+       tombol “Isi sebagai tamu lain” + submit asli, (H7) kode
+       pembayaran stabil per percobaan dan kode baru hanya pada
+       percobaan baru — semuanya membawa expected vs actual. */
     function kiHandlerTests(){
       const out = [];
       const store = storageBackend();
@@ -3280,18 +3452,102 @@
         out.push({name:'Handler penuh — RSVP: submit ulang dari perangkat yang sama -> record yang sama diperbarui (tetap 1 tamu & 1 RSVP untuk undangan ini), status baru tersimpan', pass: guestsFx.length === 1 && !!rH2 && rH2.status === 'Tidak Hadir' && S2.rsvps.filter(r => r.invitationId === fxInv.id).length === 1});
         f1.remove(); f2.remove();
         try { history.replaceState(null, '', origHash); } catch(e){ location.hash = origHash; }
+        /* (H5) v19 — ORDER LAMA MISMATCH TIER lewat handler pay-result
+           ASLI: undangan fixture bertemplate Basic (Confetti Pop v1)
+           dengan pesanan Pending Premium (pola pesanan lama sebelum
+           checkout dikunci). Klik “Pembayaran Berhasil” -> hasil
+           DITAHAN: status pembayaran tetap Pending, packageId undangan
+           tetap kosong, record pembayaran tetap Pending, snapshot
+           pesanan TIDAK ditulis ulang — pesanan hanya ditandai
+           needsNewOrder untuk dibuat ulang dengan paket yang benar. */
+        const fxInv2 = {id:'fx-inv-hdl2', templateId:'confetti-pop', templateVersion:1, slug:'fx-handler-2', title:'Fixture Tier Lama', categoryId:'ulang-tahun', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+        S.invitations.push(fxInv2);
+        const fxOrder2 = {id:'fx-o-hdl2', number:'KI-FX-901', invitationId:fxInv2.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder2); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl2', orderId:fxOrder2.id, invitationId:fxInv2.id, method:'Virtual Account', status:'Pending', amount:59000, code:'8808 5555 6666', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        fire({'data-s2':'pay-result', 'data-id':fxOrder2.id, 'data-res':'Success'});
+        const oHeld = S2.orders.find(o => o.id === fxOrder2.id) || {};
+        const pHeld = S2.payments.find(p => p.id === 'fx-p-hdl2') || {};
+        out.push({name:'Handler penuh — gerbang tier order lama: klik “Pembayaran Berhasil” pada pesanan Premium untuk undangan template Basic -> hasil DITAHAN oleh handler pay-result asli (paket salah tidak aktif, histori tidak ditulis ulang)', pass: oHeld.paymentStatus === 'Pending' && fxInv2.packageId === null && oHeld.needsNewOrder === true && oHeld.packageId === 'premium' && oHeld.total === 59000 && pHeld.status === 'Pending', exp:'paymentStatus=Pending; packageId undangan=null; needsNewOrder=true; snapshot pesanan premium/59000 utuh; record pembayaran tetap Pending', act:'paymentStatus=' + oHeld.paymentStatus + '; packageId undangan=' + fxInv2.packageId + '; needsNewOrder=' + oHeld.needsNewOrder + '; snapshot=' + oHeld.packageId + '/' + oHeld.total + '; pembayaran=' + pHeld.status});
+        /* (H6) v19 — DUA ORANG, SATU PERAMBAN, tanpa kode tamu, lewat
+           handler ASLI: klik tombol “Isi sebagai tamu lain” (handler
+           klik yang sama dengan klik pengguna) membuat identitas
+           responden baru; submit orang kedua membuat record tamu +
+           RSVP SENDIRI dan TIDAK menimpa record orang pertama (H4);
+           klik “Ubah Respons” + submit ulang orang kedua memperbarui
+           record orang kedua saja. */
+        location.hash = '#/u/fx-handler';
+        const zone6 = document.createElement('div');
+        zone6.setAttribute('data-rsvp-zone', '');
+        zone6.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name:'Nama Uji Handler', status:'Tidak Hadir', count:0, message:''}, webIdentity:true});
+        document.body.appendChild(zone6);
+        let secondOk = false, resubOk = false, actSecond = '', actResub = '';
+        const newBtn = zone6.querySelector('[data-rsvp-new-person]');
+        if (newBtn){
+          newBtn.click();
+          const form6 = zone6.querySelector('form[data-rsvp-form]');
+          if (form6){
+            form6.querySelector('input[name="name"]').value = 'Tamu Kedua Handler';
+            form6.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
+            const gs6 = S2.guests.filter(g => g.invitationId === fxInv.id);
+            const gFirst = gs6.find(g => g.name === 'Nama Uji Handler');
+            const gSecond = gs6.find(g => g.name === 'Tamu Kedua Handler');
+            const rFirst = gFirst ? S2.rsvps.find(r => r.guestId === gFirst.id) : null;
+            const rSecond = gSecond ? S2.rsvps.find(r => r.guestId === gSecond.id) : null;
+            secondOk = gs6.length === 2 && !!rFirst && rFirst.status === 'Tidak Hadir' && !!rSecond && rSecond.status === 'Hadir';
+            actSecond = 'tamu=' + gs6.length + '; rsvp orang1=' + (rFirst ? rFirst.status : 'null') + '; rsvp orang2=' + (rSecond ? rSecond.status : 'null');
+            const editBtn = zone6.querySelector('[data-rsvp-edit]');
+            if (editBtn){
+              editBtn.click();
+              const form6b = zone6.querySelector('form[data-rsvp-form]');
+              if (form6b){
+                const segNo = form6b.querySelector('[data-seg] button[data-val="Tidak Hadir"]');
+                if (segNo) segNo.click();
+                form6b.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
+                const gs6b = S2.guests.filter(g => g.invitationId === fxInv.id);
+                const rFirst2 = gFirst ? S2.rsvps.find(r => r.guestId === gFirst.id) : null;
+                const rSecond2 = gSecond ? S2.rsvps.find(r => r.guestId === gSecond.id) : null;
+                resubOk = gs6b.length === 2 && !!rSecond2 && rSecond2.status === 'Tidak Hadir' && !!rFirst2 && rFirst2.status === 'Tidak Hadir' && S2.rsvps.filter(r => r.invitationId === fxInv.id).length === 2;
+                actResub = 'tamu=' + gs6b.length + '; rsvp orang2=' + (rSecond2 ? rSecond2.status : 'null') + '; total rsvp undangan=' + S2.rsvps.filter(r => r.invitationId === fxInv.id).length;
+              }
+            }
+          }
+        }
+        out.push({name:'Handler penuh — RSVP dua tamu satu peramban: klik “Isi sebagai tamu lain” + submit orang kedua lewat handler asli -> record tamu + RSVP terpisah; record orang pertama TIDAK tertimpa', pass: secondOk, exp:'tamu=2; rsvp orang1=Tidak Hadir (utuh); rsvp orang2=Hadir', act: actSecond || 'tombol/handler tidak ditemukan'});
+        out.push({name:'Handler penuh — RSVP dua tamu: “Ubah Respons” + submit ulang orang kedua memperbarui record orang kedua saja (tetap 2 tamu & 2 RSVP)', pass: resubOk, exp:'tamu=2; rsvp orang2=Tidak Hadir; total rsvp undangan=2', act: actResub || 'alur ubah respons tidak ditemukan'});
+        zone6.remove();
+        try { history.replaceState(null, '', origHash); } catch(e){ location.hash = origHash; }
+        /* (H7) v19 — KODE PEMBAYARAN STABIL per percobaan lewat handler
+           pay-result ASLI + baca ulang koleksi (simulasi reload): kode
+           percobaan aktif tidak berubah; hasil Failed menutup
+           percobaan 1; hasil Success berikutnya membuat percobaan 2
+           berkode BARU, percobaan 1 tetap Failed sebagai riwayat. */
+        const fxOrder3 = {id:'fx-o-hdl3', number:'KI-FX-902', invitationId:fxInv.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder3); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl3', orderId:fxOrder3.id, invitationId:fxInv.id, method:'Virtual Account', status:'Pending', amount:59000, code:'8808 1111 2222', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        const codeBefore = (kiActivePayment(fxOrder3.id) || {}).code;
+        kiRefreshCollections();
+        const codeAfterReload = (kiActivePayment(fxOrder3.id) || {}).code;
+        fire({'data-s2':'pay-result', 'data-id':fxOrder3.id, 'data-res':'Failed'});
+        fire({'data-s2':'pay-result', 'data-id':fxOrder3.id, 'data-res':'Success'});
+        const pays3 = S2.payments.filter(p => p.orderId === fxOrder3.id);
+        const att1 = pays3.find(p => p.id === 'fx-p-hdl3') || {};
+        const active3 = kiActivePayment(fxOrder3.id) || {};
+        const o3 = S2.orders.find(o => o.id === fxOrder3.id) || {};
+        out.push({name:'Handler penuh — kode pembayaran: kode percobaan aktif stabil sebelum & sesudah baca ulang koleksi; Failed menutup percobaan 1; Success berikutnya membuat percobaan 2 berkode BARU (percobaan lama tetap Failed)', pass: codeBefore === '8808 1111 2222' && codeAfterReload === codeBefore && att1.status === 'Failed' && pays3.length === 2 && active3.id !== 'fx-p-hdl3' && !!active3.code && active3.code !== '8808 1111 2222' && active3.attempt === 2 && o3.paymentStatus === 'Success', exp:'kode stabil 8808 1111 2222; percobaan1=Failed; percobaan2 aktif berkode baru (attempt=2); pesanan Success', act:'kode=' + codeBefore + ' -> ' + codeAfterReload + '; percobaan1=' + att1.status + '; total record=' + pays3.length + '; aktif attempt=' + active3.attempt + ' kode=' + active3.code + '; pesanan=' + o3.paymentStatus});
       } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); }
-      S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl');
+      S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl' && i.id !== 'fx-inv-hdl2');
       Object.assign(CO, coBak);
       S2.role = roleBak;
       restoreStore();
       kiRefreshCollections();
       const isoOk = store ? Object.keys(dump).every(k => store.getItem(k) === dump[k]) : false;
-      out.push({name:'Handler penuh — isolasi: storage pulih byte-per-byte sesudah suite handler; peran & state checkout dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && !S2.orders.some(o => o.id === 'fx-o-hdl') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl') && !S.invitations.some(i => i.id === 'fx-inv-hdl')});
+      out.push({name:'Handler penuh — isolasi: storage pulih byte-per-byte sesudah suite handler; peran & state checkout dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && !S2.orders.some(o => o.id === 'fx-o-hdl' || o.id === 'fx-o-hdl2' || o.id === 'fx-o-hdl3') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl' || g.invitationId === 'fx-inv-hdl2') && !S.invitations.some(i => i.id === 'fx-inv-hdl' || i.id === 'fx-inv-hdl2')});
       return out;
     }
     function gateBlockText(blk){
       if (blk && blk.noOrder) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): belum ada pembayaran simulasi berstatus Success yang terhubung ke undangan ini. Buat pesanan lewat checkout simulasi dan selesaikan pembayaran simulasinya terlebih dahulu.';
+      if (blk && blk.tierMismatch) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): pesanan ' + blk.number + ' memang Success, tetapi paketnya (' + blk.packageName + ') tidak sesuai tier template undangan ini — Success dari pesanan lama itu TIDAK membuka publikasi. Buat pesanan baru dengan paket yang sesuai tier template lewat checkout.';
       return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): pembayaran simulasi pesanan ' + (blk ? blk.number : 'terkait') + ' belum berstatus Success.';
     }
     function s2GuestbookWishes(inv){
@@ -3321,23 +3577,74 @@
       let h = 5381; for (let i = 0; i < raw.length; i++){ h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0; }
       return 'guest-web-' + h.toString(36);
     }
-    function kiRespondentToken(invId, create){
+    /* Model identitas responden (v19): SATU undangan dapat memiliki
+       BANYAK token responden di perangkat yang sama — SATU PER ORANG.
+       Nilai tersimpan adalah JSON {tokens:[...], active:<indeks>};
+       nilai lama berupa token polos tunggal tetap dibaca sebagai
+       daftar satu token (kompatibel ke belakang). Token AKTIF menentukan
+       record tamu yang sedang diisi/diedit orang yang sedang memegang
+       perangkat; tombol “Isi sebagai tamu lain” membuat token baru dan
+       mengaktifkannya, sehingga dua orang yang berbagi satu peramban
+       TIDAK pernah dianggap satu orang dan tidak saling menimpa —
+       tanpa dedupe berdasarkan nama sama sekali. */
+    function kiRespondentKey(invId){ return 'vowora:v1:respondent:' + invId; }
+    function kiRespondentRaw(invId){
       const st = storageBackend(); if (!st) return null;
-      const key = 'vowora:v1:respondent:' + invId;
-      try { const t = st.getItem(key); if (t) return t; } catch(e){ return null; }
+      try { return st.getItem(kiRespondentKey(invId)); } catch(e){ return null; }
+    }
+    function kiRespondentList(invId){
+      const raw = kiRespondentRaw(invId);
+      if (!raw) return {tokens:[], active:-1};
+      try { const j = JSON.parse(raw); if (j && Array.isArray(j.tokens) && j.tokens.length) return {tokens:j.tokens.slice(), active: Math.min(Math.max(0, j.active | 0), j.tokens.length - 1)}; } catch(e){}
+      return {tokens:[raw], active:0}; /* nilai warisan: satu token polos */
+    }
+    function kiRespondentWrite(invId, list){
+      const st = storageBackend(); if (!st) return false;
+      const payload = JSON.stringify({tokens:list.tokens, active:list.active});
+      try { st.setItem(kiRespondentKey(invId), payload); } catch(e){ return false; }
+      return kiRespondentRaw(invId) === payload;
+    }
+    function kiRespondentToken(invId, create){
+      const l = kiRespondentList(invId);
+      if (l.tokens.length) return l.tokens[l.active];
       if (!create) return null;
       const t = uid2('web');
-      try { st.setItem(key, t); } catch(e){ return null; }
-      return t;
+      return kiRespondentWrite(invId, {tokens:[t], active:0}) ? t : null;
+    }
+    /* Jadikan token ini identitas aktif undangan (dipakai submit
+       pertama seseorang dan tombol “tamu lain”); token orang lain yang
+       sudah ada di daftar TIDAK dihapus. */
+    function kiRespondentActivate(invId, tok){
+      if (!tok) return false;
+      const l = kiRespondentList(invId);
+      if (l.tokens.indexOf(tok) < 0) l.tokens.push(tok);
+      l.active = l.tokens.indexOf(tok);
+      return kiRespondentWrite(invId, l);
+    }
+    function kiRespondentNewPerson(invId){
+      const t = uid2('web');
+      return kiRespondentActivate(invId, t) ? t : null;
+    }
+    /* Pulihkan nilai mentah kunci identitas PERSIS seperti snapshot —
+       bagian dari rollback submit RSVP (v19): token yang baru dibuat
+       pada submit yang gagal tidak boleh tertinggal sebagai identitas. */
+    function kiRespondentRestoreRaw(invId, raw){
+      const st = storageBackend(); if (!st) return false;
+      try { if (raw === null || raw === undefined) st.removeItem(kiRespondentKey(invId)); else st.setItem(kiRespondentKey(invId), raw); } catch(e){ return false; }
+      return kiRespondentRaw(invId) === (raw === undefined ? null : raw);
     }
     function s2ExistingRsvp(inv, code){
       if (!inv) return null;
       let g = code ? S2.guests.find(x => x.invitationId === inv.id && x.code === code) : null;
-      if (!g){ const tok = kiRespondentToken(inv.id, false); if (tok) g = S2.guests.find(x => x.id === kiPublicGuestId(inv.id, tok)) || null; }
+      let viaWeb = false;
+      if (!g){ const tok = kiRespondentToken(inv.id, false); if (tok){ g = S2.guests.find(x => x.id === kiPublicGuestId(inv.id, tok)) || null; viaWeb = !!g; } }
       if (!g) return null;
       const r = S2.rsvps.find(x => x.guestId === g.id);
       if (!r) return null;
-      return {name: g.name, status: r.status, count: r.count || 0, message: r.message || ''};
+      /* viaWeb menandai respons milik identitas perangkat aktif (tanpa
+         kode): permukaan publik menawarkan “Isi sebagai tamu lain”
+         untuk orang berikutnya pada perangkat yang sama (v19). */
+      return {name: g.name, status: r.status, count: r.count || 0, message: r.message || '', viaWeb};
     }
 
     /* ---------- Seed demo Stage 2 (sekali, tidak menimpa data Stage 1 yang valid) ---------- */
@@ -3491,7 +3798,7 @@
       S.invitations.forEach(inv => {
         if (inv.status !== 'published') return;
         if (inv.packageId){ if (inv.packageUnresolved){ inv.packageUnresolved = false; persistInvitationNow(inv); } return; }
-        const pid = kiResolvePackageId(inv.id, S2.orders, S2.payments);
+        const pid = kiResolvePackageId(inv.id, S2.orders, S2.payments, inv);
         if (pid){ inv.packageId = pid; inv.packageUnresolved = false; persistInvitationNow(inv); }
         else if (!inv.packageUnresolved){ inv.packageUnresolved = true; persistInvitationNow(inv); }
       });
@@ -3721,7 +4028,7 @@
           <div class="mut">${esc(g.group)} · ${esc(g.contact || 'Tanpa kontak')} · ${g.attendees} orang · kode tamu ${esc(g.code)}</div>
           <div class="mut">Tautan tamu (simulasi, tidak mengirim pesan apa pun): <b style="color:var(--gold-ink)">${esc(guestLink(inv, g))}</b></div></div>
         <span style="display:flex;gap:7px;flex-wrap:wrap">
-          <button class="btn ghost sm" data-copy="${esc(guestLink(inv, g))}">Salin Tautan</button>
+          <button class="btn ghost sm" data-copy="${esc(guestLink(inv, g))}">${ICONS.copy} Salin Tautan</button>
           <button class="btn ghost sm" data-s2="guest-edit" data-id="${g.id}">Ubah</button>
           <button class="btn ghost sm" data-s2="guest-del" data-id="${g.id}" style="color:var(--err)">Hapus</button>
         </span></div>`).join('');
@@ -3800,7 +4107,7 @@
     function orderCard(o, adminMode){
       const inv = S.invitations.find(i => i.id === o.invitationId);
       const pays = S2.payments.filter(p => p.orderId === o.id);
-      return `<div class="lrow"><div class="grow"><b>${esc(o.number)}</b> ${payPill(o.paymentStatus)} <span class="pill draft">${esc(o.status)}</span>
+      return `<div class="lrow"><div class="grow"><b>${esc(o.number)}</b> ${payPill(o.paymentStatus)} <span class="pill draft">${esc(o.status)}</span>${o.needsNewOrder ? ' <span class="pill exp">Perlu pesanan baru — paket tidak sesuai tier template</span>' : ''}
         <div class="mut">${esc(inv ? inv.title : 'Undangan terhapus')} · Paket ${esc(o.packageName)} · ${new Date(o.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}</div>
         <div class="mut">Subtotal ${rp(o.price)}${o.discount ? ' · Diskon ' + esc(o.couponCode||'') + ' −' + rp(o.discount) : ''} · <b style="color:var(--ink)">Total ${rp(o.total)}</b> (harga paket tersimpan saat pesanan dibuat)</div>
         ${pays.length ? `<div class="mut">Pembayaran: ${pays.map(p => esc(p.method) + ' — ' + p.status).join(' · ')}</div>` : ''}
@@ -3839,7 +4146,7 @@
       const METHODS = [['Virtual Account','Nomor VA dibuat otomatis untuk simulasi'],['QRIS','Kode QR simulasi di layar pembayaran'],['E-Wallet','Saldo dompet elektronik (simulasi)'],['Bank Transfer','Transfer manual dengan kode unik (simulasi)']];
       const inner = `<div class="wrap" style="padding-bottom:90px"><div class="s2-head"><div class="rule"><span>Checkout — Simulasi</span></div><h1>Pesan Paket Undangan</h1><p>Alur: pilih undangan → pilih paket → kupon → ringkasan → metode pembayaran → konfirmasi pesanan simulasi.</p></div>
       <div class="sim-banner">Ini <b>checkout simulasi</b>. Tidak ada pembayaran nyata yang diproses.</div>
-      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${lockPkg ? ' — ' + esc(tplOf(selInv).name) + ' adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ''}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
+      <div class="card"><h2>1 · Pilih Undangan & Paket</h2><p class="sub">Pesanan selalu terikat pada satu undangan yang sama dengan yang Anda edit di Builder. <b>Paket terkunci ke tier template undangan ini</b>${lockPkg ? ' — ' + esc((kiInvTemplate(selInv) || {}).name || '') + ' (versi yang dipakai undangan ini) adalah template ' + esc(lockPkg.name) + ' (' + rp(lockPkg.price) + '), jadi hanya paket itu yang dapat dipesan untuk undangan ini' : ''}. Untuk paket lain, buat undangan dari template tier tersebut.</p>
         <div class="field"><label for="co-inv">Undangan</label><select class="input" id="co-inv">${mine.map(i => `<option value="${i.id}" ${i.id===CO.invId?'selected':''}>${esc(i.title)} — ${esc(tplOf(i).name)}</option>`).join('')}</select></div>
         <div class="pkg-pick">${DB.packages.map(p => { const off = lockPkg && p.id !== lockPkg.id; const body = `<b>${esc(p.name)}</b><span class="amt2">${p.from ? '<small style="font-size:13px;font-family:var(--font-ui)">Mulai </small>' : ''}${rp(p.price)}</span><span style="font-size:13px;color:var(--ink-2)">${esc(p.note)}</span><ul>${p.features.map(f => `<li>${esc(f)}</li>`).join('')}</ul>${off ? '<span style="font-size:12.5px;font-weight:700;color:var(--ink-3)">Tidak tersedia untuk tier template undangan ini</span>' : ''}`; return off ? `<div class="pkg-opt" style="opacity:.45" aria-disabled="true">${body}</div>` : `<button type="button" class="pkg-opt ${CO.pkgId===p.id?'on':''}" data-s2="co-pkg" data-id="${p.id}">${body}</button>`; }).join('')}</div>
       </div>
@@ -3859,7 +4166,8 @@
     }
     function viewPay(order){
       if (!order) return shell(`<div class="wrap" style="padding:50px 20px 90px"><div class="empty"><h3>Pesanan tidak ditemukan</h3><a class="btn gold" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`, 'dashboard');
-      const pay = S2.payments.filter(p => p.orderId === order.id).slice(-1)[0];
+      const pay = kiActivePayment(order.id); /* v19: satu-satunya record yang dibaca permukaan ini — kode pembayaran berasal dari record percobaan aktif dan tidak pernah dibuat ulang saat render/muat ulang */
+      const attemptNo = pay ? (pay.attempt || (S2.payments.filter(p => p.orderId === order.id).indexOf(pay) + 1)) : 0;
       const inv = S.invitations.find(i => i.id === order.invitationId);
       const done = order.paymentStatus === 'Success';
       const cancelled = order.status === 'Dibatalkan';
@@ -3868,13 +4176,15 @@
       <div class="pay-box"><div style="font-size:12px;letter-spacing:.2em;text-transform:uppercase;opacity:.75">${esc(pay ? pay.method : '')} — Kode Pembayaran Simulasi${cancelled ? ' · Tidak Aktif' : ''}</div>
         ${cancelled ? `<div class="va" style="text-decoration:line-through;opacity:.45" aria-label="Kode pembayaran dinonaktifkan">${esc(pay ? pay.code : '—')}</div><div style="font-size:13.5px;font-weight:800;margin-top:2px">Kode ini sudah dinonaktifkan — jangan gunakan untuk membayar.</div>` : pay && pay.method === 'QRIS' ? '<div class="qr-fake" role="img" aria-label="Kode QR simulasi"></div>' : `<div class="va">${esc(pay ? pay.code : '—')}</div>`}
         <div style="font-family:var(--font-display);font-size:26px">${rp(order.total)}</div>
-        <div style="margin-top:8px">Status pembayaran: ${payPill(order.paymentStatus)} &nbsp;Status pesanan: <span class="pill draft" style="background:rgba(255,255,255,.18);color:inherit">${esc(order.status)}</span></div>
+        <div style="margin-top:8px">Status pembayaran: ${payPill(order.paymentStatus)} &nbsp;Status pesanan: <span class="pill draft" style="background:rgba(255,255,255,.18);color:inherit">${esc(order.status)}</span>${pay ? `<div style="font-size:12.5px;opacity:.8;margin-top:4px">Percobaan pembayaran ke-${attemptNo} — kode di atas tetap sama selama percobaan ini aktif, termasuk setelah halaman dimuat ulang. Kode baru hanya dibuat untuk percobaan baru, setelah percobaan lama berakhir Failed/Expired.</div>` : ''}</div>
       </div>
       ${!cancelled && !done && pay && pay.status !== 'Pending' ? `<div class="card" style="text-align:center"><p class="sub" style="margin:0">Percobaan pembayaran terakhir berstatus <b>${esc(pay.status)}</b> dan record-nya sudah final — record pembayaran yang sudah final tidak pernah ditulis ulang di jalur mana pun. Mensimulasikan hasil baru di bawah akan membuat <b>record pembayaran baru</b> untuk pesanan ini; kode di atas adalah kode percobaan terakhir.</p></div>` : ''}
       ${cancelled ? `<div class="card" style="text-align:center"><h2>Pesanan Dibatalkan</h2><p class="sub" style="margin-bottom:14px">Pesanan ini berstatus <b>Dibatalkan</b> — status terminal. Pembayaran tidak lagi ditawarkan untuk pesanan ini dan hasil pembayaran apa pun tidak dapat mengubahnya. Bila masih memerlukan paket ini, buat pesanan baru lewat checkout simulasi.</p>
         <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout">Buat Pesanan Baru</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
       : done ? `<div class="card" style="text-align:center"><h2>Pembayaran Simulasi Berhasil</h2><p class="sub" style="margin-bottom:14px">Paket ${esc(order.packageName)} kini aktif untuk undangan “${esc(inv ? inv.title : '')}”. Pesanan dan dashboard Anda sudah diperbarui dari record yang sama.</p>
         <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/faktur/${order.id}">Lihat Faktur</a>${inv && inv.status !== 'published' ? `<button class="btn" data-s2="pay-publish" data-id="${order.id}">Publikasikan Undangan Sekarang</button>` : ''}<a class="btn ghost" href="#/dashboard">Ke Dashboard</a></div></div>`
+      : order.needsNewOrder ? `<div class="card" style="text-align:center"><h2>Pembayaran Ditahan — Paket Tidak Sesuai Tier Template</h2><p class="sub" style="margin-bottom:14px">Pesanan ini memakai paket <b>${esc(order.packageName)}</b>, tetapi undangan “${esc(inv ? inv.title : '')}” memakai template tier <b>${esc(order.tierHold ? order.tierHold.expectedPackageName : '')}</b>. Hasil pembayaran untuk pesanan ini <b>ditahan</b>: paket yang salah tidak diaktifkan, dan snapshot pesanan ini (paket, harga, total) <b>tidak diubah</b> sebagai riwayat. Buat pesanan baru dengan paket yang benar lewat checkout — checkout kini terkunci ke tier template undangan.</p>
+        <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout">Buat Pesanan Baru yang Sesuai</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
       : `<div class="card"><h2>Simulasikan Hasil Pembayaran</h2><p class="sub">Pilih skenario untuk melihat bagaimana status pesanan, undangan, dan dashboard bereaksi. Pembayaran gagal atau kedaluwarsa <b>tidak</b> menerbitkan undangan.</p>
         <div style="display:grid;gap:9px">
           <button class="btn gold block" data-s2="pay-result" data-id="${order.id}" data-res="Success">Simulasikan: Pembayaran Berhasil</button>
@@ -3889,7 +4199,7 @@
     function viewInvoice(order){
       if (!order) return shell(`<div class="wrap" style="padding:50px 20px 90px"><div class="empty"><h3>Faktur tidak ditemukan</h3></div></div>`, 'dashboard');
       const inv = S.invitations.find(i => i.id === order.invitationId);
-      const pay = S2.payments.filter(p => p.orderId === order.id).slice(-1)[0];
+      const pay = kiActivePayment(order.id); /* v19: faktur membaca record percobaan aktif yang sama dengan halaman bayar */
       return shell(`<div class="wrap" style="padding:36px 20px 90px;max-width:720px">
         <p style="margin-bottom:14px"><a href="#/dashboard?tab=pesanan" style="font-weight:800;color:var(--gold-ink)">← Pesanan Saya</a></p>
         <div class="card"><div style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><div class="brand" style="font-size:22px">Kita <em>Invite</em></div><span style="font-size:13px;color:var(--ink-3)">Faktur simulasi — bukan dokumen pajak</span></div><div style="text-align:right"><b>FAKTUR ${esc(order.number)}</b><div style="font-size:13px;color:var(--ink-3)">${new Date(order.createdAt).toLocaleDateString('id-ID',{day:'numeric',month:'long',year:'numeric'})}</div></div></div>
@@ -3939,7 +4249,8 @@
       const bk = load2(K2.backup, null);
       return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
       <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
-      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Isolasi)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
+      <p style="font-size:14px;margin:0 0 12px"><b>Reproduksi uji:</b> klik kedua tombol uji di bawah pada halaman ini — hasil tampil per kasus (LOLOS/GAGAL) dengan <i>expected</i> vs <i>actual</i> untuk kasus-kasus v19. Kedua suite berjalan pada stub/record sintetis disposable dan memulihkan seluruh storage &amp; state sesi sesudahnya (kasus isolasi + snapshot seluruh key memverifikasinya).</p>
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Tier Order Lama · Versi Template · Expiry Clamp · Identitas RSVP · Kode Bayar · Isolasi · Snapshot Key)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP · Tier Ditahan · RSVP Dua Tamu · Kode Bayar)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
     }
     function dashSettings(){
       return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
@@ -4050,7 +4361,7 @@
             <div class="field"><label>Gaya visual</label><select class="input" id="tf-style">${DB.styles.map(s => `<option value="${s.id}" ${rec.styleId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
           </div>
           <div class="row2">
-            <div class="field"><label>Paket yang memenuhi syarat</label><select class="input" id="tf-tier">${['Basic','Premium','Signature'].map(x => `<option ${rec.tier===x?'selected':''}>${x}</option>`).join('')}</select></div>
+            <div class="field"><label>Paket yang memenuhi syarat</label><select class="input" id="tf-tier">${['Basic','Premium','Signature','Exclusive'].map(x => `<option ${rec.tier===x?'selected':''}>${x}</option>`).join('')}</select></div>
             <div class="field"><label>Status publikasi</label><select class="input" id="tf-status">${[['published','Terbit'],['draft','Draft'],['archived','Arsip']].map(x => `<option value="${x[0]}" ${rec.status===x[0]?'selected':''}>${x[1]}</option>`).join('')}</select></div>
           </div>
           <div class="field"><label>Foto sampul (thumbnail)</label><div class="thumb-pick">${DB.media.map(m => `<button type="button" data-s2="tf-thumb" data-id="${m.id}" class="${rec.thumb===m.id?'on':''}"><img src="${m.src}" alt="${esc(m.name)}"></button>`).join('')}</div><input type="hidden" id="tf-thumb-val" value="${rec.thumb}"></div>
@@ -4083,7 +4394,7 @@
       if (tab === 'layanan') return `<div class="card"><h2>Antrean Layanan Bantuan</h2><p class="sub">Tugaskan desainer dan pantau alur New → Paid → Assigned → In Progress → Review → Revision → Approved → Published → Completed pada record yang sama dengan milik pelanggan.</p>
       <div class="list-rows">${S2.services.slice().sort((a,b) => b.updatedAt - a.updatedAt).map(s => { const li = s.invitationId ? S.invitations.find(i => i.id === s.invitationId) : null; const lo = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null; return `<div class="lrow"><div class="grow"><b>${esc(s.title)}</b> <span class="pill exp">${esc(s.status)}</span><div class="mut">${esc(s.number)} · ${esc(userById(s.customerId).name)} · revisi ${s.revisions.length} · diperbarui ${new Date(s.updatedAt).toLocaleDateString('id-ID',{day:'numeric',month:'short'})}${li ? ' · Undangan: ' + esc(li.title) + ' (' + invStatus(li).label + ')' : ''}${lo ? ' · Pesanan ' + esc(lo.number) + ' · ' + esc(lo.paymentStatus) : ''}</div></div>
         <span style="display:flex;gap:7px;flex-wrap:wrap;align-items:center"><label style="font-size:13px;font-weight:700">Desainer</label>
-        <select class="input" data-s2-assign="${s.id}" style="width:auto;min-height:42px"><option value="">— belum —</option>${S2.users.filter(u => u.role === 'designer').map(u => `<option value="${u.id}" ${s.designerId===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
+        <select class="input" data-s2-assign="${s.id}" style="width:auto;min-height:42px"><option value="">Lepas desainer</option>${S2.users.filter(u => u.role === 'designer').map(u => `<option value="${u.id}" ${s.designerId===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select>
         ${s.status === 'Approved' ? `<button class="btn gold sm" data-s2="svc-progress" data-id="${s.id}" data-to="Published">Terbitkan Hasil</button>` : ''}
         ${s.status === 'Published' ? `<button class="btn gold sm" data-s2="svc-progress" data-id="${s.id}" data-to="Completed">Selesaikan Proyek</button>` : ''}
         </span></div>`; }).join('')}</div></div>`;
@@ -4348,7 +4659,7 @@
         const o = {id:uid2('order'), number:num, invitationId:inv.id, customerId:CURRENT_USER, packageId:pkg.id, packageName:pkg.name, price:pkg.price, discount:disc, couponCode:CO.coupon ? CO.coupon.code : null, total:pkg.price - disc, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
         const actBefore = S2.activity.slice(), ntfBefore = S2.notifications.slice();
         S2.orders.unshift(o);
-        S2.payments.push({id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:CO.method, status:'Pending', amount:o.total, code: CO.method === 'QRIS' ? 'QRIS-SIM-' + num : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null});
+        S2.payments.push({id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:CO.method, status:'Pending', amount:o.total, code: CO.method === 'QRIS' ? 'QRIS-SIM-' + num : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null, attempt:1}); /* v19: kode lahir satu kali pada pembuatan percobaan dan sesudah itu hanya dibaca dari record ini (kiActivePayment) — stabil selama percobaan aktif, termasuk setelah muat ulang */
         /* Harga pada pesanan adalah SNAPSHOT saat checkout: tersimpan di
            record pesanan dan tidak berubah walau harga paket diubah admin
            sesudahnya. Semua penulisan diperiksa hasilnya — satu gagal,
@@ -4391,6 +4702,32 @@
            pesanan tidak ditebak. */
         let pay = S2.payments.filter(p => p.orderId === o.id && p.invitationId === o.invitationId).slice(-1)[0];
         if (!pay){ toast('Hasil pembayaran ditolak: tidak ada record pembayaran yang terhubung ke pesanan ' + o.number + ' dan undangannya. Tidak ada perubahan yang disimpan.', true); rerender2(); return; }
+        /* v19 — GERBANG TIER UNTUK ORDER LAMA: hasil Success TIDAK
+           boleh mengaktifkan paket yang tidak cocok dengan tier
+           template VERSI undangan ini (kasus order Pending lama yang
+           dibuat sebelum checkout dikunci, mis. pesanan Premium untuk
+           undangan bertemplate Basic). Hasilnya DITAHAN: status
+           pembayaran & pesanan tidak berubah, packageId undangan tidak
+           ditulis, proyek layanan tidak maju — dan snapshot pesanan
+           (paket/harga/total) TIDAK ditulis ulang. Pesanan hanya
+           ditandai needsNewOrder agar pengguna membuat pesanan baru
+           dengan paket yang benar lewat checkout. */
+        if (res === 'Success'){
+          const invGate = S.invitations.find(i => i.id === o.invitationId);
+          const tg = kiOrderTierGate(o, invGate);
+          if (tg.mismatch){
+            const prevFlag = o.needsNewOrder, prevHold = o.tierHold;
+            o.needsNewOrder = true;
+            o.tierHold = {expectedPackageId: tg.expected.id, expectedPackageName: tg.expected.name, orderPackageId: o.packageId, at: Date.now()};
+            if (!saveColl('orders')){
+              o.needsNewOrder = prevFlag; o.tierHold = prevHold; saveColl('orders');
+              toast('Hasil pembayaran untuk pesanan ' + o.number + ' ditahan (paket tidak sesuai tier template), tetapi penanda pesanan GAGAL disimpan — tidak ada perubahan yang tercatat. Coba lagi setelah mengosongkan ruang penyimpanan.', true); rerender2(); return;
+            }
+            logAct('Hasil pembayaran ' + o.number + ' DITAHAN: paket pesanan (' + o.packageName + ') tidak sesuai tier template undangan (' + tg.expected.name + ') — tidak ada paket yang diaktifkan; pesanan ditandai untuk dibuat ulang.', 'customer', o.customerId);
+            toast('Pembayaran DITAHAN: pesanan ' + o.number + ' memakai paket ' + o.packageName + ', tetapi undangan ini memakai template tier ' + tg.expected.name + '. Paket yang salah TIDAK diaktifkan dan riwayat pesanan tidak diubah — buat pesanan baru dengan paket ' + tg.expected.name + ' lewat checkout.', true);
+            rerender2(); return;
+          }
+        }
         /* Snapshot pra-tulis SEMUA koleksi yang disentuh jalur ini: bila
            satu saja penyimpanan gagal, seluruhnya di-rollback dan ditulis
            kembali ke storage — dibuktikan konsisten setelah reload. */
@@ -4402,7 +4739,7 @@
              ditulis ulang atau dihidupkan lagi. Percobaan ulang memakai
              record pembayaran BARU (kode baru) untuk pesanan yang sama;
              record lama tetap utuh sebagai riwayat percobaan. */
-          const np = {id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:pay.method, status:'Pending', amount:o.total, code: pay.method === 'QRIS' ? 'QRIS-SIM-' + o.number : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null};
+          const np = {id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:pay.method, status:'Pending', amount:o.total, code: pay.method === 'QRIS' ? 'QRIS-SIM-' + o.number : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null, attempt: S2.payments.filter(p => p.orderId === o.id).length + 1}; /* v19: percobaan BARU — kode baru lahir HANYA di sini; percobaan lama sudah Failed/Expired (final) dan tetap tersimpan sebagai riwayat, tidak pernah ditulis ulang */
           S2.payments.push(np); pay = np;
         }
         if (pay){ pay.status = res; pay.paidAt = res === 'Success' ? Date.now() : null; okAll = saveColl('payments') && okAll; }
@@ -4575,7 +4912,7 @@
            sama (kiResetCore) — data nyata di perangkat ini tidak disentuh. */
         const res = kiFixtureTests();
         const zone = document.getElementById('fixture-results');
-        if (zone) zone.innerHTML = '<b>Hasil uji fixture terisolasi & disposable (stub storage + data sintetis; data nyata tidak ditulis — hanya dibaca untuk pemindaian orphan terakhir):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + '</li>').join('') + '</ul>';
+        if (zone) zone.innerHTML = '<b>Hasil uji fixture terisolasi & disposable (stub storage + data sintetis; data nyata tidak ditulis — hanya dibaca untuk pemindaian orphan terakhir):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + (x.exp !== undefined ? '<br><span style="color:var(--ink-3);font-size:13px">Expected: ' + esc(String(x.exp)) + ' · Actual: ' + esc(String(x.act)) + '</span>' : '') + '</li>').join('') + '</ul>';
         toast('Uji fixture selesai: ' + res.filter(x => x.pass).length + '/' + res.length + ' lolos (data nyata tidak disentuh)');
         return;
       }
@@ -4587,7 +4924,7 @@
            perubahan hash selama uji RSVP menetap) agar daftar kasus
            tetap terlihat. */
         const res = kiHandlerTests();
-        const paintH = () => { const zone = document.getElementById('handler-results'); if (zone) zone.innerHTML = '<b>Hasil uji handler penuh (event nyata pada handler asli; record sintetis disposable; storage dipulihkan byte-per-byte):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + '</li>').join('') + '</ul>'; };
+        const paintH = () => { const zone = document.getElementById('handler-results'); if (zone) zone.innerHTML = '<b>Hasil uji handler penuh (event nyata pada handler asli; record sintetis disposable; storage dipulihkan byte-per-byte):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + (x.exp !== undefined ? '<br><span style="color:var(--ink-3);font-size:13px">Expected: ' + esc(String(x.exp)) + ' · Actual: ' + esc(String(x.act)) + '</span>' : '') + '</li>').join('') + '</ul>'; };
         paintH(); setTimeout(paintH, 200);
         toast('Uji handler penuh selesai: ' + res.filter(x => x.pass).length + '/' + res.length + ' lolos (data nyata dipulihkan)');
         return;
@@ -4656,7 +4993,7 @@
              punya pesanan sama sekali — TIDAK dapat ditugaskan; tidak ada
              lompat New → Assigned dan tidak ada waiver/gratis yang ditebak. */
           const linkedOrder = s.orderId ? S2.orders.find(x => x.id === s.orderId) : null;
-          const isPaid = !!(linkedOrder && linkedSuccessPayment(linkedOrder, s.invitationId || linkedOrder.invitationId));
+          const isPaid = !!kiServicePaidProof(s, S2.orders, S2.payments); /* v19: bukti ketat yang sama dengan rekonsiliasi — record Success tertaut langsung ke order + invitationId proyek yang sama; tanpa fallback bila invitationId proyek kosong */
           /* Yang digerbang adalah PENUGASAN (dari New/Paid menuju kerja):
              mengganti desainer pada proyek yang sudah berjalan bukan
              penugasan baru dan tidak diblokir di sini. */
@@ -4876,15 +5213,26 @@
          dengan ID-nya sendiri, bukan menempel ke tamu bernama mirip. */
       const toCode = new URLSearchParams((location.hash.split('?')[1] || '')).get('to');
       let g = toCode ? S2.guests.find(x => x.invitationId === inv.id && x.code === toCode) : null;
-      /* Tanpa kode tamu: pakai identitas stabil per undangan (token
-         responden perangkat ini, kiRespondentToken/kiPublicGuestId) —
-         submit ulang dari perangkat yang sama menemukan record tamu
-         yang SAMA dan memperbaruinya, jadi tidak ada duplikat. Nama
-         yang diketik tidak pernah dipakai sebagai kunci identitas. */
+      /* Tanpa kode tamu: pakai identitas stabil responden AKTIF
+         perangkat ini (kiRespondentToken/kiPublicGuestId) — submit
+         ulang oleh orang yang sama menemukan record tamunya dan
+         memperbaruinya, jadi tidak ada duplikat; orang LAIN di
+         perangkat yang sama memakai identitasnya sendiri lewat
+         “Isi sebagai tamu lain” (token terpisah per orang, v19).
+         Nama yang diketik tidak pernah dipakai sebagai kunci identitas.
+         v19: nilai mentah kunci identitas di-SNAPSHOT sebelum apa pun
+         ditulis (respBefore) dan token baru TIDAK dibuat di sini —
+         token kandidat hanya digenerate di memori (pendingTok) dan
+         baru ditulis sebagai bagian dari penulisan submit yang
+         hasilnya diperiksa; rollback memulihkan kunci identitas ke
+         respBefore, jadi submit gagal tidak meninggalkan token yatim. */
+      const respBefore = kiRespondentRaw(inv.id);
       let webStableId = null;
+      let pendingTok = null;
       if (!g){
-        const tok = kiRespondentToken(inv.id, true);
+        const tok = kiRespondentToken(inv.id, false);
         if (tok){ webStableId = kiPublicGuestId(inv.id, tok); g = S2.guests.find(x => x.id === webStableId) || null; }
+        else { pendingTok = uid2('web'); webStableId = kiPublicGuestId(inv.id, pendingTok); }
       }
       const clearMsg = fd.get('clear-message') === '1';
       /* Snapshot pra-tulis untuk rollback: SEMUA hasil penyimpanan di jalur
@@ -4914,7 +5262,7 @@
       const changed = kiRsvpIsChanged(gPrev, prev, {name:nextName, status, count, message:nextMessage});
       if (!changed){
         const zone0 = form.closest('[data-rsvp-zone]');
-        if (zone0) zone0.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}});
+        if (zone0) zone0.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}, webIdentity: !toCode});
         toast('Respons yang sama sudah tercatat sebelumnya — tidak ada perubahan (dedupe).');
         return;
       }
@@ -4923,6 +5271,11 @@
         S2.guests.push(g);
       } else { g.rsvpStatus = status; g.attendees = count; if (webStableId && g.id === webStableId){ g.name = typedName; name = typedName; } }
       const okGuests = saveColl('guests');
+      /* v19: token responden pertama ditulis SEKARANG — sebagai bagian
+         dari penulisan submit, hasilnya diperiksa sama seperti koleksi
+         lain; bukan dibuat lebih dulu sebelum snapshot/rollback. */
+      let okIdentity = true;
+      if (pendingTok) okIdentity = kiRespondentActivate(inv.id, pendingTok);
       if (r){
         r.status = status; r.count = count; r.name = name; r.at = Date.now(); r.message = nextMessage;
         /* Status moderasi TIDAK pernah dilonggarkan oleh submit ulang:
@@ -4948,7 +5301,7 @@
          termoderasi tidak bocor lewat sisa tampilan lama. */
       const wl = document.querySelector('[data-wish-list]');
       const drawWishes = () => { if (wl){ const ws = publicWishesFor(inv); wl.innerHTML = ws.length ? ws.map(wishHTML).join('') : '<p class="muted small">Belum ada ucapan. Jadilah yang pertama!</p>'; } };
-      if (!(okGuests && okRsvps && okAct && okNtf)){
+      if (!(okGuests && okRsvps && okAct && okNtf && okIdentity)){
         /* GAGAL SIMPAN → rollback total ke keadaan sebelum submit. */
         if (guestCreated) S2.guests = S2.guests.filter(x => x.id !== g.id);
         else kiRsvpRestoreGuest(g, gPrev); /* v17: NAMA tamu ikut dipulihkan, bukan hanya status/jumlah */
@@ -4962,6 +5315,7 @@
            dilaporkan apa adanya (bukan diklaim pulih) dan tetap TIDAK
            ada status sukses. */
         let rbOk = saveColl('guests'); rbOk = saveColl('rsvps') && rbOk; rbOk = saveColl('activity') && rbOk; rbOk = saveColl('notifications') && rbOk;
+        rbOk = kiRespondentRestoreRaw(inv.id, respBefore) && rbOk; /* v19: kunci identitas responden ikut dipulihkan ke snapshot pra-submit — token baru dari submit gagal tidak tertinggal */
         drawWishes();
         if (zone) zone.innerHTML = rbOk
           ? `<div class="ok-box" style="border-color:var(--err)"><b>Respons gagal disimpan</b><p class="muted small" style="margin:4px 0 0">Penyimpanan perangkat tidak menerima data baru (mungkin penuh), jadi konfirmasi Anda <b>belum tercatat</b> — tidak ada respons yang tersimpan atas nama Anda dari percobaan ini. Kosongkan ruang penyimpanan, muat ulang halaman, lalu kirim ulang respons Anda.</p></div>`
@@ -4975,7 +5329,7 @@
          Status tidak boleh berbeda (atau hilang) antara sesudah submit
          dan sesudah reload. */
       drawWishes();
-      if (zone) zone.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}});
+      if (zone) zone.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name, status, count, message: nextMessage}, webIdentity: !toCode});
       toast('RSVP terkirim. Terima kasih!');
     });
 

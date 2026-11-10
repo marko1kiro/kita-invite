@@ -1,0 +1,3 @@
+      .m-menu{position:fixed;top:64px;left:0;right:0;z-index:70;background:var(--surface);border-bottom:1px solid var(--line);padding:10px 20px 16px;box-shadow:var(--shadow-sm)}
+      .m-menu a{display:block;padding:12px 6px;font-weight:700;border-bottom:1px solid var(--line-soft)}
+      .m-menu a:last-child{border-bottom:0}

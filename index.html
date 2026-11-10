@@ -902,7 +902,7 @@
     }
     function scheduleAutosave(inv){
       if (!inv) return;
-      if (!kiOwns(inv)) return; /* P1: jalur simpan Builder hanya menulis undangan milik pemilik aktif */
+      if (!kiCanPersist(inv)) return; /* P1: jalur simpan Builder hanya menulis undangan milik pemilik aktif — atau Admin DENGAN grant tulis eksplisit (grant benar-benar mengaktifkan persistensi, bukan hanya membuka UI) */
       inv.updatedAt = Date.now();
       setSaveStatus('saving');
       clearTimeout(_saveTimers[inv.id]);
@@ -910,7 +910,7 @@
     }
     function flushAutosave(inv){
       if (!inv) return false;
-      if (!kiOwns(inv)) return false; /* P1: bukan pemilik — tidak ada penulisan */
+      if (!kiCanPersist(inv)) return false; /* P1: bukan pemilik dan bukan Admin ber-grant — tidak ada penulisan */
       clearTimeout(_saveTimers[inv.id]);
       return persistInvitationNow(inv);
     }
@@ -1716,6 +1716,16 @@
       toast(kiAdmin() ? 'Mode inspeksi Admin: izin tulis lintas-pemilik belum diaktifkan — perubahan ditolak. Aktifkan izin tulis secara eksplisit dulu.' : 'Akses ditolak: undangan ini milik akun lain — perubahan tidak disimpan.', true);
       return false;
     }
+    /* Predikat PERSISTENSI Builder (dipakai scheduleAutosave/flushAutosave):
+       pemilik aktif, ATAU Admin dengan grant tulis eksplisit sesi ini.
+       Inilah yang membuat grant Admin benar-benar mengaktifkan penulisan
+       sampai ke lapisan simpan — tanpa grant, autosave tidak menulis apa
+       pun walau editor terlihat terbuka. */
+    function kiCanPersist(inv){
+      if (!inv) return false;
+      if (kiOwns(inv)) return true;
+      return kiAdmin() && kiAdminWrite();
+    }
     function studioForbidden(){
       return shell(`<div class="wrap" style="padding:70px 20px 100px"><div class="empty"><h3>Akses ditolak</h3><p>Undangan ini milik akun demo lain. Builder hanya dapat dibuka oleh pemilik undangan yang sedang aktif — membuka URL Builder milik akun lain tidak memberi akses lihat maupun ubah. Admin dapat membukanya dalam mode hanya-lihat dari panel Admin.</p><a class="btn gold" href="#/dashboard">Ke Dashboard Saya</a> <a class="btn ghost" href="#/draft-saya">Draft Saya</a></div></div>`, '');
     }
@@ -2184,7 +2194,7 @@
        per koleksi dengan key "vowora:v1:<koleksi>" dan selalu
        merujuk invitationId / orderId yang sama.
        ================================================================ */
-    const K2 = { users:'vowora:v1:users', guests:'vowora:v1:guests', rsvps:'vowora:v1:rsvps', orders:'vowora:v1:orders', payments:'vowora:v1:payments', services:'vowora:v1:service-requests', notifications:'vowora:v1:notifications', activity:'vowora:v1:activity', coupons:'vowora:v1:coupons', settings:'vowora:v1:settings', templates:'vowora:v1:templates-cms', tplHistory:'vowora:v1:templates-history', taxonomy:'vowora:v1:taxonomy', packages:'vowora:v1:packages', role:'vowora:v1:role', seeded:'vowora:v1:seeded2', quarantine:'vowora:v1:quarantine', backup:'vowora:v1:backup:pre-stage2-fix' };
+    const K2 = { users:'vowora:v1:users', guests:'vowora:v1:guests', rsvps:'vowora:v1:rsvps', orders:'vowora:v1:orders', payments:'vowora:v1:payments', services:'vowora:v1:service-requests', notifications:'vowora:v1:notifications', activity:'vowora:v1:activity', coupons:'vowora:v1:coupons', settings:'vowora:v1:settings', templates:'vowora:v1:templates-cms', tplHistory:'vowora:v1:templates-history', taxonomy:'vowora:v1:taxonomy', packages:'vowora:v1:packages', role:'vowora:v1:role', designer:'vowora:v1:designer', seeded:'vowora:v1:seeded2', quarantine:'vowora:v1:quarantine', backup:'vowora:v1:backup:pre-stage2-fix' };
     const CURRENT_USER = 'cust-1';
     function load2(key, fb){ const st = storageBackend(); if (!st) return fb; let v = null; try { v = st.getItem(key); } catch(e){ return fb; } if (v == null) return fb; try { const p = JSON.parse(v); return (p === null || p === undefined) ? fb : p; } catch(e){ /* JSON rusak: karantina isinya (jalur pemulihan), jangan diam-diam hilang */ try { quarantineRaw(key, v, 'json-rusak'); } catch(_){} return fb; } }
     function save2(key, val){ const st = storageBackend(); if (!st) return false; try { st.setItem(key, JSON.stringify(val)); return true; } catch(e){ return false; } }
@@ -2201,7 +2211,8 @@
       activity: load2(K2.activity, []),
       coupons: load2(K2.coupons, []),
       settings: Object.assign({storeName:'Kita Invite', supportEmail:'', publishNeedsPayment:true}, load2(K2.settings, {})),
-      role: load2(K2.role, 'customer')
+      role: load2(K2.role, 'customer'),
+      designerId: load2(K2.designer, 'des-1')
     };
     /* saveColl MENGEMBALIKAN hasil penulisan (true/false): pemanggil yang
        memberi konfirmasi sukses ke pengguna WAJIB memeriksa nilai ini —
@@ -2309,7 +2320,7 @@
       const all = load2(K2.templates, []);
       const ix = all.findIndex(x => x.id === rec.id);
       if (ix >= 0) all[ix] = rec; else all.push(rec);
-      save2(K2.templates, all);
+      return save2(K2.templates, all);
     }
 
     /* ---------- Status & helper undangan ---------- */
@@ -2370,6 +2381,11 @@
        - Desainer hanya boleh menulis proyek yang DITUGASKAN kepadanya
          (designerId terisi des-1/des-2) dan hanya transisi kerjanya. */
     function kiAdminWriteOn(){ try { return window.__kiAdminWrite === true; } catch(e){ return false; } }
+    /* Desainer yang SEDANG AKTIF (persona demo desainer): workspace dan
+       semua handler tulis Desainer dibatasi ke proyek yang assignee-nya
+       adalah desainer aktif ini — bukan gabungan semua desainer. */
+    function kiActiveDesigner(){ return S2.designerId === 'des-2' ? 'des-2' : 'des-1'; }
+    function kiDesignerAllowed(s){ return S2.role === 'designer' && !!s && !!s.designerId && s.designerId === kiActiveDesigner(); }
     function adminGuard(what){
       if (S2.role === 'admin') return true;
       toast('Akses ditolak: aksi ' + (what || 'Admin') + ' hanya untuk peran Admin — peran aktif Anda "' + S2.role + '". Membuka URL langsung tidak memberi izin.', true);
@@ -2383,9 +2399,20 @@
     function roleForbidden(kind){
       return shell(`<div class="wrap" style="padding:70px 20px 100px"><div class="empty"><h3>Akses ditolak — peran tidak sesuai</h3><p>Halaman ${esc(kind)} hanya dapat dibuka oleh peran <b>${esc(kind)}</b>. Peran demo aktif Anda adalah <b>${esc(S2.role)}</b>; membuka URL ini langsung tidak memberi akses lihat maupun tulis. Ganti peran lewat pemilih peran bila Anda memang berwenang.</p><a class="btn gold" href="#/dashboard">Ke Dashboard</a></div></div>`, '');
     }
+    /* Predikat tulis MURNI (tanpa toast): logika yang sama persis dengan
+       yang dipakai ownGuard di handler, diekspos agar uji fixture dapat
+       memanggil LOGIKA HANDLER secara langsung — bukan menilai tombol
+       yang disabled. Pemilik aktif boleh; Admin hanya bila grant
+       eksplisit sesi ini aktif; selain itu ditolak. */
+    function kiWriteAllowed(inv){
+      if (!inv) return false;
+      if (S2.role === 'customer') return inv.ownerId === CURRENT_USER;
+      if (S2.role === 'admin') return kiAdminWriteOn();
+      return false;
+    }
     function ownGuard(inv){
       if (!inv) return false;
-      if (inv.ownerId === CURRENT_USER && S2.role === 'customer') return true;
+      if (kiWriteAllowed(inv)) return true;
       if (S2.role === 'admin') return adminWriteGuard();
       toast('Akses ditolak: undangan ini milik akun lain atau peran Anda tidak berwenang — perubahan ditolak di handler.', true);
       return false;
@@ -2401,7 +2428,7 @@
       if (!s) return false;
       if (S2.role === 'customer') { if (s.customerId === CURRENT_USER) return true; toast('Akses ditolak: proyek ini milik akun lain — perubahan ditolak.', true); return false; }
       if (S2.role === 'admin') return adminWriteGuard();
-      if (S2.role === 'designer') { if (s.designerId && ['des-1','des-2'].includes(s.designerId)) return true; toast('Akses ditolak: proyek ini tidak ditugaskan kepada Anda — perubahan ditolak.', true); return false; }
+      if (S2.role === 'designer') { if (kiDesignerAllowed(s)) return true; toast('Akses ditolak: proyek ini tidak ditugaskan kepada desainer yang sedang aktif (' + userById(kiActiveDesigner()).name + ') — perubahan ditolak di handler.', true); return false; }
       return false;
     }
     function guestsOf(invId){ return S2.guests.filter(g => g.invitationId === invId); }
@@ -2428,14 +2455,19 @@
       return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
     }
     /* Record pembayaran Success yang SAH untuk sebuah pesanan: record-nya
-       harus menunjuk order itu DAN undangan yang sama (field invitationId
-       pada record, atau — untuk record seed lama tanpa field itu — lewat
-       invitationId milik order-nya). Status Success yang menggantung di
-       order lain / undangan lain tidak pernah dihitung. */
-    function linkedSuccessPayment(o, invId){
+       WAJIB menunjuk order itu DAN membawa invitationId yang sama dengan
+       undangan pesanan itu. TIDAK ada fallback legacy: record tanpa
+       invitationId — atau dengan invitationId undangan lain — TIDAK
+       pernah dihitung, walau statusnya Success. (Record lama yang belum
+       punya invitationId ditautkan satu kali oleh migrasi deterministik
+       backfillPaymentInv dari pesanan induknya; gerbang sendiri tidak
+       pernah menebak.) Order Dibatalkan tetap terminal: selalu null. */
+    function linkedSuccessPayment(o, invId, pays){
       if (!o || o.paymentStatus !== 'Success' || o.status === 'Dibatalkan') return null;
+      if (!o.invitationId) return null;
       if (invId && o.invitationId !== invId) return null;
-      return S2.payments.find(p => p.orderId === o.id && p.status === 'Success' && (p.invitationId ? p.invitationId === o.invitationId : o.invitationId === (invId || o.invitationId))) || null;
+      const list = pays || S2.payments;
+      return list.find(p => p.orderId === o.id && p.status === 'Success' && p.invitationId === o.invitationId) || null;
     }
     /* ---------- Reset fail-closed: inti yang dapat diuji ----------
        Satu fungsi inti dipakai jalur reset nyata DAN uji fixture
@@ -2458,6 +2490,17 @@
       const snap = kiCollectSnapshot(store);
       if (snap === null) return {ok:false, stage:'snapshot-unreadable'};
       const keys = Object.keys(snap);
+      /* Verifikasi snapshot SEBELUM backup ditulis dan sebelum apa pun
+         dihapus: baca ulang setiap kunci dan cocokkan byte-per-byte
+         dengan salinan snapshot. Bila satu kunci berubah di tengah jalan
+         (tab lain sedang menulis) atau tak terbaca, reset BERHENTI —
+         snapshot yang tidak terverifikasi tidak pernah dipakai sebagai
+         dasar penghapusan maupun pemulihan. */
+      for (const k of keys){
+        let cur = null;
+        try { cur = store.getItem(k); } catch(e){ return {ok:false, stage:'snapshot-unreadable'}; }
+        if (cur !== snap[k]) return {ok:false, stage:'snapshot-verify'};
+      }
       if (keys.length){
         const payload = JSON.stringify({at: Date.now(), reason:'pre-reset', keys: snap});
         try { store.setItem(KI_TMP_BK, payload); if (store.getItem(KI_TMP_BK) !== payload) return {ok:false, stage:'backup-verify'}; }
@@ -2475,20 +2518,117 @@
       }
       return {ok:true, removed:keys.length};
     }
-    /* Uji fixture TERISOLASI: stub storage di memori dengan mode gagal
-       yang disuntikkan — tidak pernah menyentuh localStorage/data nyata. */
+    /* ID tamu impor yang STABIL: hash deterministik dari invitationId +
+       nama + grup + kontak ternormalisasi. Menjalankan impor yang sama
+       dua kali menghasilkan ID yang sama persis, jadi dedupe cukup
+       membandingkan ID — bukan menebak dari kemiripan nama. */
+    function kiGuestStableId(invId, v){
+      const raw = String(invId) + '|' + String(v.name || '').trim().toLowerCase() + '|' + String(v.group || '').trim().toLowerCase() + '|' + String(v.contact || '').replace(/\D/g, '');
+      let h = 5381;
+      for (let i = 0; i < raw.length; i++){ h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0; }
+      return 'guest-imp-' + h.toString(36);
+    }
+    /* Terapkan baris impor ke daftar tamu yang ada: baris yang ID
+       stabilnya sudah terdaftar (impor ulang, atau baris ganda di dalam
+       impor yang sama) DILEWATI sebagai duplikat. Murni — dipakai handler
+       impor nyata dan uji fixture dengan logika yang sama persis. */
+    function kiImportGuests(existing, invId, rows){
+      const seen = new Set((existing || []).filter(g => g.invitationId === invId).map(g => g.id));
+      const added = [], skipped = [];
+      (rows || []).forEach(v => {
+        const sid = kiGuestStableId(invId, v);
+        if (seen.has(sid)){ skipped.push(v); return; }
+        seen.add(sid);
+        let h = 0; for (let i = 0; i < sid.length; i++){ h = ((h << 5) + h + sid.charCodeAt(i)) >>> 0; }
+        added.push({id:sid, invitationId:invId, name:v.name, group:v.group, contact:v.contact, rsvpStatus:'Belum Menjawab', attendees:1, code:'T' + (1000 + (h % 9000)), createdAt:Date.now()});
+      });
+      return {added, skipped};
+    }
+    /* Pemindai referensi yatim (orphan-reference): tamu/RSVP yang induknya
+       sudah tidak ada, dan pembayaran yang order induknya hilang atau
+       invitationId-nya tidak cocok dengan pesanan induknya. Referensi
+       pesanan/layanan ke undangan yang sudah dihapus dihitung TERPISAH
+       sebagai referensi historis (riwayat memang dipertahankan oleh
+       desain), bukan yatim keras. Murni — data sintetis di fixture,
+       data nyata hanya DIBACA. */
+    function kiOrphanScan(cols){
+      const invIds = new Set((cols.invitations || []).map(i => i.id));
+      const guestIds = new Set((cols.guests || []).map(g => g.id));
+      const orderById = {}; (cols.orders || []).forEach(o => { orderById[o.id] = o; });
+      const out = {guests:[], rsvps:[], payments:[], services:[], historical:[]};
+      (cols.guests || []).forEach(g => { if (!invIds.has(g.invitationId)) out.guests.push(g.id); });
+      (cols.rsvps || []).forEach(r => { if (!guestIds.has(r.guestId) || !invIds.has(r.invitationId)) out.rsvps.push(r.id); });
+      (cols.payments || []).forEach(p => { const o = orderById[p.orderId]; if (!o || p.invitationId !== o.invitationId) out.payments.push(p.id); });
+      (cols.orders || []).forEach(o => { if (o.invitationId && !invIds.has(o.invitationId)) out.historical.push(o.id); });
+      (cols.services || []).forEach(s => { if (s.orderId && !orderById[s.orderId]) out.services.push(s.id); else if (s.invitationId && !invIds.has(s.invitationId)) out.historical.push(s.id); });
+      return out;
+    }
+    /* Uji fixture TERISOLASI & DISPOSABLE: stub storage di memori dan
+       data sintetis dengan mode gagal yang disuntikkan — tidak pernah
+       menulis localStorage/data nyata (data nyata hanya dibaca untuk
+       pemindaian yatim terakhir). Kelompok uji: (1) reset fail-closed,
+       (2) predikat HANDLER tulis dipanggil langsung, (3) payment gate,
+       (4) dedupe impor ID stabil, (5) orphan-reference. */
     function kiFixtureTests(){
       const mk = fail => { const m = new Map([['vowora:v1:guests','["g1"]'],['vowora:v1:orders','["o1"]'],[K2.backup,'{"lama":true}'],[K2.quarantine,'[]']]);
+        const reads = {};
         return { get length(){ return m.size; }, key:i => [...m.keys()][i] ?? null,
-          getItem:k => { if (fail === 'read') throw new Error('read-fail'); if (fail === 'corrupt' && k === KI_TMP_BK) return '{"rusak":1}'; return m.has(k) ? m.get(k) : null; },
-          setItem:(k, v) => { if (fail === 'write' && k === KI_TMP_BK) throw new Error('quota'); m.set(k, String(v)); },
-          removeItem:k => { if (fail === 'partial' && k === 'vowora:v1:orders') return; m.delete(k); }, _m:m }; };
+          getItem:k => { if (fail === 'read') throw new Error('read-fail'); if (fail === 'corrupt' && k === KI_TMP_BK) return '{"rusak":1}'; if (fail === 'mutate' && k === 'vowora:v1:guests'){ reads[k] = (reads[k] || 0) + 1; if (reads[k] > 1) return '["diubah-tab-lain"]'; } return m.has(k) ? m.get(k) : null; },
+          setItem:(k, v) => { if (fail === 'write' && k === KI_TMP_BK) throw new Error('quota'); if (fail === 'restore-fail' && k === 'vowora:v1:orders') throw new Error('restore-quota'); m.set(k, String(v)); },
+          removeItem:k => { if (fail === 'partial' && k === 'vowora:v1:orders') return; if (fail === 'restore-fail' && k === 'vowora:v1:guests') return; m.delete(k); }, _m:m }; };
       const out = [];
-      let st = mk('read'); let r = kiResetCore(st); out.push({name:'Snapshot tak terbaca -> berhenti, data utuh', pass: r.ok === false && r.stage === 'snapshot-unreadable' && st._m.get('vowora:v1:guests') === '["g1"]'});
-      st = mk('write'); r = kiResetCore(st); out.push({name:'Backup gagal ditulis -> berhenti, backup lama dipertahankan', pass: r.ok === false && r.stage === 'backup-write' && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:orders')});
-      st = mk('corrupt'); r = kiResetCore(st); out.push({name:'Backup tak lolos verifikasi -> berhenti sebelum menghapus', pass: r.ok === false && r.stage === 'backup-verify' && st._m.has('vowora:v1:guests') && st._m.get(K2.backup) === '{"lama":true}'});
-      st = mk('partial'); r = kiResetCore(st); out.push({name:'Penghapusan parsial -> snapshot dipulihkan & terverifikasi', pass: r.ok === false && r.stage === 'partial-delete' && r.restored === true && st._m.get('vowora:v1:orders') === '["o1"]'});
-      st = mk(''); r = kiResetCore(st); out.push({name:'Jalur normal -> terhapus bersih, backup baru tersimpan, karantina dipertahankan', pass: r.ok === true && !st._m.has('vowora:v1:guests') && !!st._m.get(K2.backup) && st._m.get(K2.quarantine) === '[]'});
+      let st = mk('read'); let r = kiResetCore(st); out.push({name:'Reset: snapshot tak terbaca -> berhenti, data utuh', pass: r.ok === false && r.stage === 'snapshot-unreadable' && st._m.get('vowora:v1:guests') === '["g1"]'});
+      st = mk('mutate'); r = kiResetCore(st); out.push({name:'Reset: snapshot berubah saat diverifikasi -> berhenti sebelum menghapus apa pun', pass: r.ok === false && r.stage === 'snapshot-verify' && st._m.get('vowora:v1:guests') === '["g1"]' && st._m.get(K2.backup) === '{"lama":true}'});
+      st = mk('write'); r = kiResetCore(st); out.push({name:'Reset: backup gagal ditulis -> berhenti, backup lama dipertahankan', pass: r.ok === false && r.stage === 'backup-write' && st._m.get(K2.backup) === '{"lama":true}' && st._m.has('vowora:v1:orders')});
+      st = mk('corrupt'); r = kiResetCore(st); out.push({name:'Reset: backup tak lolos verifikasi -> berhenti sebelum menghapus', pass: r.ok === false && r.stage === 'backup-verify' && st._m.has('vowora:v1:guests') && st._m.get(K2.backup) === '{"lama":true}'});
+      st = mk('partial'); r = kiResetCore(st); out.push({name:'Reset: penghapusan parsial -> snapshot dipulihkan & terverifikasi', pass: r.ok === false && r.stage === 'partial-delete' && r.restored === true && st._m.get('vowora:v1:orders') === '["o1"]'});
+      st = mk('restore-fail'); r = kiResetCore(st); out.push({name:'Reset: pemulihan snapshot GAGAL -> dilaporkan restored=false (tidak diklaim pulih)', pass: r.ok === false && r.stage === 'partial-delete' && r.restored === false && st._m.get('vowora:v1:guests') === '["g1"]'});
+      st = mk(''); r = kiResetCore(st); out.push({name:'Reset: jalur normal -> terhapus bersih, backup baru tersimpan, karantina dipertahankan', pass: r.ok === true && !st._m.has('vowora:v1:guests') && !!st._m.get(K2.backup) && st._m.get(K2.quarantine) === '[]'});
+      /* (2) Handler tulis dipanggil LANGSUNG lewat predikat yang dipakai
+         handler (kiWriteAllowed = logika ownGuard; kiDesignerAllowed =
+         logika svcGuard) dengan peran/grant yang disimulasikan pada
+         fixture; peran, desainer aktif, dan grant dipulihkan sesudahnya. */
+      try {
+        const roleBak = S2.role, desBak = S2.designerId;
+        let grantBak = null, canGrant = false;
+        try { grantBak = window.__kiAdminWrite === true; canGrant = true; } catch(e){}
+        S2.role = 'customer';
+        out.push({name:'Handler tulis: pemilik yang aktif diizinkan menulis undangannya', pass: kiWriteAllowed({ownerId:'cust-1'}) === true});
+        out.push({name:'Handler tulis: undangan akun lain ditolak untuk pelanggan (bukan sekadar tombol)', pass: kiWriteAllowed({ownerId:'cust-2'}) === false});
+        if (canGrant){
+          S2.role = 'admin'; try { window.__kiAdminWrite = false; } catch(e){}
+          out.push({name:'Handler tulis: Admin lintas-pemilik TANPA grant eksplisit ditolak di handler', pass: kiWriteAllowed({ownerId:'cust-2'}) === false});
+          try { window.__kiAdminWrite = true; } catch(e){}
+          out.push({name:'Handler tulis: Admin lintas-pemilik DENGAN grant eksplisit diizinkan (persistensi aktif)', pass: kiWriteAllowed({ownerId:'cust-2'}) === true});
+          try { window.__kiAdminWrite = grantBak; } catch(e){}
+        }
+        S2.role = 'designer'; S2.designerId = 'des-1';
+        out.push({name:'Desainer: proyek assignee yang sedang aktif diizinkan', pass: kiDesignerAllowed({designerId:'des-1'}) === true});
+        out.push({name:'Desainer: proyek desainer lain ditolak di handler', pass: kiDesignerAllowed({designerId:'des-2'}) === false});
+        out.push({name:'Desainer: proyek tanpa assignee ditolak', pass: kiDesignerAllowed({designerId:null}) === false});
+        S2.role = roleBak; S2.designerId = desBak;
+      } catch(e){ out.push({name:'Uji handler tulis (predikat guard)', pass:false}); }
+      /* (3) Payment gate pada data sintetis */
+      const oGate = {id:'fx-order-1', invitationId:'fx-inv-1', paymentStatus:'Success', status:'Diproses'};
+      const pLegacy = {id:'fx-pay-legacy', orderId:'fx-order-1', status:'Success'};
+      const pOther = {id:'fx-pay-other', orderId:'fx-order-1', invitationId:'fx-inv-2', status:'Success'};
+      const pOk = {id:'fx-pay-ok', orderId:'fx-order-1', invitationId:'fx-inv-1', status:'Success'};
+      out.push({name:'Payment gate: record Success TANPA invitationId (legacy) ditolak — tidak ada fallback', pass: linkedSuccessPayment(oGate, 'fx-inv-1', [pLegacy]) === null});
+      out.push({name:'Payment gate: record Success milik undangan lain ditolak', pass: linkedSuccessPayment(oGate, 'fx-inv-1', [pOther]) === null});
+      out.push({name:'Payment gate: record Success untuk order + undangan yang sama diterima', pass: (linkedSuccessPayment(oGate, 'fx-inv-1', [pLegacy, pOther, pOk]) || {}).id === 'fx-pay-ok'});
+      out.push({name:'Payment gate: order Dibatalkan tetap terminal walau ada record Success yang cocok', pass: linkedSuccessPayment(Object.assign({}, oGate, {status:'Dibatalkan'}), 'fx-inv-1', [pOk]) === null});
+      /* (4) Dedupe impor ID stabil pada data sintetis */
+      const rows = [{name:'Tes Satu', group:'Teman', contact:'0811'}, {name:'Tes Satu', group:'Teman', contact:'0811'}, {name:'Tes Dua', group:'Keluarga', contact:''}];
+      const imp1 = kiImportGuests([], 'fx-inv-1', rows);
+      const imp2 = kiImportGuests(imp1.added, 'fx-inv-1', rows);
+      out.push({name:'Impor: ID stabil & dedupe — baris ganda dilewati, impor ulang tidak menggandakan tamu', pass: imp1.added.length === 2 && imp1.skipped.length === 1 && imp2.added.length === 0 && imp2.skipped.length === 3 && kiGuestStableId('fx-inv-1', rows[0]) === imp1.added[0].id});
+      /* (5) Orphan-reference pada data sintetis + pemindaian data nyata (baca saja) */
+      const cols = { invitations:[{id:'fx-inv-1'}], guests:[{id:'g-ok', invitationId:'fx-inv-1'}, {id:'g-orphan', invitationId:'fx-inv-x'}], rsvps:[{id:'r-ok', guestId:'g-ok', invitationId:'fx-inv-1'}, {id:'r-orphan', guestId:'g-gone', invitationId:'fx-inv-1'}], orders:[{id:'o-ok', invitationId:'fx-inv-1'}], payments:[{id:'p-ok', orderId:'o-ok', invitationId:'fx-inv-1'}, {id:'p-orphan', orderId:'o-gone', invitationId:'fx-inv-1'}, {id:'p-mismatch', orderId:'o-ok', invitationId:'fx-inv-2'}], services:[{id:'s-ok', invitationId:'fx-inv-1', orderId:'o-ok'}, {id:'s-orphan', invitationId:null, orderId:'o-gone'}] };
+      const scan = kiOrphanScan(cols);
+      out.push({name:'Orphan-reference: tamu/RSVP/pembayaran/layanan yatim pada fixture terdeteksi tepat', pass: scan.guests.length === 1 && scan.rsvps.length === 1 && scan.payments.length === 2 && scan.services.length === 1});
+      const live = kiOrphanScan({invitations:S.invitations, guests:S2.guests, rsvps:S2.rsvps, orders:S2.orders, payments:S2.payments, services:S2.services});
+      const liveHard = live.guests.length + live.rsvps.length + live.payments.length + live.services.length;
+      out.push({name:'Orphan-reference: data demo saat ini bersih (0 referensi yatim keras; ' + live.historical.length + ' referensi historis riwayat)', pass: liveHard === 0});
       return out;
     }
     function gateBlockText(blk){
@@ -2642,6 +2782,22 @@
       S2.notifications.forEach(n => { if (!n.owner && /^seed-ntf-/.test(n.id || '') && n.scope === 'customer'){ n.owner = 'cust-1'; nc = true; } });
       if (ac) saveColl('activity');
       if (nc) saveColl('notifications');
+    })();
+
+    /* Migrasi record pembayaran lama (idempoten): record pembayaran yang
+       belum punya invitationId diisi SATU KALI dari pesanan induknya —
+       penautan deterministik di lapisan data, BUKAN fallback di gerbang.
+       Sesudah migrasi ini, payment gate menilai semua record secara
+       ketat: tanpa invitationId yang cocok dengan order + undangan yang
+       sama, record tidak pernah dihitung sebagai pembayaran sah. */
+    (function backfillPaymentInv(){
+      let changed = false;
+      S2.payments.forEach(p => {
+        if (p.invitationId) return;
+        const o = S2.orders.find(x => x.id === p.orderId);
+        if (o && o.invitationId){ p.invitationId = o.invitationId; changed = true; }
+      });
+      if (changed) saveColl('payments');
     })();
 
     /* Perbaikan record lama (jaring pengaman kedua setelah seed; migrasi utama
@@ -3009,6 +3165,7 @@
         <div style="font-family:var(--font-display);font-size:26px">${rp(order.total)}</div>
         <div style="margin-top:8px">Status pembayaran: ${payPill(order.paymentStatus)} &nbsp;Status pesanan: <span class="pill draft" style="background:rgba(255,255,255,.18);color:inherit">${esc(order.status)}</span></div>
       </div>
+      ${!cancelled && !done && pay && pay.status !== 'Pending' ? `<div class="card" style="text-align:center"><p class="sub" style="margin:0">Percobaan pembayaran terakhir berstatus <b>${esc(pay.status)}</b> dan record-nya sudah final — record pembayaran yang sudah final tidak pernah ditulis ulang di jalur mana pun. Mensimulasikan hasil baru di bawah akan membuat <b>record pembayaran baru</b> untuk pesanan ini; kode di atas adalah kode percobaan terakhir.</p></div>` : ''}
       ${cancelled ? `<div class="card" style="text-align:center"><h2>Pesanan Dibatalkan</h2><p class="sub" style="margin-bottom:14px">Pesanan ini berstatus <b>Dibatalkan</b> — status terminal. Pembayaran tidak lagi ditawarkan untuk pesanan ini dan hasil pembayaran apa pun tidak dapat mengubahnya. Bila masih memerlukan paket ini, buat pesanan baru lewat checkout simulasi.</p>
         <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout">Buat Pesanan Baru</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
       : done ? `<div class="card" style="text-align:center"><h2>Pembayaran Simulasi Berhasil</h2><p class="sub" style="margin-bottom:14px">Paket ${esc(order.packageName)} kini aktif untuk undangan “${esc(inv ? inv.title : '')}”. Pesanan dan dashboard Anda sudah diperbarui dari record yang sama.</p>
@@ -3077,7 +3234,7 @@
       const bk = load2(K2.backup, null);
       return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
       <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
-      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Reset (Terisolasi)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div></div>`;
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div></div>`;
     }
     function dashSettings(){
       return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
@@ -3130,9 +3287,14 @@
     }
     /* ---------- 2E: Ruang Kerja Desainer ---------- */
     function viewDesigner(){
-      const me = S2.role === 'designer' ? (S2.users.find(u => u.role === 'designer') || {}) : {};
-      const mine = S2.services.filter(s => s.designerId && ['des-1','des-2'].includes(s.designerId)).slice().sort((a, b) => b.updatedAt - a.updatedAt);
-      const inner = `<div class="wrap" style="padding-bottom:90px"><div class="s2-head"><div class="rule"><span>Ruang Kerja Desainer</span></div><h1>Proyek yang Ditugaskan</h1><p>Mode demo: Anda melihat antrean kedua desainer Kita Invite (${S2.users.filter(u => u.role==='designer').map(u => esc(u.name)).join(' & ')}). Setiap perubahan status tersimpan ke record proyek yang sama dengan yang dilihat pelanggan dan admin.</p></div>${roleBar()}
+      const me = userById(kiActiveDesigner());
+      /* Workspace DIBATASI ke assignee yang sedang aktif: hanya proyek
+         yang designerId-nya desainer aktif ini yang tampil dan dapat
+         ditulis — proyek desainer lain tidak muncul di sini sama sekali,
+         dan handler tulisnya (svcGuard) menolak desainer non-aktif. */
+      const mine = S2.services.filter(s => s.designerId === kiActiveDesigner()).slice().sort((a, b) => b.updatedAt - a.updatedAt);
+      const inner = `<div class="wrap" style="padding-bottom:90px"><div class="s2-head"><div class="rule"><span>Ruang Kerja Desainer</span></div><h1>Proyek yang Ditugaskan</h1><p>Anda masuk sebagai desainer <b>${esc(me.name)}</b>. Workspace ini hanya menampilkan proyek yang ditugaskan kepada Anda; proyek desainer lain tidak tampil dan tidak dapat diubah dari sini. Setiap perubahan status tersimpan ke record proyek yang sama dengan yang dilihat pelanggan dan admin.</p>
+      <div class="toolbar2" style="margin-top:12px"><label style="font-weight:700;font-size:14px" for="s2-designer-pick">Desainer aktif (demo)</label><select class="input" id="s2-designer-pick" style="width:auto">${S2.users.filter(u => u.role === 'designer').map(u => `<option value="${u.id}" ${u.id===kiActiveDesigner()?'selected':''}>${esc(u.name)}</option>`).join('')}</select></div></div>${roleBar()}
       ${mine.length ? mine.map(s => `<div class="card"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:baseline"><h2 style="font-size:20px">${esc(s.title)}</h2><span class="pill gold" style="background:var(--champagne);color:var(--gold-ink)">${esc(s.number)}</span><span class="pill exp">${esc(s.status)}</span></div>
         <p class="sub">Pelanggan: ${esc(userById(s.customerId).name)} · Desainer: ${esc(userById(s.designerId).name)} · Gaya: ${esc(s.style)} · Fitur: ${esc((s.features||[]).join(', ') || '—')} · Referensi: ${esc((mediaById(s.reference || 'reception') || {}).name || '—')}<br>Catatan pelanggan: ${esc(s.notes || '—')}</p>
         ${svcSteps(s.status)}
@@ -3279,13 +3441,30 @@
     /* ---------- Handler Stage 2 ---------- */
     function rerender2(){ const { seg } = parseHash(); if (['dashboard','admin','desainer','checkout','bayar','faktur'].includes(seg[0])) s2Render(); else render(); }
     function deleteInvitationCascade(inv){
+      /* Hapus undangan = operasi ATOMIK lintas koleksi: snapshot dulu,
+         SEMUA penulisan diperiksa hasilnya, dan satu saja gagal ->
+         seluruh koleksi (termasuk record undangan di storage)
+         dipulihkan dan ditulis kembali sebelum hasil dilaporkan. Tidak
+         ada tamu/RSVP yatim dan tidak ada penghapusan parsial yang
+         tertinggal sesudah reload. */
+      const gSnap = S2.guests.slice(), rSnap = S2.rsvps.slice(), aSnap = S2.activity.slice();
       const ix = S.invitations.findIndex(i => i.id === inv.id);
       if (ix >= 0) S.invitations.splice(ix, 1);
-      const st = storageBackend();
-      if (st){ try { st.removeItem(INV_KEY_PREFIX + inv.id); st.setItem(INV_INDEX_KEY, JSON.stringify(S.invitations.map(i => i.id))); } catch(e){} }
-      S2.guests = S2.guests.filter(g => g.invitationId !== inv.id); saveColl('guests');
-      S2.rsvps = S2.rsvps.filter(r => r.invitationId !== inv.id); saveColl('rsvps');
-      logAct('Undangan “' + inv.title + '” dihapus beserta tamu & RSVP-nya.', 'customer', inv.ownerId || CURRENT_USER);
+      S2.guests = S2.guests.filter(g => g.invitationId !== inv.id);
+      S2.rsvps = S2.rsvps.filter(r => r.invitationId !== inv.id);
+      let ok = saveColl('guests'); ok = saveColl('rsvps') && ok;
+      const st = storageBackend(); let okInv = false;
+      if (st){ try { st.removeItem(INV_KEY_PREFIX + inv.id); st.setItem(INV_INDEX_KEY, JSON.stringify(S.invitations.map(i => i.id))); okInv = st.getItem(INV_KEY_PREFIX + inv.id) === null; } catch(e){ okInv = false; } }
+      ok = okInv && ok;
+      if (ok) ok = logAct('Undangan “' + inv.title + '” dihapus beserta tamu & RSVP-nya.', 'customer', inv.ownerId || CURRENT_USER);
+      if (!ok){
+        if (ix >= 0) S.invitations.splice(ix, 0, inv);
+        S2.guests = gSnap; S2.rsvps = rSnap; S2.activity = aSnap;
+        saveColl('guests'); saveColl('rsvps'); saveColl('activity');
+        persistInvitationNow(inv);
+        return false;
+      }
+      return true;
     }
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-s2]');
@@ -3307,18 +3486,22 @@
         if (!ownGuard(src)) return;
         const copy = structuredClone(src);
         copy.id = 'inv-' + (S.seq++); copy.title = src.title + ' (Salinan)'; copy.status = 'draft'; copy.slug = null; copy.publishedAt = null; copy.archived = false; copy.createdAt = Date.now(); copy.updatedAt = Date.now();
-        S.invitations.unshift(copy); persistInvitationNow(copy); logAct('Undangan diduplikat: ' + copy.title, 'customer', copy.ownerId || CURRENT_USER); toast('Duplikat dibuat: ' + copy.title); rerender2(); return;
+        S.invitations.unshift(copy);
+        if (!persistInvitationNow(copy)){ S.invitations = S.invitations.filter(i => i.id !== copy.id); toast('Duplikat GAGAL disimpan — tidak ada salinan yang dibuat.', true); rerender2(); return; }
+        logAct('Undangan diduplikat: ' + copy.title, 'customer', copy.ownerId || CURRENT_USER); toast('Duplikat dibuat: ' + copy.title); rerender2(); return;
       }
       if (act === 'inv-archive' || act === 'inv-unarchive'){
         const inv = S.invitations.find(i => i.id === id); if (!inv) return;
         if (!ownGuard(inv)) return;
-        inv.archived = act === 'inv-archive'; inv.updatedAt = Date.now(); persistInvitationNow(inv);
+        const prevArc = inv.archived, prevUpd = inv.updatedAt;
+        inv.archived = act === 'inv-archive'; inv.updatedAt = Date.now();
+        if (!persistInvitationNow(inv)){ inv.archived = prevArc; inv.updatedAt = prevUpd; toast('Perubahan arsip GAGAL disimpan — status undangan tidak berubah.', true); rerender2(); return; }
         logAct('Undangan “' + inv.title + '” ' + (inv.archived ? 'diarsipkan.' : 'dikeluarkan dari arsip.'), 'customer', inv.ownerId || CURRENT_USER); toast(inv.archived ? 'Undangan diarsipkan' : 'Arsip dibatalkan'); rerender2(); return;
       }
       if (act === 'inv-delete'){
         const inv = S.invitations.find(i => i.id === id); if (!inv) return;
         if (!ownGuard(inv)) return;
-        showModal({title:'Hapus undangan ini?', danger:true, confirmLabel:'Ya, Hapus Permanen', body:'Undangan <b>' + esc(inv.title) + '</b> beserta seluruh tamu dan RSVP-nya akan dihapus permanen dari perangkat ini. Pesanan lama tetap tersimpan sebagai riwayat. Tindakan ini tidak dapat dibatalkan.', onConfirm:() => { if (!ownGuard(inv)) return; deleteInvitationCascade(inv); toast('Undangan dihapus'); rerender2(); }});
+        showModal({title:'Hapus undangan ini?', danger:true, confirmLabel:'Ya, Hapus Permanen', body:'Undangan <b>' + esc(inv.title) + '</b> beserta seluruh tamu dan RSVP-nya akan dihapus permanen dari perangkat ini. Pesanan lama tetap tersimpan sebagai riwayat. Tindakan ini tidak dapat dibatalkan.', onConfirm:() => { if (!ownGuard(inv)) return; if (!deleteInvitationCascade(inv)){ toast('Penghapusan GAGAL disimpan — seluruh data undangan, tamu, dan RSVP dikembalikan seperti semula (tidak ada penghapusan parsial).', true); rerender2(); return; } toast('Undangan dihapus'); rerender2(); }});
         return;
       }
       /* Tamu */
@@ -3328,8 +3511,15 @@
         const g = S2.guests.find(x => x.id === id); if (!g) return;
         if (!ownGuard(S.invitations.find(i => i.id === g.invitationId))) return;
         showModal({title:'Hapus tamu ini?', danger:true, confirmLabel:'Ya, Hapus', body:'Tamu <b>' + esc(g.name) + '</b> dan respons RSVP-nya akan dihapus dari undangan ini.', onConfirm:() => {
-          S2.guests = S2.guests.filter(x => x.id !== id); saveColl('guests');
-          S2.rsvps = S2.rsvps.filter(r => r.guestId !== id); saveColl('rsvps');
+          /* Guard diuji ulang DI DALAM konfirmasi, dan penghapusan
+             bersifat atomik: kedua koleksi diperiksa hasil simpannya —
+             satu gagal, keduanya dipulihkan dan ditulis kembali. */
+          if (!ownGuard(S.invitations.find(i => i.id === g.invitationId))) return;
+          const gSnap = S2.guests.slice(), rSnap = S2.rsvps.slice();
+          S2.guests = S2.guests.filter(x => x.id !== id);
+          S2.rsvps = S2.rsvps.filter(r => r.guestId !== id);
+          let okDel = saveColl('guests'); okDel = saveColl('rsvps') && okDel;
+          if (!okDel){ S2.guests = gSnap; S2.rsvps = rSnap; saveColl('guests'); saveColl('rsvps'); toast('Penghapusan tamu GAGAL disimpan — tamu dan RSVP-nya dikembalikan seperti semula (tidak ada penghapusan parsial).', true); rerender2(); return; }
           D2.guestSel.delete(id); toast('Tamu dihapus'); rerender2();
         }}); return;
       }
@@ -3338,10 +3528,19 @@
         if (!ownGuard(S.invitations.find(i => i.id === D2.guestInv))) return;
         const n = D2.guestSel.size;
         showModal({title:'Hapus ' + n + ' tamu terpilih?', danger:true, confirmLabel:'Ya, Hapus ' + n + ' Tamu', body:'Hanya tamu yang Anda centang pada undangan ini yang dihapus, beserta RSVP-nya. Tamu undangan lain tidak terpengaruh.', onConfirm:() => {
-          const ids = new Set(D2.guestSel);
-          S2.guests = S2.guests.filter(g => !ids.has(g.id)); saveColl('guests');
-          S2.rsvps = S2.rsvps.filter(r => !ids.has(r.guestId)); saveColl('rsvps');
-          D2.guestSel.clear(); toast(n + ' tamu dihapus'); rerender2();
+          const inv2 = S.invitations.find(i => i.id === D2.guestInv); if (!inv2 || !ownGuard(inv2)) return;
+          /* Scope keras invitationId: HANYA tamu yang benar-benar milik
+             undangan aktif ini yang terhapus. ID tamu undangan lain yang
+             terselip di pilihan (state basi / dibuat manual) diabaikan —
+             dan penghapusan berjalan atomik dengan rollback persisten. */
+          const targetIds = new Set(S2.guests.filter(g => D2.guestSel.has(g.id) && g.invitationId === inv2.id).map(g => g.id));
+          if (!targetIds.size){ toast('Tidak ada tamu dari undangan ini yang terpilih — tidak ada yang dihapus.', true); rerender2(); return; }
+          const gSnap = S2.guests.slice(), rSnap = S2.rsvps.slice();
+          S2.guests = S2.guests.filter(g => !targetIds.has(g.id));
+          S2.rsvps = S2.rsvps.filter(r => !targetIds.has(r.guestId));
+          let okDel = saveColl('guests'); okDel = saveColl('rsvps') && okDel;
+          if (!okDel){ S2.guests = gSnap; S2.rsvps = rSnap; saveColl('guests'); saveColl('rsvps'); toast('Penghapusan massal GAGAL disimpan — seluruh tamu dan RSVP dikembalikan (tidak ada penghapusan parsial).', true); rerender2(); return; }
+          D2.guestSel.clear(); toast(targetIds.size + ' tamu dihapus'); rerender2();
         }}); return;
       }
       if (act === 'bulk-preview'){
@@ -3360,8 +3559,14 @@
         const inv = S.invitations.find(i => i.id === D2.guestInv); if (!inv || !D2.bulkPreview) return;
         if (!ownGuard(inv)) return;
         const beforeIds = new Set(S2.guests.map(x => x.id));
-        D2.bulkPreview.valid.forEach(v => S2.guests.push({id:uid2('guest'), invitationId:inv.id, name:v.name, group:v.group, contact:v.contact, rsvpStatus:'Belum Menjawab', attendees:1, code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()}));
-        const n = D2.bulkPreview.valid.length;
+        /* Dedupe dengan ID STABIL: ID tamu impor diturunkan deterministik
+           dari undangan + nama + grup + kontak (kiImportGuests). Baris
+           yang ID-nya sudah terdaftar — impor yang sama dijalankan ulang
+           atau baris ganda dalam satu impor — DILEWATI, jadi impor tidak
+           pernah menggandakan tamu. */
+        const imp = kiImportGuests(S2.guests, inv.id, D2.bulkPreview.valid);
+        imp.added.forEach(g => S2.guests.push(g));
+        const n = imp.added.length;
         if (!saveColl('guests')){
           /* Impor gagal tersimpan: cabut kembali baris impor dari state agar
              tampilan tidak menampilkan tamu yang sebenarnya tidak tersimpan. */
@@ -3369,7 +3574,8 @@
           toast('Impor gagal disimpan — tidak ada tamu yang ditambahkan (penyimpanan penuh?). Pratinjau impor dipertahankan, coba lagi setelah mengosongkan ruang.', true); rerender2(); return;
         }
         D2.bulkPreview = null;
-        logAct(n + ' tamu diimpor massal ke “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER); toast(n + ' tamu berhasil diimpor'); rerender2(); return;
+        if (n) logAct(n + ' tamu diimpor massal ke “' + inv.title + '”' + (imp.skipped.length ? ' (' + imp.skipped.length + ' baris duplikat dilewati)' : '') + '.', 'customer', inv.ownerId || CURRENT_USER);
+        toast(n ? n + ' tamu berhasil diimpor' + (imp.skipped.length ? ' — ' + imp.skipped.length + ' baris duplikat dilewati (ID stabil sudah terdaftar)' : '') : 'Semua baris adalah duplikat dari tamu yang sudah terdaftar — tidak ada tamu baru (dedupe ID stabil).'); rerender2(); return;
       }
       /* Moderasi ucapan — "Hapus Ucapan" hanya mengosongkan pesan; record
          RSVP dan jawaban kehadiran tamu tetap tersimpan. */
@@ -3403,7 +3609,7 @@
         showModal({title:'Batalkan pesanan ' + o.number + '?', danger:true, confirmLabel:'Ya, Batalkan Pesanan', body:'Status pesanan berubah menjadi <b>Dibatalkan</b> — status terminal: pembayaran tidak lagi ditawarkan dan hasil pembayaran apa pun tidak dapat menghidupkannya kembali. Record pembayaran simulasi tetap tersimpan sebagai riwayat.', onConfirm:() => { o.status = 'Dibatalkan'; if (!saveColl('orders')){ toast('Gagal menyimpan pembatalan — status pesanan tidak berubah.', true); rerender2(); return; } logAct('Pesanan ' + o.number + ' dibatalkan.', 'customer', o.customerId); toast('Pesanan dibatalkan'); rerender2(); }});
         return;
       }
-      if (act === 'order-done'){ const o = S2.orders.find(x => x.id === id); if (o && orderGuard(o)){ o.status = 'Selesai'; saveColl('orders'); toast('Pesanan ' + o.number + ' ditandai selesai'); rerender2(); } return; }
+      if (act === 'order-done'){ const o = S2.orders.find(x => x.id === id); if (o && orderGuard(o)){ const prevOs = o.status; o.status = 'Selesai'; if (!saveColl('orders')){ o.status = prevOs; saveColl('orders'); toast('Gagal menyimpan — status pesanan tidak berubah.', true); } else toast('Pesanan ' + o.number + ' ditandai selesai'); rerender2(); } return; }
       if (act === 'co-pkg'){ CO.pkgId = id; rerender2(); return; }
       if (act === 'co-method'){ CO.method = id; rerender2(); return; }
       if (act === 'co-coupon-apply'){
@@ -3466,15 +3672,26 @@
         if (o.paymentStatus === res){ toast('Hasil “' + res + '” untuk pesanan ' + o.number + ' sudah tercatat sebelumnya — pengiriman ulang hasil yang sama diabaikan (idempoten), tidak ada perubahan atau catatan ganda.', true); rerender2(); return; }
         if (o.paymentStatus === 'Success'){ toast('Pesanan ' + o.number + ' sudah berstatus Success (terminal) — hasil “' + res + '” ditolak dan tidak mengubah apa pun.', true); rerender2(); return; }
         /* Hasil pembayaran hanya boleh memakai record pembayaran yang
-           terhubung ke ORDER ini dan UNDANGAN yang sama. Tanpa record
-           yang cocok, hasil ditolak — status pesanan tidak ditebak. */
-        const pay = S2.payments.filter(p => p.orderId === o.id && (p.invitationId ? p.invitationId === o.invitationId : true)).slice(-1)[0];
+           terhubung ke ORDER ini dan UNDANGAN yang sama — ketat, tanpa
+           fallback legacy: record tanpa invitationId tidak pernah
+           dipakai. Tanpa record yang cocok, hasil ditolak — status
+           pesanan tidak ditebak. */
+        let pay = S2.payments.filter(p => p.orderId === o.id && p.invitationId === o.invitationId).slice(-1)[0];
         if (!pay){ toast('Hasil pembayaran ditolak: tidak ada record pembayaran yang terhubung ke pesanan ' + o.number + ' dan undangannya. Tidak ada perubahan yang disimpan.', true); rerender2(); return; }
         /* Snapshot pra-tulis SEMUA koleksi yang disentuh jalur ini: bila
            satu saja penyimpanan gagal, seluruhnya di-rollback dan ditulis
            kembali ke storage — dibuktikan konsisten setelah reload. */
         const rbSnap = { orders: structuredClone(S2.orders), payments: structuredClone(S2.payments), services: structuredClone(S2.services), activity: S2.activity.slice(), notifications: S2.notifications.slice(), invPkg: (() => { const iv = S.invitations.find(i => i.id === o.invitationId); return iv ? iv.packageId : undefined; })() };
         let okAll = true;
+        if (pay && pay.status !== 'Pending'){
+          /* Perlakuan expiry/gagal yang KONSISTEN di semua jalur: record
+             pembayaran yang sudah final (Failed/Expired) TIDAK pernah
+             ditulis ulang atau dihidupkan lagi. Percobaan ulang memakai
+             record pembayaran BARU (kode baru) untuk pesanan yang sama;
+             record lama tetap utuh sebagai riwayat percobaan. */
+          const np = {id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:pay.method, status:'Pending', amount:o.total, code: pay.method === 'QRIS' ? 'QRIS-SIM-' + o.number : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null};
+          S2.payments.push(np); pay = np;
+        }
         if (pay){ pay.status = res; pay.paidAt = res === 'Success' ? Date.now() : null; okAll = saveColl('payments') && okAll; }
         o.paymentStatus = res;
         if (res === 'Success'){
@@ -3516,14 +3733,18 @@
         toast('Undangan terbit di /u/' + slug); go('#/u/' + slug); return;
       }
       /* Notifikasi */
-      if (act === 'notif-read'){ S2.notifications.forEach(n => { if (n.scope === 'customer' && n.owner === CURRENT_USER) n.read = true; }); saveColl('notifications'); rerender2(); return; }
+      if (act === 'notif-read'){ const rdSnap = S2.notifications.map(n => n.read); S2.notifications.forEach(n => { if (n.scope === 'customer' && n.owner === CURRENT_USER) n.read = true; }); if (!saveColl('notifications')){ S2.notifications.forEach((n, i) => { n.read = rdSnap[i]; }); saveColl('notifications'); toast('Gagal menyimpan status baca notifikasi.', true); } rerender2(); return; }
       /* Layanan bantuan */
       if (act === 'svc-approve'){
         const s = S2.services.find(x => x.id === id); if (!s) return;
         if (S2.role !== 'customer'){ toast('Akses ditolak: persetujuan desain adalah aksi pelanggan pemilik proyek.', true); return; }
         if (!svcGuard(s)) return;
-        s.status = 'Approved'; s.updatedAt = Date.now(); saveColl('services');
-        logAct('Desain proyek ' + s.number + ' disetujui pelanggan.', 'customer', s.customerId); notify2('Desain disetujui', 'Proyek ' + s.number + ' disetujui pelanggan dan siap diterbitkan.', 'admin');
+        const apSnap = {status:s.status, updatedAt:s.updatedAt}, apAct = S2.activity.slice(), apNtf = S2.notifications.slice();
+        s.status = 'Approved'; s.updatedAt = Date.now();
+        let okAp = saveColl('services');
+        if (okAp) okAp = logAct('Desain proyek ' + s.number + ' disetujui pelanggan.', 'customer', s.customerId);
+        if (okAp) okAp = notify2('Desain disetujui', 'Proyek ' + s.number + ' disetujui pelanggan dan siap diterbitkan.', 'admin');
+        if (!okAp){ s.status = apSnap.status; s.updatedAt = apSnap.updatedAt; S2.activity = apAct; S2.notifications = apNtf; saveColl('services'); saveColl('activity'); saveColl('notifications'); toast('Persetujuan GAGAL disimpan — status proyek tidak berubah.', true); rerender2(); return; }
         toast('Desain disetujui — terima kasih!'); rerender2(); return;
       }
       if (act === 'svc-revision'){
@@ -3532,8 +3753,12 @@
         if (!svcGuard(s)) return;
         showModal({title:'Minta revisi desain', textarea:true, textareaLabel:'Catatan revisi untuk desainer', textareaPh:'Jelaskan bagian yang perlu diubah…', confirmLabel:'Kirim Permintaan Revisi', onConfirm:(note) => {
           if (!note){ toast('Catatan revisi wajib diisi', true); return; }
-          s.revisions.push({note, at:Date.now(), by:'customer'}); s.status = 'Revision'; s.updatedAt = Date.now(); saveColl('services');
-          logAct('Revisi diminta untuk proyek ' + s.number + '.', 'customer', s.customerId); toast('Permintaan revisi terkirim ke desainer'); rerender2();
+          const rvSnap = {status:s.status, updatedAt:s.updatedAt}, rvAct = S2.activity.slice();
+          s.revisions.push({note, at:Date.now(), by:'customer'}); s.status = 'Revision'; s.updatedAt = Date.now();
+          let okRv = saveColl('services');
+          if (okRv) okRv = logAct('Revisi diminta untuk proyek ' + s.number + '.', 'customer', s.customerId);
+          if (!okRv){ s.revisions.pop(); s.status = rvSnap.status; s.updatedAt = rvSnap.updatedAt; S2.activity = rvAct; saveColl('services'); saveColl('activity'); toast('Permintaan revisi GAGAL disimpan — tidak ada perubahan yang tercatat.', true); rerender2(); return; }
+          toast('Permintaan revisi terkirim ke desainer'); rerender2();
         }}); return;
       }
       if (act === 'svc-progress'){
@@ -3559,9 +3784,20 @@
            masih New/Paid juga tidak boleh melompat ke tahap pengerjaan. */
         if (el.dataset.to === 'Assigned'){ toast('Status Assigned hanya dicapai lewat penugasan desainer setelah pembayaran Success — jalur ini tidak dapat melompat ke Assigned.', true); rerender2(); return; }
         if ((s.status === 'New' || s.status === 'Paid') && el.dataset.to !== s.status){ toast('Proyek ' + s.number + ' masih berstatus ' + s.status + ' — selesaikan alur New → Paid → Assigned sebelum tahap pengerjaan dimulai.', true); rerender2(); return; }
-        s.status = el.dataset.to; s.updatedAt = Date.now(); saveColl('services');
-        logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.', 'customer', s.customerId);
-        if (s.status === 'Review') notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer', s.customerId);
+        const progSnap = {status:s.status, updatedAt:s.updatedAt};
+        const progAct = S2.activity.slice(), progNtf = S2.notifications.slice();
+        s.status = el.dataset.to; s.updatedAt = Date.now();
+        /* Semua hasil simpan transisi diperiksa; satu gagal -> rollback
+           persisten (status, aktivitas, notifikasi ditulis kembali). */
+        let okProg = saveColl('services');
+        if (okProg) okProg = logAct('Status proyek ' + s.number + ' menjadi ' + s.status + '.', 'customer', s.customerId);
+        if (okProg && s.status === 'Review') okProg = notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer', s.customerId);
+        if (!okProg){
+          s.status = progSnap.status; s.updatedAt = progSnap.updatedAt;
+          S2.activity = progAct; S2.notifications = progNtf;
+          saveColl('services'); saveColl('activity'); saveColl('notifications');
+          toast('Perubahan status GAGAL disimpan — status proyek dikembalikan ke ' + progSnap.status + '.', true); rerender2(); return;
+        }
         if (s.status === 'Published'){
           /* Status layanan "Published" TIDAK menerbitkan undangan terkait —
              publikasi undangan adalah tindakan terpisah dan eksplisit. */
@@ -3583,20 +3819,24 @@
       /* Admin: template */
       if (act === 'tpl-new'){
         const rec = {id:'tpl-' + Date.now().toString(36), baseId:'luxury-ivory', slug:'template-baru-' + Date.now().toString(36), name:'Template Baru', desc:'Deskripsi template baru — ubah saya dari CMS.', price:59000, tier:'Premium', categoryId:'pernikahan', styleId:'luxury-editorial', status:'draft', version:1, thumb:'couple-hero', sections:TEMPLATES[0].sections.slice(), features:['RSVP & buku ucapan']};
-        persistCmsTemplate(rec);
+        if (!persistCmsTemplate(rec)){ toast('Template draft GAGAL disimpan — tidak ada template baru yang dibuat.', true); rerender2(); return; }
         const base = TEMPLATES[0];
         TEMPLATES.push(tpl({id:rec.id, slug:rec.slug, name:rec.name, categoryId:rec.categoryId, styleId:rec.styleId, tier:rec.tier, price:rec.price, thumb:rec.thumb, ornament:base.ornament, fontId:base.fontId, desc:rec.desc, palettes:base.palettes, sections:rec.sections, features:rec.features, version:1, status:'draft'}));
         toast('Template draft dibuat — lengkapi lalu terbitkan'); go('#/admin?tab=template&edit=' + rec.id); return;
       }
       if (act === 'tpl-status'){
         const t = TEMPLATES.find(x => x.id === id); if (!t) return;
+        const prevSt = t.status;
         t.status = el.dataset.st;
-        persistCmsTemplate({id:t.id, baseId:t.id, slug:t.slug, name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:t.sections, features:t.features});
+        if (!persistCmsTemplate({id:t.id, baseId:t.id, slug:t.slug, name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:t.sections, features:t.features})){
+          t.status = prevSt;
+          toast('Perubahan status template GAGAL disimpan — status dikembalikan ke ' + prevSt + '.', true); rerender2(); return;
+        }
         logAct('Template ' + t.name + ' kini berstatus ' + t.status + '.', 'admin');
         toast(t.status === 'published' ? 'Template terbit — sudah tampil di marketplace' : 'Template diarsipkan dari marketplace'); rerender2(); return;
       }
       if (act === 'tf-thumb'){ $$('#s2-tpl-form .thumb-pick button').forEach(b => b.classList.toggle('on', b === el)); const h = $('#tf-thumb-val'); if (h) h.value = id; return; }
-      if (act === 'coupon-toggle'){ const c = S2.coupons.find(x => x.id === id); if (c){ c.active = !c.active; saveColl('coupons'); toast('Kupon ' + c.code + (c.active ? ' diaktifkan' : ' dinonaktifkan')); rerender2(); } return; }
+      if (act === 'coupon-toggle'){ const c = S2.coupons.find(x => x.id === id); if (c){ c.active = !c.active; if (!saveColl('coupons')){ c.active = !c.active; saveColl('coupons'); toast('Perubahan kupon GAGAL disimpan — status kupon tidak berubah.', true); rerender2(); return; } toast('Kupon ' + c.code + (c.active ? ' diaktifkan' : ' dinonaktifkan')); rerender2(); } return; }
       /* Pemulihan data lokal */
       if (act === 'backup-download'){
         const bk = load2(K2.backup, null);
@@ -3611,7 +3851,7 @@
            sama (kiResetCore) — data nyata di perangkat ini tidak disentuh. */
         const res = kiFixtureTests();
         const zone = document.getElementById('fixture-results');
-        if (zone) zone.innerHTML = '<b>Hasil uji fixture terisolasi (stub storage, bukan data nyata):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + '</li>').join('') + '</ul>';
+        if (zone) zone.innerHTML = '<b>Hasil uji fixture terisolasi & disposable (stub storage + data sintetis; data nyata tidak ditulis — hanya dibaca untuk pemindaian orphan terakhir):</b><ul style="margin:8px 0 0;padding-left:18px;font-size:14px">' + res.map(x => '<li><b>' + (x.pass ? 'LOLOS' : 'GAGAL') + '</b> — ' + esc(x.name) + '</li>').join('') + '</ul>';
         toast('Uji fixture selesai: ' + res.filter(x => x.pass).length + '/' + res.length + ' lolos (data nyata tidak disentuh)');
         return;
       }
@@ -3633,6 +3873,7 @@
           const r = kiResetCore(storageBackend());
           if (!r.ok){
             if (r.stage === 'snapshot-unreadable') toast('Reset DIBATALKAN: snapshot data saat ini tidak dapat dibaca — tidak ada satu pun record yang dihapus.', true);
+            else if (r.stage === 'snapshot-verify') toast('Reset DIBATALKAN: snapshot berubah saat diverifikasi (tab lain mungkin sedang menulis) — snapshot tidak terverifikasi tidak dipakai, dan tidak ada satu pun record yang dihapus. Coba lagi sesaat lagi.', true);
             else if (r.stage === 'backup-write' || r.stage === 'backup-verify' || r.stage === 'backup-commit') toast('Reset DIBATALKAN: cadangan pra-reset ' + (r.stage === 'backup-verify' ? 'tidak lolos verifikasi baca-balik' : 'gagal ditulis') + ' — backup lama dipertahankan utuh dan tidak ada data yang dihapus.', true);
             else if (r.stage === 'partial-delete') toast(r.restored ? 'Reset DIBATALKAN: penghapusan tidak tuntas (' + r.leftover + ' record tertinggal) — seluruh snapshot dipulihkan dan terverifikasi utuh; tidak ada yang berubah.' : 'Reset GAGAL dan pemulihan snapshot tidak lolos verifikasi. Cadangan pra-reset tersimpan — gunakan Unduh Cadangan sebelum mencoba lagi.', true);
             else toast('Reset DIBATALKAN: penyimpanan tidak tersedia — tidak ada data yang dihapus.', true);
@@ -3648,6 +3889,11 @@
         toast('Peran demo: ' + (S2.role === 'admin' ? 'Admin' : S2.role === 'designer' ? 'Desainer' : 'Pelanggan'));
         go(S2.role === 'admin' ? '#/admin' : S2.role === 'designer' ? '#/desainer' : '#/dashboard'); return;
       }
+      if (e.target.id === 's2-designer-pick'){
+        S2.designerId = e.target.value === 'des-2' ? 'des-2' : 'des-1'; save2(K2.designer, S2.designerId);
+        toast('Desainer aktif: ' + userById(S2.designerId).name + ' — workspace kini hanya menampilkan proyek yang ditugaskan kepadanya.');
+        rerender2(); return;
+      }
       if (e.target.id === 's2-inv-pick'){ D2.guestInv = e.target.value; D2.guestSel.clear(); D2.guestEdit = null; location.hash = '#/dashboard?tab=tamu&inv=' + e.target.value; return; }
       if (e.target.id === 's2-rsvp-pick'){ D2.rsvpInv = e.target.value; location.hash = '#/dashboard?tab=rsvp&inv=' + e.target.value; return; }
       if (e.target.id === 's2-ana-pick'){ location.hash = '#/dashboard?tab=analitik&inv=' + e.target.value; return; }
@@ -3662,6 +3908,7 @@
         if (!adminGuard('penugasan desainer')) { rerender2(); return; }
         kiRefreshCollections(); /* nilai gerbang dari state tersimpan terbaru, bukan salinan tab yang basi */
         const s = S2.services.find(x => x.id === asg.dataset.s2Assign); if (!s) return;
+        const asgSnap = structuredClone(S2.services), asgActSnap = S2.activity.slice();
         if (asg.value){
           /* Gerbang alur New → Paid → Assigned (tanpa pengecualian):
              penugasan HANYA boleh bila ada pesanan yang benar-benar
@@ -3693,8 +3940,14 @@
             s.status = (lo && lo.paymentStatus === 'Success') ? 'Paid' : 'New';
           }
         }
-        s.updatedAt = Date.now(); saveColl('services');
-        logAct('Proyek ' + s.number + ' ditugaskan ke ' + (asg.value ? userById(asg.value).name : '—') + '.', 'admin');
+        s.updatedAt = Date.now();
+        /* Hasil simpan assignment DIPERIKSA: satu penulisan gagal ->
+           rollback persisten seluruh koleksi yang disentuh (layanan +
+           aktivitas ditulis kembali dari snapshot), bukan toast sukses
+           palsu dan bukan state parsial setelah reload. */
+        let okAsg = saveColl('services');
+        if (okAsg) okAsg = logAct('Proyek ' + s.number + ' ditugaskan ke ' + (asg.value ? userById(asg.value).name : '—') + '.', 'admin');
+        if (!okAsg){ S2.services = asgSnap; S2.activity = asgActSnap; saveColl('services'); saveColl('activity'); toast('Penugasan GAGAL disimpan — status proyek dikembalikan seperti semula.', true); rerender2(); return; }
         toast(asg.value ? 'Desainer ditugaskan: ' + userById(asg.value).name : 'Penugasan dilepas'); rerender2(); return;
       }
     });
@@ -3711,18 +3964,36 @@
         const name = $('#gf-name').value.trim(); if (!name){ toast('Nama tamu wajib diisi', true); return; }
         const data = {name, contact:$('#gf-contact').value.trim(), group:$('#gf-group').value.trim() || 'Lainnya', attendees:Math.max(0, Math.min(20, +$('#gf-att').value || 1))};
         const wasEdit = !!D2.guestEdit;
+        const actSnap = S2.activity.slice();
+        let editedGuest = null, prevGuest = null, addedGuest = null;
         if (wasEdit){
           const g = S2.guests.find(x => x.id === D2.guestEdit);
-          if (g) Object.assign(g, data);
+          /* Scope invitationId DI HANDLER: tamu yang ID-nya menunjuk
+             undangan LAIN tidak boleh diubah lewat formulir undangan
+             ini — state edit yang basi atau dibuat manual ditolak,
+             bukan diam-diam menulis ke record undangan lain. */
+          if (!g || g.invitationId !== inv.id){ D2.guestEdit = null; toast('Gagal: tamu yang dipilih bukan milik undangan ini — pengubahan ditolak di handler.', true); rerender2(); return; }
+          editedGuest = g; prevGuest = {name:g.name, contact:g.contact, group:g.group, attendees:g.attendees};
+          Object.assign(g, data);
           D2.guestEdit = null;
         } else {
-          S2.guests.push(Object.assign({id:uid2('guest'), invitationId:inv.id, rsvpStatus:'Belum Menjawab', code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()}, data));
+          addedGuest = Object.assign({id:uid2('guest'), invitationId:inv.id, rsvpStatus:'Belum Menjawab', code:'T' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now()}, data);
+          S2.guests.push(addedGuest);
         }
         /* Hasil simpan diperiksa dulu — konfirmasi sukses hanya bila data
-           tamu (dan catatan aktivitasnya) benar-benar tersimpan. */
-        const okGuests = saveColl('guests');
-        const okAct = wasEdit ? true : logAct('Tamu ' + name + ' ditambahkan ke “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER);
-        if (!okGuests || !okAct){ toast('Gagal menyimpan data tamu — perubahan belum tersimpan di perangkat ini (penyimpanan penuh?).', true); rerender2(); return; }
+           tamu (dan catatan aktivitasnya) benar-benar tersimpan. Satu
+           saja gagal -> perubahan di-rollback DAN ditulis kembali ke
+           storage, jadi keadaan setelah reload sama dengan sebelum
+           submit; tidak ada state parsial. */
+        let okAll = saveColl('guests');
+        if (okAll && !wasEdit) okAll = logAct('Tamu ' + name + ' ditambahkan ke “' + inv.title + '”.', 'customer', inv.ownerId || CURRENT_USER);
+        if (!okAll){
+          if (addedGuest) S2.guests = S2.guests.filter(x => x.id !== addedGuest.id);
+          if (editedGuest && prevGuest) Object.assign(editedGuest, prevGuest);
+          S2.activity = actSnap;
+          saveColl('guests'); saveColl('activity');
+          toast('Gagal menyimpan data tamu — perubahan di-rollback dan belum tersimpan di perangkat ini (penyimpanan penuh?).', true); rerender2(); return;
+        }
         toast(wasEdit ? 'Tamu diperbarui' : 'Tamu ditambahkan');
         rerender2(); return;
       }
@@ -3735,9 +4006,12 @@
         const linkInvId = ($('#sv-inv') || {}).value || null;
         const linkOrder = linkInvId ? S2.orders.filter(o => o.invitationId === linkInvId).slice().sort((a, b) => b.createdAt - a.createdAt)[0] : null;
         const s = {id:uid2('svc'), number:'REQ-2026-' + (200 + S2.services.length + 1), customerId:CURRENT_USER, title:name, category:$('#sv-cat').value, eventName:name, eventDate:$('#sv-date').value || '', style:$('#sv-style').value, features:feats, reference:$('#sv-ref').value, notes:$('#sv-notes').value.trim(), status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:linkInvId, orderId:linkOrder ? linkOrder.id : null, createdAt:Date.now(), updatedAt:Date.now()};
-        S2.services.unshift(s); saveColl('services');
-        logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.', 'customer', CURRENT_USER);
-        notify2('Permintaan desain baru', s.number + ' — ' + name + ' menunggu penugasan desainer.', 'admin');
+        S2.services.unshift(s);
+        const svcActSnap = S2.activity.slice(), svcNtfSnap = S2.notifications.slice();
+        let okSvc = saveColl('services');
+        if (okSvc) okSvc = logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.', 'customer', CURRENT_USER);
+        if (okSvc) okSvc = notify2('Permintaan desain baru', s.number + ' — ' + name + ' menunggu penugasan desainer.', 'admin');
+        if (!okSvc){ S2.services = S2.services.filter(x => x.id !== s.id); S2.activity = svcActSnap; S2.notifications = svcNtfSnap; saveColl('services'); saveColl('activity'); saveColl('notifications'); toast('Permintaan GAGAL disimpan — tidak ada permintaan yang tercatat. Coba lagi setelah mengosongkan ruang penyimpanan.', true); rerender2(); return; }
         toast('Permintaan ' + s.number + ' terkirim — tim kami akan menugaskan desainer'); rerender2(); return;
       }
       const nf = e.target.closest('.s2-note-form');
@@ -3746,7 +4020,8 @@
         const s = S2.services.find(x => x.id === nf.dataset.id); if (!s) return;
         if (S2.role !== 'designer' || !svcGuard(s)) return; /* catatan internal hanya desainer yang ditugaskan */
         const note = nf.querySelector('input[name="note"]').value.trim(); if (!note) return;
-        (s.internalNotes = s.internalNotes || []).push(note); s.updatedAt = Date.now(); saveColl('services');
+        (s.internalNotes = s.internalNotes || []).push(note); const ntPrev = s.updatedAt; s.updatedAt = Date.now();
+        if (!saveColl('services')){ s.internalNotes.pop(); s.updatedAt = ntPrev; saveColl('services'); toast('Catatan GAGAL disimpan — tidak ada perubahan yang tercatat.', true); rerender2(); return; }
         toast('Catatan internal tersimpan'); rerender2(); return;
       }
       const tf = e.target.closest('#s2-tpl-form');
@@ -3758,13 +4033,23 @@
         if (!secs.includes('cover')) secs.unshift('cover');
         /* Arsipkan versi saat ini SEBELUM naik versi: snapshot ini immutable
            dan terus dipakai undangan yang dibuat pada versi tersebut. */
+        const tSnap = {name:t.name, price:t.price, desc:t.desc, categoryId:t.categoryId, styleId:t.styleId, tier:t.tier, status:t.status, thumb:t.thumb, sections:(t.sections || []).slice(), features:(t.features || []).slice(), version:t.version};
         const hist = load2(K2.tplHistory, {});
         (hist[t.id] = hist[t.id] || {})[t.version] = {name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:(t.sections || []).slice(), features:(t.features || []).slice()};
-        save2(K2.tplHistory, hist);
+        const okHist = save2(K2.tplHistory, hist);
         TPL_VERSIONS[t.id + '@' + t.version] = Object.assign({}, t);
         Object.assign(t, {name:$('#tf-name').value.trim() || t.name, price:Math.max(0, +$('#tf-price').value || 0), desc:$('#tf-desc').value.trim(), categoryId:$('#tf-cat').value, styleId:$('#tf-style').value, tier:$('#tf-tier').value, status:$('#tf-status').value, thumb:$('#tf-thumb-val').value, sections:secs, features:$('#tf-feats').value.split('\n').map(s => s.trim()).filter(Boolean), version:t.version + 1});
         TPL_VERSIONS[t.id + '@' + t.version] = t;
-        persistCmsTemplate({id:t.id, baseId:t.id, slug:t.slug, name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:t.sections, features:t.features});
+        const okCms = persistCmsTemplate({id:t.id, baseId:t.id, slug:t.slug, name:t.name, desc:t.desc, price:t.price, tier:t.tier, categoryId:t.categoryId, styleId:t.styleId, status:t.status, version:t.version, thumb:t.thumb, sections:t.sections, features:t.features});
+        /* Hasil simpan CMS DIPERIKSA: histori atau record CMS gagal ->
+           template di-rollback ke versi & isi sebelumnya, tanpa klaim
+           "tersimpan sebagai versi baru". */
+        if (!okHist || !okCms){
+          delete TPL_VERSIONS[t.id + '@' + (tSnap.version + 1)];
+          Object.assign(t, tSnap);
+          TPL_VERSIONS[t.id + '@' + tSnap.version] = t;
+          toast('Perubahan template GAGAL disimpan — template dikembalikan ke v' + tSnap.version + '.0 seperti semula.', true); rerender2(); return;
+        }
         DB.categories.forEach(c => c.count = TEMPLATES.filter(x => x.categoryId === c.id && x.status === 'published').length);
         logAct('Template ' + t.name + ' diperbarui ke v' + t.version + '.0 oleh admin.', 'admin');
         toast('Template tersimpan sebagai v' + t.version + '.0 — undangan lama tetap pada versinya'); go('#/admin?tab=template'); return;
@@ -3778,7 +4063,8 @@
         const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') + '-' + Date.now().toString(36);
         if (kind === 'kategori'){ const c = {id, name, desc:($('#tax-desc') || {}).value || 'Kategori acara baru', icon:'spark', count:0}; DB.categories.push(c); tax.cats.push(c); }
         else { const s = {id, name}; DB.styles.push(s); tax.styles.push(s); }
-        save2(K2.taxonomy, tax); toast('Ditambahkan: ' + name + ' — filter marketplace sudah mengenalinya'); rerender2(); return;
+        if (!save2(K2.taxonomy, tax)){ DB.categories = DB.categories.filter(c => c.id !== id); DB.styles = DB.styles.filter(s => s.id !== id); toast('Gagal menyimpan taksonomi — item tidak ditambahkan.', true); rerender2(); return; }
+        toast('Ditambahkan: ' + name + ' — filter marketplace sudah mengenalinya'); rerender2(); return;
       }
       const cf = e.target.closest('#s2-coupon-form');
       if (cf){
@@ -3787,7 +4073,8 @@
         const code = $('#cp-code').value.trim().toUpperCase(), pct = +$('#cp-pct').value || 0;
         if (!code || pct < 1 || pct > 90){ toast('Kode kupon dan persen (1–90) wajib valid', true); return; }
         if (S2.coupons.some(c => c.code === code)){ toast('Kode kupon sudah ada', true); return; }
-        S2.coupons.push({id:uid2('cpn'), code, pct, active:true, note:$('#cp-note').value.trim() || 'Kupon admin'}); saveColl('coupons');
+        const nc = {id:uid2('cpn'), code, pct, active:true, note:$('#cp-note').value.trim() || 'Kupon admin'}; S2.coupons.push(nc);
+        if (!saveColl('coupons')){ S2.coupons = S2.coupons.filter(c => c.id !== nc.id); saveColl('coupons'); toast('Kupon GAGAL disimpan — tidak ada kupon baru yang dibuat.', true); rerender2(); return; }
         toast('Kupon ' + code + ' dibuat dan aktif'); rerender2(); return;
       }
       const pf = e.target.closest('.s2-pkg-form');
@@ -3795,19 +4082,23 @@
         e.preventDefault();
         if (!adminGuard('paket')) return;
         const p = pkgById(pf.dataset.id); if (!p) return;
+        const pkgSnap = {price:p.price, features:(p.features || []).slice()};
         p.price = Math.max(0, +pf.querySelector('input[name="price"]').value || 0);
         p.features = pf.querySelector('textarea[name="features"]').value.split('\n').map(s => s.trim()).filter(Boolean);
-        const ov = load2(K2.packages, {}); ov[p.id] = {price:p.price, features:p.features}; save2(K2.packages, ov);
+        const ov = load2(K2.packages, {}); ov[p.id] = {price:p.price, features:p.features};
+        if (!save2(K2.packages, ov)){ p.price = pkgSnap.price; p.features = pkgSnap.features; toast('Perubahan paket GAGAL disimpan — harga & fitur paket tidak berubah.', true); rerender2(); return; }
         toast('Paket ' + p.name + ' diperbarui — berlaku untuk pesanan baru'); rerender2(); return;
       }
       const stf = e.target.closest('#s2-settings-form');
       if (stf){
         e.preventDefault();
         if (!adminGuard('pengaturan platform')) return;
+        const setSnap = {storeName:S2.settings.storeName, supportEmail:S2.settings.supportEmail, publishNeedsPayment:S2.settings.publishNeedsPayment};
         S2.settings.storeName = $('#set-name').value.trim() || 'Kita Invite';
         S2.settings.supportEmail = $('#set-email').value.trim();
         S2.settings.publishNeedsPayment = $('#set-gate').checked;
-        save2(K2.settings, S2.settings); toast('Pengaturan tersimpan'); rerender2(); return;
+        if (!save2(K2.settings, S2.settings)){ Object.assign(S2.settings, setSnap); toast('Pengaturan GAGAL disimpan — nilai sebelumnya dipertahankan.', true); rerender2(); return; }
+        toast('Pengaturan tersimpan'); rerender2(); return;
       }
     });
 

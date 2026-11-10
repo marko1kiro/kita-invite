@@ -1,6 +1,7 @@
     function gateBlockText(blk){
       if (blk && blk.noOrder) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): belum ada pembayaran simulasi berstatus Success yang terhubung ke undangan ini. Buat pesanan lewat checkout simulasi dan selesaikan pembayaran simulasinya terlebih dahulu.';
       if (blk && blk.tierMismatch) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): pesanan ' + blk.number + ' memang Success, tetapi paketnya (' + blk.packageName + ') tidak sesuai tier template undangan ini — Success dari pesanan lama itu TIDAK membuka publikasi. Buat pesanan baru dengan paket yang sesuai tier template lewat checkout.';
+      if (blk && blk.tierUnresolved) return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): tier template undangan ini tidak dapat dibuktikan dari versi template yang dipakai, jadi Success pesanan ' + blk.number + ' tidak dapat dipakai sebagai bukti paket — publikasi ditahan sampai ada pesanan dengan paket yang terbukti cocok. Buat pesanan baru lewat checkout.';
       return 'Publikasi ditahan (pengaturan “Publikasi wajib pembayaran” aktif): pembayaran simulasi pesanan ' + (blk ? blk.number : 'terkait') + ' belum berstatus Success.';
     }
     function s2GuestbookWishes(inv){

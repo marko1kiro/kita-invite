@@ -26,8 +26,14 @@
        template (kiInvTemplate), bukti Paid tanpa fallback
        invitationId, expiry clamp WIB (kiAddMonthsClampWIB), identitas
        RSVP per orang, kode pembayaran stabil (kiActivePayment) —
-       kasus grup 20 membawa expected vs actual. Kasus terakhir suite
-       memverifikasi snapshot SELURUH key storage tidak berubah.
+       kasus grup 20 membawa expected vs actual. (21) v21 — hold tier
+       PROAKTIF (kiOrderTierHold) + fail-closed saat tier tak terbukti
+       + bukti pembayaran silang-undangan + kode baru QRIS per
+       percobaan + RSVP dua tamu bernama sama + rollback jujur
+       multi-koleksi (kiRollbackCollections) + state machine reload
+       (kiSvcGateDecision) + penjaga badge Nusantara Tech (baca saja,
+       seed asli). Kasus terakhir suite memverifikasi snapshot SELURUH
+       key storage tidak berubah.
        ISOLASI PENUH (v18): sebelum suite berjalan, seluruh state sesi
        yang dapat disentuh suite di-snapshot (peran, desainer aktif,
        flag grant, GENERASI grant, referensi semua koleksi, daftar ID
@@ -410,6 +416,125 @@
         const actAfterReload = kiActivePayment('fx-o-att', paysReloaded);
         out.push({name:'Kode pembayaran: percobaan aktif = percobaan terakhir; kodenya sama sebelum & sesudah muat ulang; percobaan lama tetap Failed sebagai riwayat (kode baru hanya untuk percobaan baru)', pass: !!actBeforeReload && actBeforeReload.id === 'fx-pay-a2' && !!actAfterReload && actAfterReload.code === '8808 3333 4444' && actAfterReload.code === actBeforeReload.code && paysReloaded[0].status === 'Failed', exp:'aktif=fx-pay-a2; kode 8808 3333 4444 stabil; lama=Failed', act:'aktif=' + (actAfterReload ? actAfterReload.id : 'null') + '; kode=' + (actAfterReload ? actAfterReload.code : 'null') + '; lama=' + paysReloaded[0].status});
       } catch(e){ out.push({name:'Uji blocker v19 (gerbang tier, versi template, bukti Paid, expiry, identitas, kode bayar)', pass:false}); }
+      /* (21) v21 — HOLD TIER PROAKTIF + FAIL-CLOSED + BUKTI SILANG
+         UNDANGAN + KODE BARU QRIS + RSVP DUA TAMU BERNAMA SAMA +
+         ROLLBACK JUJUR MULTI-KOLEKSI + STATE MACHINE RELOAD +
+         PENJAGA BADGE NUSANTARA TECH (baca saja, seed asli).
+         Setiap kasus membawa expected vs actual bila relevan. */
+      try {
+        /* --- 21a: hold proaktif (sebelum percobaan bayar apa pun) --- */
+        const invBasic21 = {id:'fx-inv-21a', templateId:'confetti-pop', templateVersion:1};
+        const oMis = {id:'fx-o-21a', invitationId:'fx-inv-21a', packageId:'premium', paymentStatus:'Pending', status:'Menunggu Pembayaran'};
+        const oOk21 = {id:'fx-o-21b', invitationId:'fx-inv-21a', packageId:'basic', paymentStatus:'Pending', status:'Menunggu Pembayaran'};
+        const oHis = {id:'fx-o-21c', invitationId:'fx-inv-21a', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
+        const oFail = {id:'fx-o-21d', invitationId:'fx-inv-21a', packageId:'premium', paymentStatus:'Failed', status:'Menunggu Pembayaran'};
+        const hMis = kiOrderTierHold(oMis, invBasic21);
+        out.push({name:'v21 — Hold proaktif: order Premium Pending untuk undangan template Basic -> DITAHAN (expected=basic), SEBELUM percobaan bayar apa pun', pass: hMis.held === true && !!hMis.expected && hMis.expected.id === 'basic', exp:'held=true, expected=basic', act:'held=' + hMis.held + ', expected=' + (hMis.expected ? hMis.expected.id : 'null')});
+        out.push({name:'v21 — Hold proaktif: order Basic Pending untuk undangan yang sama -> tidak ditahan (cocok)', pass: kiOrderTierHold(oOk21, invBasic21).held === false, exp:'held=false', act:'held=' + kiOrderTierHold(oOk21, invBasic21).held});
+        out.push({name:'v21 — Hold proaktif: order Premium yang SUDAH Success (riwayat) -> tidak ditahan di tampilan; aktivasinya sudah terjadi dan snapshot tidak ditulis ulang', pass: kiOrderTierHold(oHis, invBasic21).held === false, exp:'held=false', act:'held=' + kiOrderTierHold(oHis, invBasic21).held});
+        out.push({name:'v21 — Hold proaktif: order Premium Failed untuk undangan Basic -> tetap ditahan (percobaan ulang/Coba Bayar Lagi ikut diblokir)', pass: kiOrderTierHold(oFail, invBasic21).held === true, exp:'held=true', act:'held=' + kiOrderTierHold(oFail, invBasic21).held});
+        const hUnr = kiOrderTierHold(oMis, {id:'fx-inv-21x', templateId:'template-tidak-ada', templateVersion:1});
+        out.push({name:'v21 — Fail-closed: undangan bertemplate TIDAK DIKENAL -> tier tak terbukti -> DITAHAN (unresolved=true), bukan diloloskan', pass: hUnr.held === true && hUnr.unresolved === true, exp:'held=true, unresolved=true', act:'held=' + hUnr.held + ', unresolved=' + hUnr.unresolved});
+        const gUnr = kiOrderTierGate(oMis, {id:'fx-inv-21x', templateId:'template-tidak-ada', templateVersion:1});
+        out.push({name:'v21 — Gerbang tier: template tak dikenal -> {mismatch:false, expected:null, unresolved:true} (penanda fail-closed eksplisit)', pass: gUnr.mismatch === false && gUnr.expected === null && gUnr.unresolved === true, exp:'unresolved=true', act:'mismatch=' + gUnr.mismatch + ', expected=' + gUnr.expected + ', unresolved=' + gUnr.unresolved});
+        /* --- 21b: publish gate + resolver + bukti Paid fail-closed --- */
+        const fxInvGate = {id:'fx-inv-21g', templateId:'confetti-pop', templateVersion:1, title:'Fixture Gate', status:'draft', ownerId:'cust-1'};
+        const fxOrdGateMis = {id:'fx-o-21g1', invitationId:'fx-inv-21g', packageId:'premium', paymentStatus:'Success', status:'Diproses', number:'KI-FX-21G1', createdAt:Date.now()};
+        const fxPayGateMis = {id:'fx-p-21g1', orderId:'fx-o-21g1', invitationId:'fx-inv-21g', status:'Success'};
+        S.invitations.push(fxInvGate); S2.orders.push(fxOrdGateMis); S2.payments.push(fxPayGateMis);
+        try {
+          const blkMis = publishBlockedByGate(fxInvGate);
+          out.push({name:'v21 — Publish gate: undangan Basic dengan SATU-SATUNYA order Success bertier Premium -> DITAHAN (tierMismatch), bukan lolos', pass: !!blkMis && blkMis.tierMismatch === true, exp:'blocker tierMismatch=true', act: blkMis ? 'tierMismatch=' + blkMis.tierMismatch : 'null (lolos)'});
+          fxOrdGateMis.packageId = 'basic';
+          const blkOk = publishBlockedByGate(fxInvGate);
+          out.push({name:'v21 — Publish gate: order Success dengan paket SESUAI tier template versi undangan -> lolos (null)', pass: blkOk === null, exp:'null', act: String(blkOk && blkOk.number)});
+          fxOrdGateMis.packageId = 'premium';
+          const fxInvUnr = {id:'fx-inv-21u', templateId:'template-tidak-ada', templateVersion:1, title:'Fixture Unresolved', status:'draft', ownerId:'cust-1'};
+          const fxOrdUnr = {id:'fx-o-21u', invitationId:'fx-inv-21u', packageId:'premium', paymentStatus:'Success', status:'Diproses', number:'KI-FX-21U', createdAt:Date.now()};
+          const fxPayUnr = {id:'fx-p-21u', orderId:'fx-o-21u', invitationId:'fx-inv-21u', status:'Success'};
+          S.invitations.push(fxInvUnr); S2.orders.push(fxOrdUnr); S2.payments.push(fxPayUnr);
+          try {
+            const blkUnr = publishBlockedByGate(fxInvUnr);
+            out.push({name:'v21 — Publish gate fail-closed: tier undangan TAK TERBUKTI + order Success -> DITAHAN (tierUnresolved), bukan lolos', pass: !!blkUnr && blkUnr.tierUnresolved === true, exp:'blocker tierUnresolved=true', act: blkUnr ? 'tierUnresolved=' + blkUnr.tierUnresolved : 'null (lolos)'});
+            const pidUnr = kiResolvePackageId('fx-inv-21u', [fxOrdUnr], [fxPayUnr], fxInvUnr);
+            out.push({name:'v21 — Resolver paket: undangan diberikan TAPI tier tak terbukti + order Success -> null (belum terselesaikan, tidak ditebak)', pass: pidUnr === null, exp:'null', act: String(pidUnr)});
+            const pidNoInv = kiResolvePackageId('fx-inv-s', [{id:'o1', invitationId:'fx-inv-s', packageId:'premium', paymentStatus:'Success'}, {id:'o2', invitationId:'fx-inv-s', packageId:'premium', paymentStatus:'Success'}], [{id:'p1', orderId:'o1', invitationId:'fx-inv-s', status:'Success'}, {id:'p2', orderId:'o2', invitationId:'fx-inv-s', status:'Success'}]);
+            out.push({name:'v21 — Resolver paket: TANPA record undangan, aturan lama berlaku (dua order Success paket sama = satu paket terbukti)', pass: pidNoInv === 'premium', exp:'premium', act: String(pidNoInv)});
+            const proofUnr = kiServicePaidProof({id:'fx-svc-21u', orderId:'fx-o-21u', invitationId:'fx-inv-21u', status:'New'}, [fxOrdUnr], [fxPayUnr]);
+            out.push({name:'v21 — Bukti Paid fail-closed: undangan bertier tak terbukti + order Success tertaut -> null (tidak bisa dipakai aktivasi/assignment)', pass: proofUnr === null, exp:'null', act: String(proofUnr)});
+            const proofCrossPay = kiServicePaidProof({id:'fx-svc-21x', orderId:'fx-o-21x', invitationId:'fx-inv-21a', status:'New'}, [{id:'fx-o-21x', invitationId:'fx-inv-21a', packageId:'premium', paymentStatus:'Success', status:'Diproses'}], [{id:'fx-p-21x', orderId:'fx-o-21x', invitationId:'fx-inv-21b', status:'Success'}]);
+            out.push({name:'v21 — Bukti Paid silang: record pembayaran menunjuk undangan LAIN (inv-B) sedangkan order + proyek di inv-A -> null', pass: proofCrossPay === null, exp:'null', act: String(proofCrossPay)});
+            const proofEmptyOrd = kiServicePaidProof({id:'fx-svc-21e', orderId:'fx-o-21e', invitationId:'fx-inv-21a', status:'New'}, [{id:'fx-o-21e', invitationId:'', packageId:'premium', paymentStatus:'Success', status:'Diproses'}], [{id:'fx-p-21e', orderId:'fx-o-21e', invitationId:'fx-inv-21a', status:'Success'}]);
+            out.push({name:'v21 — Bukti Paid kosong: order dengan invitationId KOSONG -> null (tidak ada fallback)', pass: proofEmptyOrd === null, exp:'null', act: String(proofEmptyOrd)});
+          } finally {
+            S.invitations.splice(S.invitations.indexOf(fxInvUnr), 1); S2.orders.splice(S2.orders.indexOf(fxOrdUnr), 1); S2.payments.splice(S2.payments.indexOf(fxPayUnr), 1);
+          }
+        } finally {
+          S.invitations.splice(S.invitations.indexOf(fxInvGate), 1); S2.orders.splice(S2.orders.indexOf(fxOrdGateMis), 1); S2.payments.splice(S2.payments.indexOf(fxPayGateMis), 1);
+        }
+        /* --- 21c: konvensi kode QRIS percobaan baru --- */
+        const paysQ = [{id:'fx-pay-q1', orderId:'fx-o-q', status:'Failed', code:'QRIS-SIM-KI-FX-Q', attempt:1}, {id:'fx-pay-q2', orderId:'fx-o-q', status:'Pending', code:'QRIS-SIM-KI-FX-Q-A2', attempt:2}];
+        const actQ = kiActivePayment('fx-o-q', paysQ);
+        out.push({name:'v21 — Kode QRIS: percobaan baru memakai kode BARU (akhiran -A<nomor percobaan>), berbeda dari kode percobaan lama yang sudah Failed; percobaan aktif = terakhir', pass: !!actQ && actQ.id === 'fx-pay-q2' && actQ.code === 'QRIS-SIM-KI-FX-Q-A2' && actQ.code !== paysQ[0].code && paysQ[0].status === 'Failed', exp:'aktif=fx-pay-q2; kode=QRIS-SIM-KI-FX-Q-A2; lama=Failed', act:'aktif=' + (actQ ? actQ.id : 'null') + '; kode=' + (actQ ? actQ.code : 'null')});
+        /* --- 21d: RSVP dua tamu bernama sama + rollback token --- */
+        const fxResp21 = 'fx-inv-resp21';
+        const respRaw21 = kiRespondentRaw(fxResp21);
+        try {
+          const tokA = kiRespondentToken(fxResp21, true);
+          const tokB = kiRespondentNewPerson(fxResp21);
+          const idA21 = kiPublicGuestId(fxResp21, tokA), idB21 = kiPublicGuestId(fxResp21, tokB);
+          out.push({name:'v21 — RSVP multi-tamu: dua orang bernama SAMA ("Sari") pada satu perangkat -> dua token, dua guestId berbeda; identitas dari token, BUKAN nama', pass: !!tokA && !!tokB && tokA !== tokB && idA21 !== idB21, exp:'token berbeda; guestId berbeda', act:'token berbeda=' + (tokA !== tokB) + '; guestId berbeda=' + (idA21 !== idB21)});
+          const prevSariA = {name:'Sari', status:'Hadir', count:1, message:''};
+          const dupSariA = kiRsvpIsChanged({name:'Sari'}, prevSariA, {name:'Sari', status:'Hadir', count:1, message:''});
+          const chgSariB = kiRsvpIsChanged({name:'Sari'}, {name:'Sari', status:'Hadir', count:1, message:''}, {name:'Sari', status:'Tidak Hadir', count:0, message:''});
+          out.push({name:'v21 — RSVP multi-tamu: submit identik orang A ("Sari", Hadir) didedupe; perubahan orang B ("Sari" -> Tidak Hadir) tetap perubahan — nama sama tidak saling menelan', pass: dupSariA === false && chgSariB === true, exp:'dedupe A=false; change B=true', act:'dedupe=' + dupSariA + '; change=' + chgSariB});
+          const tX = kiRespondentToken(fxResp21, true);
+          const rawMid = kiRespondentRaw(fxResp21);
+          const midList = kiRespondentList(fxResp21);
+          const tY = kiRespondentNewPerson(fxResp21);
+          const restored21 = kiRespondentRestoreRaw(fxResp21, rawMid);
+          const listAfter = kiRespondentList(fxResp21);
+          out.push({name:'v21 — RSVP token: rollback identitas memulihkan daftar token persis ke snapshot pra-submit (token baru dari submit gagal tidak tertinggal)', pass: restored21 === true && listAfter.tokens.length === midList.tokens.length && listAfter.tokens.every((t, i) => t === midList.tokens[i]) && listAfter.active === midList.active, exp: midList.tokens.length + ' token (daftar pra-submit)', act:'token=' + listAfter.tokens.length + '; pulih=' + restored21});
+        } finally { kiRespondentRestoreRaw(fxResp21, respRaw21); }
+        /* --- 21e: kiRollbackCollections (core rollback jujur) --- */
+        try {
+          const keepRb = {orders:S2.orders, payments:S2.payments, services:S2.services, activity:S2.activity, notifications:S2.notifications, guests:S2.guests, rsvps:S2.rsvps};
+          S2.orders = [{id:'fx-o-rb'}]; S2.payments = [{id:'fx-p-rb'}]; S2.services = [{id:'fx-s-rb'}];
+          const snapRb = {orders:[{id:'fx-o-keep2'}], payments:[{id:'fx-p-keep2'}], services:[{id:'fx-s-keep2'}]};
+          const rbOkAll = kiRollbackCollections(snapRb, () => true);
+          out.push({name:'v21 — Rollback jujur: semua penulisan pemulihan berhasil -> true, koleksi kembali persis ke snapshot', pass: rbOkAll === true && S2.orders[0].id === 'fx-o-keep2' && S2.payments[0].id === 'fx-p-keep2' && S2.services[0].id === 'fx-s-keep2', exp:'true; koleksi=snapshot', act:'ok=' + rbOkAll + '; orders=' + S2.orders[0].id});
+          S2.orders = [{id:'fx-o-mut2'}]; S2.payments = [{id:'fx-p-mut2'}];
+          const rbOneFail = kiRollbackCollections(snapRb, nm => nm !== 'payments');
+          out.push({name:'v21 — Rollback jujur: SATU koleksi (payments) gagal ditulis balik -> false, TAPI memori tetap dipulihkan ke snapshot (tidak ada state parsial di memori)', pass: rbOneFail === false && S2.orders[0].id === 'fx-o-keep2' && S2.payments[0].id === 'fx-p-keep2', exp:'false; memori=snapshot', act:'ok=' + rbOneFail + '; orders=' + S2.orders[0].id + '; payments=' + S2.payments[0].id});
+          S2.orders = keepRb.orders; S2.payments = keepRb.payments; S2.services = keepRb.services; S2.activity = keepRb.activity; S2.notifications = keepRb.notifications; S2.guests = keepRb.guests; S2.rsvps = keepRb.rsvps;
+        } catch(e){ out.push({name:'Uji rollback jujur multi-koleksi (kiRollbackCollections)', pass:false}); }
+        /* --- 21f: state machine reload --- */
+        try {
+          const oFxSvc21 = {id:'fx-o-svc21', invitationId:'fx-inv-svc21', packageId:'premium', paymentStatus:'Success', status:'Diproses'};
+          const pFxSvc21 = {id:'fx-p-svc21', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21', status:'Success'};
+          out.push({name:'v21 — Reload: status BERJALAN (In Progress) TANPA bukti pembayaran apa pun tetap dipertahankan penegak (tidak diturunkan diam-diam)', pass: kiSvcGateDecision({status:'In Progress', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [], []).action === 'keep', exp:'keep', act: kiSvcGateDecision({status:'In Progress', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [], []).action});
+          out.push({name:'v21 — Reload: status TERMINAL (Completed) dengan pesanan dibatalkan tetap dipertahankan penegak', pass: kiSvcGateDecision({status:'Completed', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [Object.assign({}, oFxSvc21, {status:'Dibatalkan', paymentStatus:'Failed'})], []).action === 'keep', exp:'keep', act: kiSvcGateDecision({status:'Completed', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [Object.assign({}, oFxSvc21, {status:'Dibatalkan', paymentStatus:'Failed'})], []).action});
+          const dAsgNoDes = kiSvcGateDecision({status:'Assigned', designerId:null, orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]);
+          out.push({name:'v21 — Reload: Assigned + bukti Paid ADA tapi desainer kosong -> diturunkan ke Paid (satu-satunya penurunan otomatis selain tanpa-bukti)', pass: dAsgNoDes.action === 'downgrade' && dAsgNoDes.toStatus === 'Paid' && dAsgNoDes.releaseDesigner === false, exp:'downgrade->Paid, releaseDesigner=false', act:'action=' + dAsgNoDes.action + '; to=' + dAsgNoDes.toStatus + '; releaseDesigner=' + dAsgNoDes.releaseDesigner});
+          out.push({name:'v21 — Reload: Review + bukti Paid + desainer ADA -> dipertahankan', pass: kiSvcGateDecision({status:'Review', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]).action === 'keep', exp:'keep', act: kiSvcGateDecision({status:'Review', designerId:'des-1', orderId:'fx-o-svc21', invitationId:'fx-inv-svc21'}, [oFxSvc21], [pFxSvc21]).action});
+        } catch(e){ out.push({name:'Uji state machine reload v21 (kiSvcGateDecision)', pass:false}); }
+        /* --- 21g: penjaga badge Nusantara Tech + KI-2026-1008 (seed asli, baca saja) --- */
+        try {
+          const invNusa = S.invitations.find(i => i.id === 'seed-inv-3');
+          const invSalsa = S.invitations.find(i => i.id === 'seed-inv-4');
+          const pidNusa = invNusa ? kiResolvePackageId('seed-inv-3', S2.orders, S2.payments, invNusa) : null;
+          out.push({name:'v21 — Badge Nusantara Tech (JANGAN diubah): seed-inv-3 punya DUA order Success (Signature + Exclusive), TAPI hanya Signature yang cocok tier template versi (Summit) -> paket terbukti = signature', pass: pidNusa === 'signature', exp:'signature', act: String(pidNusa)});
+          const stNusa = invNusa ? invStatus(invNusa) : null;
+          const endNusa = invNusa ? kiAddMonthsClampWIB(invNusa.publishedAt, 12) : null;
+          out.push({name:'v21 — Badge Nusantara Tech: masa akses TERHITUNG (akhir 31 Okt 2027) — bukan unresolved, bukan regresi; Admin menampilkan tanggal berakhir', pass: !!stNusa && !stNusa.unresolved && typeof stNusa.endsAt === 'number' && stNusa.endsAt === endNusa, exp:'terselesaikan; endsAt=publishedAt+12bln', act: stNusa ? 'unresolved=' + !!stNusa.unresolved + '; endsAt=' + (stNusa.endsAt ? new Date(stNusa.endsAt + KI_WIB_MS).toISOString().slice(0, 10) : 'null') : 'null'});
+          const pidSalsa = invSalsa ? kiResolvePackageId('seed-inv-4', S2.orders, S2.payments, invSalsa) : 'x';
+          out.push({name:'v21 — Badge Salsa: tidak ada order Success terbukti -> belum terselesaikan (badge tampil; kontras dengan Nusantara Tech)', pass: pidSalsa === null && !!invSalsa && invStatus(invSalsa).unresolved === true, exp:'null + unresolved=true', act:'pid=' + String(pidSalsa) + '; unresolved=' + (invSalsa ? invStatus(invSalsa).unresolved : 'null')});
+          const o1008 = S2.orders.find(o => o.id === 'seed-order-8');
+          const invKir = S.invitations.find(i => i.id === 'seed-inv-2');
+          const h1008 = (o1008 && invKir) ? kiOrderTierHold(o1008, invKir) : null;
+          out.push({name:'v21 — KI-2026-1008 (seed, baca saja): order Premium Pending untuk Kirana (template Basic) -> DITAHAN proaktif (expected=basic); snapshot pesanan TIDAK berubah (premium/Rp59.000)', pass: !!h1008 && h1008.held === true && !!h1008.expected && h1008.expected.id === 'basic' && o1008.packageId === 'premium' && o1008.total === 59000, exp:'held=true, expected=basic; snapshot premium/59000', act:'held=' + (h1008 && h1008.held) + '; snapshot=' + o1008.packageId + '/' + o1008.total});
+        } catch(e){ out.push({name:'Uji badge Nusantara Tech + KI-2026-1008 (seed nyata)', pass:false}); }
+      } catch(e){ out.push({name:'Uji v21 (hold proaktif, fail-closed, bukti silang, kode baru, RSVP multi-tamu, rollback jujur, state machine, badge Nusantara)', pass:false}); }
       /* PEMULIHAN ISOLASI (v18): kembalikan SEMUA state sesi yang dapat
          disentuh suite ke snapshot awal — peran, desainer aktif, flag &
          GENERASI grant (grup 11/12 menaikkan generasi lewat
@@ -607,13 +732,284 @@
         const active3 = kiActivePayment(fxOrder3.id) || {};
         const o3 = S2.orders.find(o => o.id === fxOrder3.id) || {};
         out.push({name:'Handler penuh — kode pembayaran: kode percobaan aktif stabil sebelum & sesudah baca ulang koleksi; Failed menutup percobaan 1; Success berikutnya membuat percobaan 2 berkode BARU (percobaan lama tetap Failed)', pass: codeBefore === '8808 1111 2222' && codeAfterReload === codeBefore && att1.status === 'Failed' && pays3.length === 2 && active3.id !== 'fx-p-hdl3' && !!active3.code && active3.code !== '8808 1111 2222' && active3.attempt === 2 && o3.paymentStatus === 'Success', exp:'kode stabil 8808 1111 2222; percobaan1=Failed; percobaan2 aktif berkode baru (attempt=2); pesanan Success', act:'kode=' + codeBefore + ' -> ' + codeAfterReload + '; percobaan1=' + att1.status + '; total record=' + pays3.length + '; aktif attempt=' + active3.attempt + ' kode=' + active3.code + '; pesanan=' + o3.paymentStatus});
+        /* (H8) v21 — HOLD TAMPIL di daftar order + halaman bayar lewat
+           FUNGSI VIEW ASLI (orderCard/viewPay): order Premium Pending
+           untuk undangan Basic menampilkan alasan + "Buat Pesanan
+           Baru" dan TIDAK menampilkan CTA bayar maupun tombol
+           simulasi; order yang cocok tetap menampilkan "Bayar
+           Sekarang" (kontrol). */
+        const fxOrder8 = {id:'fx-o-hdl8', number:'KI-FX-908', invitationId:fxInv2.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder8); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl8', orderId:fxOrder8.id, invitationId:fxInv2.id, method:'Virtual Account', status:'Pending', amount:59000, code:'8808 7777 8888', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        const cardHeld = orderCard(fxOrder8, false);
+        out.push({name:'Handler penuh — hold tampil (daftar order): orderCard order Premium Pending untuk undangan Basic -> menampilkan alasan mismatch + "Buat Pesanan Baru", TANPA "Bayar Sekarang"', pass: cardHeld.indexOf('Pembayaran ditahan') >= 0 && cardHeld.indexOf('Buat Pesanan Baru') >= 0 && cardHeld.indexOf('Bayar Sekarang') < 0, exp:'alasan + Buat Pesanan Baru; tanpa Bayar Sekarang', act:'ditahan=' + (cardHeld.indexOf('Pembayaran ditahan') >= 0) + '; buatBaru=' + (cardHeld.indexOf('Buat Pesanan Baru') >= 0) + '; bayarSekarang=' + (cardHeld.indexOf('Bayar Sekarang') >= 0)});
+        const payHtmlHeld = viewPay(fxOrder8);
+        out.push({name:'Handler penuh — hold tampil (halaman bayar): viewPay order yang sama -> kartu "Pembayaran Ditahan" + "Buat Pesanan Baru yang Sesuai", TANPA tombol "Simulasikan: Pembayaran Berhasil"', pass: payHtmlHeld.indexOf('Pembayaran Ditahan') >= 0 && payHtmlHeld.indexOf('Buat Pesanan Baru yang Sesuai') >= 0 && payHtmlHeld.indexOf('Simulasikan: Pembayaran Berhasil') < 0, exp:'kartu hold; tanpa tombol simulasi bayar', act:'hold=' + (payHtmlHeld.indexOf('Pembayaran Ditahan') >= 0) + '; tombolSimulasi=' + (payHtmlHeld.indexOf('Simulasikan: Pembayaran Berhasil') >= 0)});
+        const fxOrder8ok = {id:'fx-o-hdl8ok', number:'KI-FX-909', invitationId:fxInv2.id, customerId:'cust-1', packageId:'basic', packageName:'Basic', price:29000, discount:0, couponCode:null, total:29000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder8ok); saveColl('orders');
+        const cardOk = orderCard(fxOrder8ok, false);
+        out.push({name:'Handler penuh — hold tampil (kontrol): orderCard order Basic Pending untuk undangan yang sama -> tetap menampilkan "Bayar Sekarang", TANPA alasan ditahan', pass: cardOk.indexOf('Bayar Sekarang') >= 0 && cardOk.indexOf('Pembayaran ditahan') < 0, exp:'Bayar Sekarang tampil; tanpa alasan ditahan', act:'bayar=' + (cardOk.indexOf('Bayar Sekarang') >= 0) + '; ditahan=' + (cardOk.indexOf('Pembayaran ditahan') < 0)});
+        /* (H8b) v21 — FAKTUR membaca SNAPSHOT + checkout memakai tier
+           VERSI: setelah template terkini dinaikkan versinya (simulasi
+           perubahan CMS: versi lama dibekukan di TPL_VERSIONS, entri
+           terkini diganti objek baru tier Premium v2), faktur order
+           lama tetap menampilkan paket/harga snapshot, dan kunci
+           checkout undangan tetap mengikuti versinya sendiri (Basic).
+           Perubahan katalog dipulihkan persis di finally. */
+        const ixConf = TEMPLATES.findIndex(t => t.id === 'confetti-pop');
+        const tplConfOld = TEMPLATES[ixConf];
+        let invHtml8b = '', chkHtml8b = '', chkPkg8b = '', tplName8b = '';
+        try {
+          TPL_VERSIONS['confetti-pop@' + tplConfOld.version] = Object.assign({}, tplConfOld);
+          const tplConfNew = Object.assign({}, tplConfOld, {version: tplConfOld.version + 1, tier:'Premium', price:59000});
+          TEMPLATES[ixConf] = tplConfNew;
+          TPL_VERSIONS['confetti-pop@' + tplConfNew.version] = tplConfNew;
+          invHtml8b = viewInvoice(fxOrder8ok);
+          CO.invId = fxInv2.id; CO.pkgId = 'premium';
+          chkHtml8b = viewCheckout();
+          chkPkg8b = CO.pkgId;
+          tplName8b = (kiInvTemplate(fxInv2) || {}).name || '';
+        } finally {
+          TEMPLATES[ixConf] = tplConfOld;
+          delete TPL_VERSIONS['confetti-pop@' + (tplConfOld.version + 1)];
+          CO.invId = null; CO.pkgId = 'premium';
+        }
+        out.push({name:'Handler penuh — faktur snapshot: setelah template terkini naik ke Premium v2, faktur order Basic lama tetap "Basic" + "Rp29.000" (tidak ikut berubah)', pass: invHtml8b.indexOf('Basic') >= 0 && invHtml8b.indexOf('Rp29.000') >= 0 && invHtml8b.indexOf('Premium') < 0, exp:'Basic + Rp29.000; tanpa Premium', act:'basic=' + (invHtml8b.indexOf('Basic') >= 0) + '; harga=' + (invHtml8b.indexOf('Rp29.000') >= 0) + '; premium=' + (invHtml8b.indexOf('Premium') >= 0)});
+        out.push({name:'Handler penuh — checkout tier versi: setelah bump template, checkout undangan v1 tetap terkunci ke Basic (CO.pkgId diselaraskan dari "premium" paksa ke "basic"; teks kunci menyebut versi undangan)', pass: chkPkg8b === 'basic' && chkHtml8b.indexOf('Paket terkunci ke tier template undangan ini') >= 0 && chkHtml8b.indexOf('Basic (Rp29.000)') >= 0 && kiTemplatePackage(fxInv2).id === 'basic', exp:'CO.pkgId=basic; teks kunci + Basic (Rp29.000); kiTemplatePackage=basic', act:'CO.pkgId=' + chkPkg8b + '; kunci=' + (chkHtml8b.indexOf('Paket terkunci ke tier template undangan ini') >= 0) + '; tier=' + (kiTemplatePackage(fxInv2) || {}).id + '; template=' + tplName8b});
+        /* (H9) v21 — Handler pay-result MENOLAK pembuatan percobaan
+           baru untuk order mismatch: order Premium Failed untuk
+           undangan Basic, percobaan terakhir sudah final -> hasil
+           Expired ditolak handler (tidak ada record baru, status
+           tidak berubah, toast DITOLAK); kontrol bertier cocok
+           justru membuat percobaan baru. */
+        const fxOrder9 = {id:'fx-o-hdl9', number:'KI-FX-910', invitationId:fxInv2.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Failed', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder9); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl9', orderId:fxOrder9.id, invitationId:fxInv2.id, method:'Virtual Account', status:'Failed', amount:59000, code:'8808 9999 0000', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        const pays9Before = S2.payments.filter(p => p.orderId === fxOrder9.id).length;
+        fire({'data-s2':'pay-result', 'data-id':fxOrder9.id, 'data-res':'Expired'});
+        const o9 = S2.orders.find(o => o.id === fxOrder9.id) || {};
+        const pays9After = S2.payments.filter(p => p.orderId === fxOrder9.id).length;
+        const toast9 = (document.getElementById('toast') || {}).textContent || '';
+        out.push({name:'Handler penuh — tolak percobaan baru: pay-result "Expired" pada order Premium Failed untuk undangan Basic -> DITOLAK handler; tidak ada record pembayaran baru, status tetap Failed', pass: pays9After === pays9Before && o9.paymentStatus === 'Failed' && /DITOLAK/.test(toast9), exp:'record tetap 1; paymentStatus=Failed; toast DITOLAK', act:'record=' + pays9After + '; paymentStatus=' + o9.paymentStatus + '; toast="' + toast9.slice(0, 60) + '"'});
+        const fxOrder9ok = {id:'fx-o-hdl9ok', number:'KI-FX-911', invitationId:fxInv2.id, customerId:'cust-1', packageId:'basic', packageName:'Basic', price:29000, discount:0, couponCode:null, total:29000, status:'Menunggu Pembayaran', paymentStatus:'Failed', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder9ok); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl9ok', orderId:fxOrder9ok.id, invitationId:fxInv2.id, method:'Virtual Account', status:'Failed', amount:29000, code:'8808 1111 0000', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        fire({'data-s2':'pay-result', 'data-id':fxOrder9ok.id, 'data-res':'Expired'});
+        const pays9ok = S2.payments.filter(p => p.orderId === fxOrder9ok.id);
+        const o9ok = S2.orders.find(o => o.id === fxOrder9ok.id) || {};
+        out.push({name:'Handler penuh — tolak percobaan baru (kontrol): pay-result "Expired" pada order Basic Failed untuk undangan Basic -> percobaan BARU dibuat (record ke-2, attempt=2), status pesanan Expired', pass: pays9ok.length === 2 && pays9ok[1].attempt === 2 && pays9ok[0].status === 'Failed' && o9ok.paymentStatus === 'Expired', exp:'record=2; attempt ke-2; percobaan1 tetap Failed; pesanan=Expired', act:'record=' + pays9ok.length + '; attempt=' + (pays9ok[1] ? pays9ok[1].attempt : 'null') + '; percobaan1=' + (pays9ok[0] ? pays9ok[0].status : 'null') + '; pesanan=' + o9ok.paymentStatus});
+        /* (H10) v21 — KODE QRIS BARU per percobaan lewat handler asli:
+           percobaan 1 QRIS gagal; percobaan 2 (Success) memakai kode
+           baru 'QRIS-SIM-<nomor>-A2', percobaan 1 tetap Failed. */
+        const fxOrder10 = {id:'fx-o-hdl10', number:'KI-FX-912', invitationId:fxInv.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder10); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl10', orderId:fxOrder10.id, invitationId:fxInv.id, method:'QRIS', status:'Pending', amount:59000, code:'QRIS-SIM-KI-FX-912', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        fire({'data-s2':'pay-result', 'data-id':fxOrder10.id, 'data-res':'Failed'});
+        fire({'data-s2':'pay-result', 'data-id':fxOrder10.id, 'data-res':'Success'});
+        const pays10 = S2.payments.filter(p => p.orderId === fxOrder10.id);
+        const att10a = pays10.find(p => p.id === 'fx-p-hdl10') || {};
+        const act10 = kiActivePayment(fxOrder10.id) || {};
+        const o10 = S2.orders.find(o => o.id === fxOrder10.id) || {};
+        out.push({name:'Handler penuh — kode QRIS baru: percobaan 1 Failed (kode QRIS-SIM-KI-FX-912); percobaan 2 Success berkode BARU QRIS-SIM-KI-FX-912-A2 (attempt=2); percobaan lama tetap Failed', pass: pays10.length === 2 && att10a.status === 'Failed' && att10a.code === 'QRIS-SIM-KI-FX-912' && act10.code === 'QRIS-SIM-KI-FX-912-A2' && act10.attempt === 2 && o10.paymentStatus === 'Success', exp:'percobaan1=Failed; aktif=QRIS-SIM-KI-FX-912-A2 (attempt 2); pesanan=Success', act:'record=' + pays10.length + '; percobaan1=' + att10a.status + '; aktif=' + act10.code + ' (attempt ' + act10.attempt + '); pesanan=' + o10.paymentStatus});
+        /* (H11) v21 — RSVP DUA TAMU BERNAMA SAMA + UBAH NAMA + GAGAL
+           PER TAHAP lewat listener submit ASLI pada rute publik
+           undangan fixture baru (slug fx-handler-3). */
+        const fxInv3 = {id:'fx-inv-hdl3', templateId:'luxury-ivory', templateVersion:1, slug:'fx-handler-3', title:'Fixture RSVP Nama Sama', categoryId:'pernikahan', status:'published', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:Date.now()};
+        S.invitations.push(fxInv3);
+        location.hash = '#/u/fx-handler-3';
+        const zone11 = document.createElement('div');
+        zone11.setAttribute('data-rsvp-zone', '');
+        document.body.appendChild(zone11);
+        const submitForm11 = (name, status, msg) => {
+          const f = zone11.querySelector('form[data-rsvp-form]');
+          if (!f) return false;
+          f.querySelector('input[name="name"]').value = name;
+          const seg = f.querySelector('[data-seg] button[data-val="' + status + '"]');
+          if (seg && !seg.classList.contains('on')) seg.click();
+          const ta = f.querySelector('textarea[name="message"]');
+          if (ta) ta.value = msg;
+          f.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true}));
+          return true;
+        };
+        zone11.innerHTML = rsvpFormHTML({mode:'public', webIdentity:true});
+        submitForm11('Sari', 'Hadir', 'pesan-sari-1');
+        const newBtn11 = zone11.querySelector('[data-rsvp-new-person]');
+        if (newBtn11) newBtn11.click();
+        submitForm11('Sari', 'Tidak Hadir', '');
+        const gs11 = S2.guests.filter(g => g.invitationId === fxInv3.id);
+        const rs11 = S2.rsvps.filter(r => r.invitationId === fxInv3.id);
+        const gSari1 = gs11.find(g => g.name === 'Sari' && (S2.rsvps.find(r => r.guestId === g.id) || {}).status === 'Hadir');
+        const gSari2 = gs11.find(g => g.name === 'Sari' && (S2.rsvps.find(r => r.guestId === g.id) || {}).status === 'Tidak Hadir');
+        out.push({name:'Handler penuh — RSVP nama sama: dua orang bernama "Sari" pada satu perangkat -> DUA tamu + DUA RSVP terpisah (Hadir & Tidak Hadir); tidak ada yang menimpa', pass: gs11.length === 2 && rs11.length === 2 && !!gSari1 && !!gSari2 && gSari1.id !== gSari2.id, exp:'tamu=2 (keduanya "Sari"); rsvp=2 (Hadir + Tidak Hadir)', act:'tamu=' + gs11.length + '; rsvp=' + rs11.length});
+        const editBtn11 = zone11.querySelector('[data-rsvp-edit]');
+        if (editBtn11) editBtn11.click();
+        submitForm11('Sari Wijaya', 'Tidak Hadir', '');
+        const gs11b = S2.guests.filter(g => g.invitationId === fxInv3.id);
+        const rSari1b = gSari1 ? S2.rsvps.find(r => r.guestId === gSari1.id) : null;
+        const gSari2b = gs11b.find(g => g.name === 'Sari Wijaya');
+        const rSari2b = gSari2b ? S2.rsvps.find(r => r.guestId === gSari2b.id) : null;
+        out.push({name:'Handler penuh — RSVP ubah nama: orang kedua mengubah nama jadi "Sari Wijaya" -> nama kanonis tamu + snapshot RSVP-nya berubah; orang pertama tetap "Sari" (Hadir) utuh', pass: gs11b.length === 2 && !!gSari2b && !!rSari2b && rSari2b.name === 'Sari Wijaya' && !!rSari1b && rSari1b.name === 'Sari' && rSari1b.status === 'Hadir', exp:'tamu=2; orang2=Sari Wijaya; orang1=Sari/Hadir utuh', act:'tamu=' + gs11b.length + '; orang2=' + (gSari2b ? gSari2b.name : 'null') + '; orang1=' + (rSari1b ? rSari1b.name + '/' + rSari1b.status : 'null')});
+        const origSet11 = Storage.prototype.setItem;
+        const failOnceFor11 = (key) => { let left = 1; Storage.prototype.setItem = function(k, v){ if (k === key && left-- > 0) throw new Error('quota-fixture'); return origSet11.call(this, k, v); }; };
+        const unFail11 = () => { Storage.prototype.setItem = origSet11; };
+        const stages11 = [
+          {key:K2.guests, label:'guests'},
+          {key:K2.rsvps, label:'rsvps'},
+          {key:K2.activity, label:'activity'},
+          {key:K2.notifications, label:'notifications'},
+        ];
+        const stageResults = [];
+        stages11.forEach((stg, si) => {
+          zone11.innerHTML = rsvpFormHTML({mode:'public', existingRsvp:{name:'Sari Wijaya', status:'Tidak Hadir', count:0, message:''}, webIdentity:true});
+          const eb = zone11.querySelector('[data-rsvp-edit]');
+          if (eb) eb.click();
+          failOnceFor11(stg.key);
+          let okSubmit = false;
+          try { okSubmit = submitForm11('Sari Wijaya', 'Tidak Hadir', 'pesan-gagal-' + si); } finally { unFail11(); }
+          const zoneTxt = zone11.textContent || '';
+          const gAfter = S2.guests.find(g => g.id === (gSari2b && gSari2b.id));
+          const rAfter = gAfter ? S2.rsvps.find(r => r.guestId === gAfter.id) : null;
+          stageResults.push({stage:stg.label, ok: okSubmit && zoneTxt.indexOf('Respons gagal disimpan') >= 0 && zoneTxt.indexOf('rollback juga gagal') < 0 && S2.guests.filter(g => g.invitationId === fxInv3.id).length === 2 && !!gAfter && gAfter.name === 'Sari Wijaya' && !!rAfter && (rAfter.message || '') === ''});
+        });
+        out.push({name:'Handler penuh — RSVP gagal per tahap: simpan guests/rsvps/activity/notifications GAGAL satu per satu -> submit ditolak, rollback pulih (pesan lama utuh), TANPA klaim sukses', pass: stageResults.every(x => x.ok), exp:'4 tahap: gagal disimpan + rollback pulih + pesan lama utuh', act: stageResults.map(x => x.stage + '=' + (x.ok ? 'OK' : 'GAGAL')).join('; ')});
+        const fxInv3b = {id:'fx-inv-hdl3b', templateId:'luxury-ivory', templateVersion:1, slug:'fx-handler-3b', title:'Fixture RSVP Identitas', categoryId:'pernikahan', status:'published', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:Date.now()};
+        S.invitations.push(fxInv3b);
+        location.hash = '#/u/fx-handler-3b';
+        const zone11d = document.createElement('div');
+        zone11d.setAttribute('data-rsvp-zone', '');
+        document.body.appendChild(zone11d);
+        zone11d.innerHTML = rsvpFormHTML({mode:'public', webIdentity:true});
+        const respKey3b = kiRespondentKey(fxInv3b.id);
+        failOnceFor11(respKey3b);
+        let okId = false;
+        try {
+          const fId = zone11d.querySelector('form[data-rsvp-form]');
+          if (fId){ fId.querySelector('input[name="name"]').value = 'Orang Identitas'; fId.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true})); okId = true; }
+        } finally { unFail11(); }
+        const rawAfterId = kiRespondentRaw(fxInv3b.id);
+        const guests3b = S2.guests.filter(g => g.invitationId === fxInv3b.id);
+        out.push({name:'Handler penuh — RSVP gagal identitas: tulis token responden pertama GAGAL -> submit ditolak, token TIDAK tertinggal, tidak ada tamu/RSVP tercipta', pass: okId && rawAfterId === null && guests3b.length === 0 && (zone11d.textContent || '').indexOf('Respons gagal disimpan') >= 0, exp:'token=null; tamu=0; gagal disimpan', act:'token=' + String(rawAfterId) + '; tamu=' + guests3b.length});
+        zone11d.innerHTML = rsvpFormHTML({mode:'public', webIdentity:true});
+        const origSetRb = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(){ throw new Error('quota-fixture'); };
+        let okRb = false;
+        try {
+          const fRb = zone11d.querySelector('form[data-rsvp-form]');
+          if (fRb){ fRb.querySelector('input[name="name"]').value = 'Orang Rollback'; fRb.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true})); okRb = true; }
+        } finally { Storage.prototype.setItem = origSetRb; }
+        const guests3bRb = S2.guests.filter(g => g.invitationId === fxInv3b.id);
+        out.push({name:'Handler penuh — RSVP gagal simpan + gagal rollback: semua penulisan gagal -> zona menampilkan "rollback juga gagal" (tidak diklaim pulih); memori tidak menyimpan tamu baru', pass: okRb && (zone11d.textContent || '').indexOf('rollback juga gagal') >= 0 && guests3bRb.length === 0, exp:'"rollback juga gagal"; tamu=0', act:'zona=' + ((zone11d.textContent || '').indexOf('rollback juga gagal') >= 0) + '; tamu=' + guests3bRb.length});
+        zone11d.remove();
+        zone11.remove();
+        try { history.replaceState(null, '', origHash); } catch(e){ location.hash = origHash; }
+        /* (H12) v21 — ROLLBACK JUJUR multi-koleksi lewat handler asli:
+           hapus tamu + penugasan dengan kegagalan simpan dan kegagalan
+           tulis-balik yang dipisah (override setItem). */
+        const fxGuest12 = {id:'fx-g-hdl12', invitationId:fxInv.id, name:'Tamu Hapus', group:'Teman', contact:'', rsvpStatus:'Hadir', attendees:1, code:'T9001', createdAt:Date.now()};
+        S2.guests.push(fxGuest12); saveColl('guests');
+        S2.rsvps.push({id:'fx-r-hdl12', guestId:fxGuest12.id, invitationId:fxInv.id, name:'Tamu Hapus', status:'Hadir', count:1, message:'', at:Date.now(), moderation:'approved'}); saveColl('rsvps');
+        fire({'data-s2':'guest-del', 'data-id':fxGuest12.id});
+        const modal12 = document.querySelector('#s2-modal-ok');
+        let delOk = false, delToast = '';
+        if (modal12){
+          const origSet12 = Storage.prototype.setItem;
+          let left12 = 1;
+          Storage.prototype.setItem = function(k, v){ if (k === K2.rsvps && left12-- > 0) throw new Error('quota-fixture'); return origSet12.call(this, k, v); };
+          try { modal12.click(); } finally { Storage.prototype.setItem = origSet12; }
+          let gSto = null;
+          try { gSto = (JSON.parse(store.getItem(K2.guests) || '[]').find(g => g.id === fxGuest12.id) || null); } catch(e){}
+          delToast = (document.getElementById('toast') || {}).textContent || '';
+          delOk = !!S2.guests.find(g => g.id === fxGuest12.id) && !!gSto && delToast.indexOf('dikembalikan seperti semula') >= 0;
+        }
+        out.push({name:'Handler penuh — rollback jujur (hapus tamu): simpan rsvps GAGAL sekali -> tamu + RSVP dipulihkan di memori & storage; toast "dikembalikan seperti semula"', pass: delOk, exp:'tamu ada di memori & storage; toast pulih', act:'memori=' + !!S2.guests.find(g => g.id === fxGuest12.id) + '; toast="' + delToast.slice(0, 50) + '"'});
+        fire({'data-s2':'guest-del', 'data-id':fxGuest12.id});
+        const modal12b = document.querySelector('#s2-modal-ok');
+        let delRbOk = false, delRbToast = '';
+        if (modal12b){
+          const origSet12b = Storage.prototype.setItem;
+          Storage.prototype.setItem = function(k, v){ if (k === K2.rsvps) throw new Error('quota-fixture'); return origSet12b.call(this, k, v); };
+          try { modal12b.click(); } finally { Storage.prototype.setItem = origSet12b; }
+          delRbToast = (document.getElementById('toast') || {}).textContent || '';
+          delRbOk = !!S2.guests.find(g => g.id === fxGuest12.id) && delRbToast.indexOf('TIDAK terverifikasi') >= 0;
+        }
+        out.push({name:'Handler penuh — rollback jujur (hapus tamu, tulis-balik gagal): simpan + tulis-balik rsvps GAGAL -> tamu tetap di memori, toast "rollback persisten TIDAK terverifikasi" (tidak diklaim pulih)', pass: delRbOk, exp:'tamu di memori; toast TIDAK terverifikasi', act:'memori=' + !!S2.guests.find(g => g.id === fxGuest12.id) + '; toast="' + delRbToast.slice(0, 60) + '"'});
+        const roleBak12 = S2.role;
+        const fxSvc12 = {id:'fx-svc-hdl12', number:'REQ-FX-12', customerId:'cust-1', title:'Fixture Assign Rollback', status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:fxInv.id, orderId:fxOrder.id, createdAt:Date.now(), updatedAt:Date.now()};
+        S2.services.push(fxSvc12); saveColl('services');
+        S2.role = 'admin';
+        try { window.__kiAdminWrite = true; } catch(e){}
+        const fireAssign12 = (val) => { const sel = document.createElement('select'); sel.setAttribute('data-s2-assign', fxSvc12.id); sel.innerHTML = '<option value=""></option><option value="des-1">Rani</option><option value="des-2">Dewa</option>'; sel.value = val; document.body.appendChild(sel); sel.dispatchEvent(new Event('change', {bubbles:true})); sel.remove(); };
+        const origSetA = Storage.prototype.setItem;
+        let leftA = 1;
+        Storage.prototype.setItem = function(k, v){ if (k === K2.services && leftA-- > 0) throw new Error('quota-fixture'); return origSetA.call(this, k, v); };
+        try { fireAssign12('des-1'); } finally { Storage.prototype.setItem = origSetA; }
+        const svc12a = S2.services.find(s => s.id === fxSvc12.id) || {};
+        const toastA = (document.getElementById('toast') || {}).textContent || '';
+        out.push({name:'Handler penuh — rollback jujur (penugasan): simpan services GAGAL sekali -> status/desainer dipulihkan; toast "dikembalikan seperti semula"', pass: svc12a.status === 'New' && svc12a.designerId === null && toastA.indexOf('dikembalikan seperti semula') >= 0, exp:'status=New; desainer=null; toast pulih', act:'status=' + svc12a.status + '; toast="' + toastA.slice(0, 50) + '"'});
+        const origSetB = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(k, v){ if (k === K2.services) throw new Error('quota-fixture'); return origSetB.call(this, k, v); };
+        try { fireAssign12('des-1'); } finally { Storage.prototype.setItem = origSetB; }
+        const svc12b = S2.services.find(s => s.id === fxSvc12.id) || {};
+        const toastB = (document.getElementById('toast') || {}).textContent || '';
+        out.push({name:'Handler penuh — rollback jujur (penugasan, tulis-balik gagal): simpan + tulis-balik services GAGAL -> status/desainer tetap dipulihkan di memori; toast "TIDAK terverifikasi"', pass: svc12b.status === 'New' && svc12b.designerId === null && toastB.indexOf('TIDAK terverifikasi') >= 0, exp:'status=New; desainer=null; toast TIDAK terverifikasi', act:'status=' + svc12b.status + '; toast="' + toastB.slice(0, 60) + '"'});
+        S2.role = roleBak12;
+        try { window.__kiAdminWrite = false; } catch(e){}
+        /* (H13) v21 — STATE MACHINE Assisted Design lewat handler
+           penugasan ASLI (event change pada select [data-s2-assign]):
+           penugasan butuh bukti Paid yang SAMA; unassign hanya dari
+           state yang diizinkan; berjalan/terminal ditolak. */
+        const roleBak13 = S2.role;
+        S2.role = 'admin';
+        try { window.__kiAdminWrite = true; } catch(e){}
+        const fireAssign13 = (svcId, val) => { const sel = document.createElement('select'); sel.setAttribute('data-s2-assign', svcId); sel.innerHTML = '<option value=""></option><option value="des-1">Rani</option><option value="des-2">Dewa</option>'; sel.value = val; document.body.appendChild(sel); sel.dispatchEvent(new Event('change', {bubbles:true})); sel.remove(); };
+        const fxSvc13a = {id:'fx-svc-hdl13a', number:'REQ-FX-13A', customerId:'cust-1', title:'Fixture Tanpa Bayar', status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:fxInv.id, orderId:null, createdAt:Date.now(), updatedAt:Date.now()};
+        S2.services.push(fxSvc13a); saveColl('services');
+        fireAssign13(fxSvc13a.id, 'des-1');
+        const s13a = S2.services.find(s => s.id === fxSvc13a.id) || {};
+        out.push({name:'Handler penuh — state machine: penugasan proyek New TANPA pesanan/bukti Paid -> DITOLAK handler (status tetap New, tanpa desainer)', pass: s13a.status === 'New' && s13a.designerId === null, exp:'status=New; desainer=null', act:'status=' + s13a.status + '; desainer=' + s13a.designerId});
+        const fxSvc13b = {id:'fx-svc-hdl13b', number:'REQ-FX-13B', customerId:'cust-1', title:'Fixture Berbayar', status:'New', designerId:null, revisions:[], internalNotes:[], invitationId:fxInv.id, orderId:fxOrder.id, createdAt:Date.now(), updatedAt:Date.now()};
+        S2.services.push(fxSvc13b); saveColl('services');
+        fireAssign13(fxSvc13b.id, 'des-1');
+        const s13b = S2.services.find(s => s.id === fxSvc13b.id) || {};
+        out.push({name:'Handler penuh — state machine: penugasan proyek New DENGAN bukti Paid tertaut (order + undangan sama) -> Assigned ke des-1', pass: s13b.status === 'Assigned' && s13b.designerId === 'des-1', exp:'status=Assigned; desainer=des-1', act:'status=' + s13b.status + '; desainer=' + s13b.designerId});
+        fireAssign13(fxSvc13b.id, '');
+        const s13b2 = S2.services.find(s => s.id === fxSvc13b.id) || {};
+        out.push({name:'Handler penuh — state machine: lepas desainer ("Lepas desainer") dari Assigned + bukti Paid -> kembali Paid, desainer dilepas', pass: s13b2.status === 'Paid' && s13b2.designerId === null, exp:'status=Paid; desainer=null', act:'status=' + s13b2.status + '; desainer=' + s13b2.designerId});
+        const fxSvc13c = {id:'fx-svc-hdl13c', number:'REQ-FX-13C', customerId:'cust-1', title:'Fixture Berjalan', status:'In Progress', designerId:'des-1', revisions:[], internalNotes:[], invitationId:fxInv.id, orderId:fxOrder.id, createdAt:Date.now(), updatedAt:Date.now()};
+        S2.services.push(fxSvc13c); saveColl('services');
+        fireAssign13(fxSvc13c.id, '');
+        const s13c = S2.services.find(s => s.id === fxSvc13c.id) || {};
+        out.push({name:'Handler penuh — state machine: lepas desainer dari In Progress -> DITOLAK handler (status + desainer tidak berubah)', pass: s13c.status === 'In Progress' && s13c.designerId === 'des-1', exp:'status=In Progress; desainer=des-1', act:'status=' + s13c.status + '; desainer=' + s13c.designerId});
+        const fxSvc13d = {id:'fx-svc-hdl13d', number:'REQ-FX-13D', customerId:'cust-1', title:'Fixture Terminal', status:'Approved', designerId:'des-1', revisions:[], internalNotes:[], invitationId:fxInv.id, orderId:fxOrder.id, createdAt:Date.now(), updatedAt:Date.now()};
+        S2.services.push(fxSvc13d); saveColl('services');
+        fireAssign13(fxSvc13d.id, 'des-2');
+        const s13d = S2.services.find(s => s.id === fxSvc13d.id) || {};
+        out.push({name:'Handler penuh — state machine: penugasan/penggantian desainer dari Approved (terminal) -> DITOLAK handler (desainer tetap des-1)', pass: s13d.status === 'Approved' && s13d.designerId === 'des-1', exp:'status=Approved; desainer=des-1', act:'status=' + s13d.status + '; desainer=' + s13d.designerId});
+        S2.role = roleBak13;
+        try { window.__kiAdminWrite = false; } catch(e){}
+        /* (H14) v21 — Order batal TERMINAL untuk SEMUA hasil lewat
+           handler pay-result asli: Success/Failed/Expired semuanya
+           ditolak, tidak ada record baru, tidak ada status berubah. */
+        const fxOrder14 = {id:'fx-o-hdl14', number:'KI-FX-914', invitationId:fxInv.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Pending', createdAt:Date.now()};
+        S2.orders.unshift(fxOrder14); saveColl('orders');
+        S2.payments.push({id:'fx-p-hdl14', orderId:fxOrder14.id, invitationId:fxInv.id, method:'Virtual Account', status:'Pending', amount:59000, code:'8808 1212 3434', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        fire({'data-s2':'order-cancel', 'data-id':fxOrder14.id});
+        const modal14 = document.querySelector('#s2-modal-ok');
+        if (modal14) modal14.click();
+        const o14c = S2.orders.find(o => o.id === fxOrder14.id) || {};
+        fire({'data-s2':'pay-result', 'data-id':fxOrder14.id, 'data-res':'Success'});
+        fire({'data-s2':'pay-result', 'data-id':fxOrder14.id, 'data-res':'Failed'});
+        fire({'data-s2':'pay-result', 'data-id':fxOrder14.id, 'data-res':'Expired'});
+        const o14 = S2.orders.find(o => o.id === fxOrder14.id) || {};
+        const pays14 = S2.payments.filter(p => p.orderId === fxOrder14.id);
+        out.push({name:'Handler penuh — batal terminal: order dibatalkan lewat handler, lalu pay-result Success/Failed/Expired SEMUA ditolak -> status tetap Dibatalkan, paymentStatus tetap Pending, tidak ada record pembayaran baru', pass: o14c.status === 'Dibatalkan' && o14.status === 'Dibatalkan' && o14.paymentStatus === 'Pending' && pays14.length === 1, exp:'status=Dibatalkan; paymentStatus=Pending; record=1', act:'status=' + o14.status + '; paymentStatus=' + o14.paymentStatus + '; record=' + pays14.length});
       } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); }
-      S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl' && i.id !== 'fx-inv-hdl2');
+      S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-hdl' && i.id !== 'fx-inv-hdl2' && i.id !== 'fx-inv-hdl3' && i.id !== 'fx-inv-hdl3b');
       Object.assign(CO, coBak);
       S2.role = roleBak;
       restoreStore();
       kiRefreshCollections();
       const isoOk = store ? Object.keys(dump).every(k => store.getItem(k) === dump[k]) : false;
-      out.push({name:'Handler penuh — isolasi: storage pulih byte-per-byte sesudah suite handler; peran & state checkout dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && !S2.orders.some(o => o.id === 'fx-o-hdl' || o.id === 'fx-o-hdl2' || o.id === 'fx-o-hdl3') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl' || g.invitationId === 'fx-inv-hdl2') && !S.invitations.some(i => i.id === 'fx-inv-hdl' || i.id === 'fx-inv-hdl2')});
+      out.push({name:'Handler penuh — isolasi: storage pulih byte-per-byte sesudah suite handler; peran & state checkout dipulihkan; tidak ada record fixture tertinggal di koleksi maupun daftar undangan', pass: isoOk && S2.role === roleBak && !S2.orders.some(o => o.id === 'fx-o-hdl' || o.id === 'fx-o-hdl2' || o.id === 'fx-o-hdl3' || o.id === 'fx-o-hdl8' || o.id === 'fx-o-hdl8ok' || o.id === 'fx-o-hdl9' || o.id === 'fx-o-hdl9ok' || o.id === 'fx-o-hdl10' || o.id === 'fx-o-hdl14') && !S2.services.some(s => s.id === 'fx-svc-hdl' || s.id === 'fx-svc-hdl2' || s.id === 'fx-svc-hdl12' || s.id === 'fx-svc-hdl13a' || s.id === 'fx-svc-hdl13b' || s.id === 'fx-svc-hdl13c' || s.id === 'fx-svc-hdl13d') && !S2.guests.some(g => g.invitationId === 'fx-inv-hdl' || g.invitationId === 'fx-inv-hdl2' || g.invitationId === 'fx-inv-hdl3' || g.invitationId === 'fx-inv-hdl3b') && !S.invitations.some(i => i.id === 'fx-inv-hdl' || i.id === 'fx-inv-hdl2' || i.id === 'fx-inv-hdl3' || i.id === 'fx-inv-hdl3b')});
       return out;
     }

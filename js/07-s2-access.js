@@ -215,11 +215,16 @@
       /* v19: order Success pun TIDAK meloloskan gerbang bila paketnya
          tidak cocok dengan tier template versi undangan ini
          (kiOrderTierGate) — order Pending/Success lama dari sebelum
-         checkout dikunci tidak boleh mengaktifkan paket yang salah. */
-      if (os.some(o => linkedSuccessPayment(o, inv.id) && !kiOrderTierGate(o, inv).mismatch)) return null;
+         checkout dikunci tidak boleh mengaktifkan paket yang salah.
+         v21: order Success yang tiernya TAK TERBUKTI juga tidak
+         meloloskan gerbang (fail closed — bukan "cocok"). */
+      const gatePass = o => { const g = kiOrderTierGate(o, inv); return !g.mismatch && !g.unresolved; };
+      if (os.some(o => linkedSuccessPayment(o, inv.id) && gatePass(o))) return null;
       if (!os.length) return { noOrder:true, number:null };
       const held = os.filter(o => o.paymentStatus === 'Success' && kiOrderTierGate(o, inv).mismatch).sort((a, b) => b.createdAt - a.createdAt)[0];
       if (held) return Object.assign({}, held, {tierMismatch:true});
+      const heldUnres = os.filter(o => o.paymentStatus === 'Success' && kiOrderTierGate(o, inv).unresolved).sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (heldUnres) return Object.assign({}, heldUnres, {tierUnresolved:true});
       return os.slice().sort((a, b) => b.createdAt - a.createdAt)[0];
     }
     /* Record pembayaran Success yang SAH untuk sebuah pesanan: record-nya
@@ -259,6 +264,12 @@
          sebagai bukti — order lama bertier salah tidak pernah menjadi
          dasar penetapan packageId, walau statusnya Success. */
       const exp = inv ? kiTemplatePackage(inv) : null;
+      /* v21: bila record undangan DIBERIKAN tetapi tiernya tidak dapat
+         dibuktikan, hasilnya null = belum terselesaikan — paket tidak
+         pernah ditebak dari order mana pun. Bila record undangan TIDAK
+         diberikan (pemanggil tidak memilikinya), aturan lama berlaku:
+         order Success tertaut apa pun dihitung sebagai bukti. */
+      if (inv && !exp) return null;
       (orders || []).forEach(o => { if (o && o.invitationId === invId && o.packageId && linkedSuccessPayment(o, invId, payments) && (!exp || o.packageId === exp.id)) proven.add(o.packageId); });
       return proven.size === 1 ? Array.from(proven)[0] : null;
     }
@@ -293,17 +304,41 @@
       if (!t || !t.tier) return null;
       return pkgById(String(t.tier).toLowerCase()) || DB.packages.find(p => p.name === t.tier) || null;
     }
-    /* Gerbang tier pesanan (v19) — dipakai handler hasil pembayaran,
-       payment gate, dan resolver paket: sebuah pesanan MISMATCH bila
-       paket pada snapshot pesanan berbeda dari paket tier template
-       VERSI undangan pemiliknya. Snapshot pesanan (packageId/harga/
-       total) TIDAK pernah ditulis ulang oleh gerbang ini — mismatch
-       hanya menahan aktivasi dan menandai pesanan untuk dibuat ulang. */
+    /* Gerbang tier pesanan (v19, diperketat v21) — dipakai handler hasil
+       pembayaran, payment gate, resolver paket, dan tampilan penahanan:
+       sebuah pesanan MISMATCH bila paket pada snapshot pesanan berbeda
+       dari paket tier template VERSI undangan pemiliknya. Snapshot
+       pesanan (packageId/harga/total) TIDAK pernah ditulis ulang oleh
+       gerbang ini — mismatch hanya menahan aktivasi dan menandai
+       pesanan untuk dibuat ulang.
+       v21 — FAIL CLOSED: bila paket tier template VERSI undangan TIDAK
+       DAPAT DIBUKTIKAN (template tidak dikenal / tanpa tier), hasilnya
+       {mismatch:false, expected:null, unresolved:true} — pemanggil
+       WAJIB memperlakukannya sebagai DITAHAN, bukan "cocok". Tanpa
+       field ini, order dengan tier tak terbukti lolos gerbang begitu
+       saja (fail-open). */
     function kiOrderTierGate(o, inv){
-      if (!o || !inv) return {mismatch:false, expected:null};
+      if (!o || !inv) return {mismatch:false, expected:null, unresolved:true};
       const exp = kiTemplatePackage(inv);
-      if (!exp) return {mismatch:false, expected:null};
-      return {mismatch: o.packageId !== exp.id, expected:exp};
+      if (!exp) return {mismatch:false, expected:null, unresolved:true};
+      return {mismatch: o.packageId !== exp.id, expected:exp, unresolved:false};
+    }
+    /* Penahanan tier PROAKTIF untuk tampilan (v21) — dihitung dari tier
+       template VERSI undangan, BUKAN dari flag needsNewOrder yang baru
+       muncul setelah percobaan bayar ditahan. Order yang paketnya tak
+       cocok — atau tiernya tak terbukti — dan pembayarannya masih
+       mungkin (Pending/Failed/Expired) DITAHAN sebelum pengguna bisa
+       membayar: daftar order + halaman bayar menampilkan alasan, CTA
+       "Bayar Sekarang" tidak ditampilkan, dan handler menolak
+       pembuatan percobaan baru. Order Success sudah lunas (riwayat)
+       tidak ditahan di sini — aktivasinya sudah terjadi dan snapshot/
+       historinya tidak ditulis ulang. */
+    function kiOrderTierHold(o, inv){
+      if (!o || !inv) return {held:false, expected:null, unresolved:false};
+      const g = kiOrderTierGate(o, inv);
+      if (o.paymentStatus === 'Success') return {held:false, expected:g.expected, unresolved:!!g.unresolved};
+      if (g.mismatch || g.unresolved) return {held:true, expected:g.expected, unresolved:!!g.unresolved};
+      return {held:false, expected:g.expected, unresolved:false};
     }
     /* Record pembayaran AKTIF sebuah pesanan (v19): percobaan terakhir
        dalam urutan pembuatan. Semua permukaan (halaman bayar, faktur,
@@ -341,6 +376,21 @@
       const rbOk = sv('orders');
       return {ok:false, rollbackOk: rbOk === true};
     }
+    /* (v21) PEMULIHAN MULTI-KOLEKSI YANG JUJUR — dipakai handler yang
+       mengubah ≥2 koleksi sekaligus (hapus undangan, hapus tamu,
+       transisi layanan, penugasan, formulir tamu/layanan, checkout).
+       Snapshot dipulihkan ke memori, lalu SETIAP koleksi ditulis
+       kembali ke storage; hasilnya true HANYA bila SEMUA penulisan
+       pemulihan berhasil. Pemanggil WAJIB membedakan toast "pulih"
+       dari "rollback tidak terverifikasi — muat ulang dan periksa
+       status sebenarnya sebelum mencoba lagi". saveFn dapat disuntikkan
+       fixture untuk mensimulasikan kegagalan tulis-balik per koleksi. */
+    function kiRollbackCollections(snap, saveFn){
+      const sv = saveFn || saveColl;
+      let ok = true;
+      Object.keys(snap).forEach(name => { S2[name] = snap[name]; ok = sv(name) && ok; });
+      return ok;
+    }
     /* (3) BUKTI LUNAS UNTUK REKONSILIASI LAYANAN — dipakai SEMUA jalur
        rekonsiliasi status layanan (penyelaras muat-ulang alignServicePaid
        dan penajuan New→Paid di handler pay-result), bukan hanya
@@ -362,8 +412,9 @@
       if (o.invitationId !== s.invitationId) return null;
       /* v19: Success dari pesanan yang paketnya tidak cocok dengan
          tier template versi undangan ini juga TIDAK menjadi bukti —
-         hasil pembayaran pesanan semacam itu ditahan di handler. */
-      try { const iv = (typeof S !== 'undefined' && S.invitations || []).find(i => i.id === s.invitationId); if (iv && kiOrderTierGate(o, iv).mismatch) return null; } catch(e){}
+         hasil pembayaran pesanan semacam itu ditahan di handler.
+         v21: tier yang TAK TERBUKTI juga bukan bukti (fail closed). */
+      try { const iv = (typeof S !== 'undefined' && S.invitations || []).find(i => i.id === s.invitationId); if (iv){ const g = kiOrderTierGate(o, iv); if (g.mismatch || g.unresolved) return null; } } catch(e){}
       return linkedSuccessPayment(o, s.invitationId, pays);
     }
     /* (6) KEPUTUSAN NAMA RSVP (v18, ditegaskan): nama pada record RSVP

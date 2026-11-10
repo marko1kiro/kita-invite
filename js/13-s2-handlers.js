@@ -19,12 +19,15 @@
       if (ok) ok = logAct('Undangan “' + inv.title + '” dihapus beserta tamu & RSVP-nya.', 'customer', inv.ownerId || CURRENT_USER);
       if (!ok){
         if (ix >= 0) S.invitations.splice(ix, 0, inv);
-        S2.guests = gSnap; S2.rsvps = rSnap; S2.activity = aSnap;
-        saveColl('guests'); saveColl('rsvps'); saveColl('activity');
-        persistInvitationNow(inv);
-        return false;
+        /* v21: pemulihan multi-koleksi ditulis balik dan DIPERIKSA
+           (kiRollbackCollections + persistensi record undangan) —
+           rollbackOk=false berarti pemulihan tidak terverifikasi dan
+           dilaporkan apa adanya oleh pemanggil, bukan diklaim pulih. */
+        const rbOk = kiRollbackCollections({guests:gSnap, rsvps:rSnap, activity:aSnap});
+        const okInvRb = persistInvitationNow(inv);
+        return {ok:false, rollbackOk: rbOk && okInvRb};
       }
-      return true;
+      return {ok:true, rollbackOk:true};
     }
     document.addEventListener('click', e => {
       const el = e.target.closest('[data-s2]');
@@ -61,7 +64,7 @@
       if (act === 'inv-delete'){
         const inv = S.invitations.find(i => i.id === id); if (!inv) return;
         if (!ownGuard(inv)) return;
-        showModal({title:'Hapus undangan ini?', danger:true, confirmLabel:'Ya, Hapus Permanen', body:'Undangan <b>' + esc(inv.title) + '</b> beserta seluruh tamu dan RSVP-nya akan dihapus permanen dari perangkat ini. Pesanan lama tetap tersimpan sebagai riwayat. Tindakan ini tidak dapat dibatalkan.', onConfirm:() => { if (!ownGuard(inv)) return; if (!deleteInvitationCascade(inv)){ toast('Penghapusan GAGAL disimpan — seluruh data undangan, tamu, dan RSVP dikembalikan seperti semula (tidak ada penghapusan parsial).', true); rerender2(); return; } toast('Undangan dihapus'); rerender2(); }});
+        showModal({title:'Hapus undangan ini?', danger:true, confirmLabel:'Ya, Hapus Permanen', body:'Undangan <b>' + esc(inv.title) + '</b> beserta seluruh tamu dan RSVP-nya akan dihapus permanen dari perangkat ini. Pesanan lama tetap tersimpan sebagai riwayat. Tindakan ini tidak dapat dibatalkan.', onConfirm:() => { if (!ownGuard(inv)) return; const del = deleteInvitationCascade(inv); if (!del.ok){ toast(del.rollbackOk ? 'Penghapusan GAGAL disimpan — seluruh data undangan, tamu, dan RSVP dikembalikan seperti semula (tidak ada penghapusan parsial).' : 'Penghapusan GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar undangan sebelum mencoba lagi.', true); rerender2(); return; } toast('Undangan dihapus'); rerender2(); }});
         return;
       }
       /* Tamu */
@@ -79,7 +82,7 @@
           S2.guests = S2.guests.filter(x => x.id !== id);
           S2.rsvps = S2.rsvps.filter(r => r.guestId !== id);
           let okDel = saveColl('guests'); okDel = saveColl('rsvps') && okDel;
-          if (!okDel){ S2.guests = gSnap; S2.rsvps = rSnap; saveColl('guests'); saveColl('rsvps'); toast('Penghapusan tamu GAGAL disimpan — tamu dan RSVP-nya dikembalikan seperti semula (tidak ada penghapusan parsial).', true); rerender2(); return; }
+          if (!okDel){ const rbOk = kiRollbackCollections({guests:gSnap, rsvps:rSnap}); toast(rbOk ? 'Penghapusan tamu GAGAL disimpan — tamu dan RSVP-nya dikembalikan seperti semula (tidak ada penghapusan parsial).' : 'Penghapusan tamu GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar tamu sebelum mencoba lagi.', true); rerender2(); return; }
           D2.guestSel.delete(id); toast('Tamu dihapus'); rerender2();
         }}); return;
       }
@@ -99,7 +102,7 @@
           S2.guests = S2.guests.filter(g => !targetIds.has(g.id));
           S2.rsvps = S2.rsvps.filter(r => !targetIds.has(r.guestId));
           let okDel = saveColl('guests'); okDel = saveColl('rsvps') && okDel;
-          if (!okDel){ S2.guests = gSnap; S2.rsvps = rSnap; saveColl('guests'); saveColl('rsvps'); toast('Penghapusan massal GAGAL disimpan — seluruh tamu dan RSVP dikembalikan (tidak ada penghapusan parsial).', true); rerender2(); return; }
+          if (!okDel){ const rbOk = kiRollbackCollections({guests:gSnap, rsvps:rSnap}); toast(rbOk ? 'Penghapusan massal GAGAL disimpan — seluruh tamu dan RSVP dikembalikan (tidak ada penghapusan parsial).' : 'Penghapusan massal GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar tamu sebelum mencoba lagi.', true); rerender2(); return; }
           D2.guestSel.clear(); toast(targetIds.size + ' tamu dihapus'); rerender2();
         }}); return;
       }
@@ -213,11 +216,11 @@
         okAll = logAct('Pesanan ' + num + ' dibuat: paket ' + pkg.name + ' untuk “' + inv.title + '” (' + rp(o.total) + ', simulasi).', 'customer', inv.ownerId || CURRENT_USER) && okAll;
         okAll = notify2('Pesanan dibuat', num + ' menunggu pembayaran simulasi sebesar ' + rp(o.total) + '.', 'customer', inv.ownerId || CURRENT_USER) && okAll;
         if (!okAll){
-          S2.orders = S2.orders.filter(x => x.id !== o.id);
-          S2.payments = S2.payments.filter(x => x.orderId !== o.id);
-          S2.activity = actBefore; S2.notifications = ntfBefore;
-          saveColl('orders'); saveColl('payments'); saveColl('activity'); saveColl('notifications');
-          toast('Pesanan GAGAL disimpan di perangkat ini — tidak ada pesanan yang dibuat. Kosongkan ruang penyimpanan lalu coba lagi.', true);
+          /* v21: pemulihan ditulis balik per koleksi dan HASILNYA
+             diperiksa (kiRollbackCollections) — bila tulis-balik gagal,
+             laporkan apa adanya, jangan klaim "tidak ada pesanan". */
+          const rbOk = kiRollbackCollections({orders:S2.orders.filter(x => x.id !== o.id), payments:S2.payments.filter(x => x.orderId !== o.id), activity:actBefore, notifications:ntfBefore});
+          toast(rbOk ? 'Pesanan GAGAL disimpan di perangkat ini — tidak ada pesanan yang dibuat. Kosongkan ruang penyimpanan lalu coba lagi.' : 'Pesanan GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar pesanan sebelum mencoba lagi.', true);
           rerender2(); return;
         }
         CO._lock = {t:Date.now(), inv:inv.id, pkg:pkg.id, total:o.total, num, id:o.id};
@@ -259,16 +262,20 @@
         if (res === 'Success'){
           const invGate = S.invitations.find(i => i.id === o.invitationId);
           const tg = kiOrderTierGate(o, invGate);
-          if (tg.mismatch){
+          /* v21: fail closed — tier yang TAK TERBUKTI juga ditahan,
+             bukan diloloskan; expected bisa null, jadi teks memakai
+             varian "tidak dapat dibuktikan". */
+          if (tg.mismatch || tg.unresolved){
             const prevFlag = o.needsNewOrder, prevHold = o.tierHold;
+            const expName = tg.expected ? tg.expected.name : null;
             o.needsNewOrder = true;
-            o.tierHold = {expectedPackageId: tg.expected.id, expectedPackageName: tg.expected.name, orderPackageId: o.packageId, at: Date.now()};
+            o.tierHold = {expectedPackageId: tg.expected ? tg.expected.id : null, expectedPackageName: expName, orderPackageId: o.packageId, at: Date.now()};
             if (!saveColl('orders')){
               o.needsNewOrder = prevFlag; o.tierHold = prevHold; saveColl('orders');
               toast('Hasil pembayaran untuk pesanan ' + o.number + ' ditahan (paket tidak sesuai tier template), tetapi penanda pesanan GAGAL disimpan — tidak ada perubahan yang tercatat. Coba lagi setelah mengosongkan ruang penyimpanan.', true); rerender2(); return;
             }
-            logAct('Hasil pembayaran ' + o.number + ' DITAHAN: paket pesanan (' + o.packageName + ') tidak sesuai tier template undangan (' + tg.expected.name + ') — tidak ada paket yang diaktifkan; pesanan ditandai untuk dibuat ulang.', 'customer', o.customerId);
-            toast('Pembayaran DITAHAN: pesanan ' + o.number + ' memakai paket ' + o.packageName + ', tetapi undangan ini memakai template tier ' + tg.expected.name + '. Paket yang salah TIDAK diaktifkan dan riwayat pesanan tidak diubah — buat pesanan baru dengan paket ' + tg.expected.name + ' lewat checkout.', true);
+            logAct('Hasil pembayaran ' + o.number + ' DITAHAN: ' + (expName ? 'paket pesanan (' + o.packageName + ') tidak sesuai tier template undangan (' + expName + ')' : 'tier template undangan tidak dapat dibuktikan') + ' — tidak ada paket yang diaktifkan; pesanan ditandai untuk dibuat ulang.', 'customer', o.customerId);
+            toast(expName ? 'Pembayaran DITAHAN: pesanan ' + o.number + ' memakai paket ' + o.packageName + ', tetapi undangan ini memakai template tier ' + expName + '. Paket yang salah TIDAK diaktifkan dan riwayat pesanan tidak diubah — buat pesanan baru dengan paket ' + expName + ' lewat checkout.' : 'Pembayaran DITAHAN: tier template undangan untuk pesanan ' + o.number + ' tidak dapat dibuktikan dari versi template yang dipakai — paket TIDAK diaktifkan dan riwayat pesanan tidak diubah. Buat pesanan baru lewat checkout.', true);
             rerender2(); return;
           }
         }
@@ -278,12 +285,24 @@
         const rbSnap = { invId: o.invitationId, orders: structuredClone(S2.orders), payments: structuredClone(S2.payments), services: structuredClone(S2.services), activity: S2.activity.slice(), notifications: S2.notifications.slice(), invPkg: (() => { const iv = S.invitations.find(i => i.id === o.invitationId); return iv ? iv.packageId : undefined; })() };
         let okAll = true;
         if (pay && pay.status !== 'Pending'){
+          /* v21: order yang paketnya tak cocok / tiernya tak terbukti
+             TIDAK mendapat percobaan baru — percobaan pembayaran baru
+             DITOLAK di handler (bukan hanya tombol disembunyikan):
+             tidak ada record baru, tidak ada status yang berubah.
+             Pengguna diarahkan membuat pesanan baru lewat checkout. */
+          const invGate2 = S.invitations.find(i => i.id === o.invitationId);
+          const tg2 = kiOrderTierGate(o, invGate2);
+          if (tg2.mismatch || tg2.unresolved){
+            toast('Percobaan pembayaran baru untuk pesanan ' + o.number + ' DITOLAK: ' + (tg2.expected ? 'paket pesanan (' + o.packageName + ') tidak sesuai tier template undangan (' + tg2.expected.name + ')' : 'tier template undangan tidak dapat dibuktikan') + ' — tidak ada percobaan baru yang dibuat dan tidak ada status yang berubah. Buat pesanan baru dengan paket yang benar lewat checkout.', true);
+            rerender2(); return;
+          }
           /* Perlakuan expiry/gagal yang KONSISTEN di semua jalur: record
              pembayaran yang sudah final (Failed/Expired) TIDAK pernah
              ditulis ulang atau dihidupkan lagi. Percobaan ulang memakai
              record pembayaran BARU (kode baru) untuk pesanan yang sama;
              record lama tetap utuh sebagai riwayat percobaan. */
-          const np = {id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:pay.method, status:'Pending', amount:o.total, code: pay.method === 'QRIS' ? 'QRIS-SIM-' + o.number : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null, attempt: S2.payments.filter(p => p.orderId === o.id).length + 1}; /* v19: percobaan BARU — kode baru lahir HANYA di sini; percobaan lama sudah Failed/Expired (final) dan tetap tersimpan sebagai riwayat, tidak pernah ditulis ulang */
+          const attNo = S2.payments.filter(p => p.orderId === o.id).length + 1;
+          const np = {id:uid2('pay'), orderId:o.id, invitationId:o.invitationId, method:pay.method, status:'Pending', amount:o.total, code: pay.method === 'QRIS' ? 'QRIS-SIM-' + o.number + '-A' + attNo : '8808 ' + Math.floor(1000 + Math.random() * 9000) + ' ' + Math.floor(1000 + Math.random() * 9000), createdAt:Date.now(), paidAt:null, attempt: attNo}; /* v21: percobaan BARU mendapat kode BARU — QRIS memakai akhiran -A<nomor percobaan> agar berbeda dari percobaan sebelumnya (percobaan 1 tetap 'QRIS-SIM-<nomor>' seperti semula); percobaan lama sudah Failed/Expired (final) dan tetap tersimpan sebagai riwayat, tidak pernah ditulis ulang */
           S2.payments.push(np); pay = np;
         }
         if (pay){ pay.status = res; pay.paidAt = res === 'Success' ? Date.now() : null; okAll = saveColl('payments') && okAll; }
@@ -344,7 +363,7 @@
         let okAp = saveColl('services');
         if (okAp) okAp = logAct('Desain proyek ' + s.number + ' disetujui pelanggan.', 'customer', s.customerId);
         if (okAp) okAp = notify2('Desain disetujui', 'Proyek ' + s.number + ' disetujui pelanggan dan siap diterbitkan.', 'admin');
-        if (!okAp){ s.status = apSnap.status; s.updatedAt = apSnap.updatedAt; S2.activity = apAct; S2.notifications = apNtf; saveColl('services'); saveColl('activity'); saveColl('notifications'); toast('Persetujuan GAGAL disimpan — status proyek tidak berubah.', true); rerender2(); return; }
+        if (!okAp){ s.status = apSnap.status; s.updatedAt = apSnap.updatedAt; const rbOk = kiRollbackCollections({services:S2.services, activity:apAct, notifications:apNtf}); toast(rbOk ? 'Persetujuan GAGAL disimpan — status proyek tidak berubah.' : 'Persetujuan GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa status proyek sebelum mencoba lagi.', true); rerender2(); return; }
         toast('Desain disetujui — terima kasih!'); rerender2(); return;
       }
       if (act === 'svc-revision'){
@@ -359,7 +378,7 @@
           s.revisions.push({note, at:Date.now(), by:'customer'}); s.status = 'Revision'; s.updatedAt = Date.now();
           let okRv = saveColl('services');
           if (okRv) okRv = logAct('Revisi diminta untuk proyek ' + s.number + '.', 'customer', s.customerId);
-          if (!okRv){ s.revisions.pop(); s.status = rvSnap.status; s.updatedAt = rvSnap.updatedAt; S2.activity = rvAct; saveColl('services'); saveColl('activity'); toast('Permintaan revisi GAGAL disimpan — tidak ada perubahan yang tercatat.', true); rerender2(); return; }
+          if (!okRv){ s.revisions.pop(); s.status = rvSnap.status; s.updatedAt = rvSnap.updatedAt; const rbOk = kiRollbackCollections({services:S2.services, activity:rvAct}); toast(rbOk ? 'Permintaan revisi GAGAL disimpan — tidak ada perubahan yang tercatat.' : 'Permintaan revisi GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa status proyek sebelum mencoba lagi.', true); rerender2(); return; }
           toast('Permintaan revisi terkirim ke desainer'); rerender2();
         }}); return;
       }
@@ -400,9 +419,8 @@
         if (okProg && s.status === 'Review') okProg = notify2('Desain menunggu ulasan Anda', 'Proyek ' + s.number + ' (' + s.title + ') siap ditinjau.', 'customer', s.customerId);
         if (!okProg){
           s.status = progSnap.status; s.updatedAt = progSnap.updatedAt;
-          S2.activity = progAct; S2.notifications = progNtf;
-          saveColl('services'); saveColl('activity'); saveColl('notifications');
-          toast('Perubahan status GAGAL disimpan — status proyek dikembalikan ke ' + progSnap.status + '.', true); rerender2(); return;
+          const rbOk = kiRollbackCollections({services:S2.services, activity:progAct, notifications:progNtf});
+          toast(rbOk ? 'Perubahan status GAGAL disimpan — status proyek dikembalikan ke ' + progSnap.status + '.' : 'Perubahan status GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa status proyek sebelum mencoba lagi.', true); rerender2(); return;
         }
         if (s.status === 'Published'){
           /* Status layanan "Published" TIDAK menerbitkan undangan terkait —
@@ -577,7 +595,7 @@
            palsu dan bukan state parsial setelah reload. */
         let okAsg = saveColl('services');
         if (okAsg) okAsg = logAct('Proyek ' + s.number + ' ditugaskan ke ' + (asg.value ? userById(asg.value).name : '—') + '.', 'admin');
-        if (!okAsg){ S2.services = asgSnap; S2.activity = asgActSnap; saveColl('services'); saveColl('activity'); toast('Penugasan GAGAL disimpan — status proyek dikembalikan seperti semula.', true); rerender2(); return; }
+        if (!okAsg){ const rbOk = kiRollbackCollections({services:asgSnap, activity:asgActSnap}); toast(rbOk ? 'Penugasan GAGAL disimpan — status proyek dikembalikan seperti semula.' : 'Penugasan GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa status proyek sebelum mencoba lagi.', true); rerender2(); return; }
         toast(asg.value ? 'Desainer ditugaskan: ' + userById(asg.value).name : 'Penugasan dilepas'); rerender2(); return;
       }
     });
@@ -620,9 +638,8 @@
         if (!okAll){
           if (addedGuest) S2.guests = S2.guests.filter(x => x.id !== addedGuest.id);
           if (editedGuest && prevGuest) Object.assign(editedGuest, prevGuest);
-          S2.activity = actSnap;
-          saveColl('guests'); saveColl('activity');
-          toast('Gagal menyimpan data tamu — perubahan di-rollback dan belum tersimpan di perangkat ini (penyimpanan penuh?).', true); rerender2(); return;
+          const rbOk = kiRollbackCollections({guests:S2.guests, activity:actSnap});
+          toast(rbOk ? 'Gagal menyimpan data tamu — perubahan di-rollback dan belum tersimpan di perangkat ini (penyimpanan penuh?).' : 'Gagal menyimpan data tamu dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar tamu sebelum mencoba lagi.', true); rerender2(); return;
         }
         toast(wasEdit ? 'Tamu diperbarui' : 'Tamu ditambahkan');
         rerender2(); return;
@@ -641,7 +658,7 @@
         let okSvc = saveColl('services');
         if (okSvc) okSvc = logAct('Permintaan desain ' + s.number + ' dibuat: ' + name + '.', 'customer', CURRENT_USER);
         if (okSvc) okSvc = notify2('Permintaan desain baru', s.number + ' — ' + name + ' menunggu penugasan desainer.', 'admin');
-        if (!okSvc){ S2.services = S2.services.filter(x => x.id !== s.id); S2.activity = svcActSnap; S2.notifications = svcNtfSnap; saveColl('services'); saveColl('activity'); saveColl('notifications'); toast('Permintaan GAGAL disimpan — tidak ada permintaan yang tercatat. Coba lagi setelah mengosongkan ruang penyimpanan.', true); rerender2(); return; }
+        if (!okSvc){ const rbOk = kiRollbackCollections({services:S2.services.filter(x => x.id !== s.id), activity:svcActSnap, notifications:svcNtfSnap}); toast(rbOk ? 'Permintaan GAGAL disimpan — tidak ada permintaan yang tercatat. Coba lagi setelah mengosongkan ruang penyimpanan.' : 'Permintaan GAGAL disimpan dan rollback persisten TIDAK terverifikasi — muat ulang halaman dan periksa daftar layanan sebelum mencoba lagi.', true); rerender2(); return; }
         toast('Permintaan ' + s.number + ' terkirim — tim kami akan menugaskan desainer'); rerender2(); return;
       }
       const nf = e.target.closest('.s2-note-form');

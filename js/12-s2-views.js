@@ -235,13 +235,19 @@
          Bila ID tidak ditemukan di undangan milik pengguna -> checkout
          DITAHAN dengan penjelasan (ctxMissing); bila tier versinya tak
          terbukti -> UI tierUnresolved v21.1. Tanpa ?inv=, perilaku lama
-         (default undangan pertama) dipertahankan. */
-      const ctxId = (params && params.inv) || null;
+         (default undangan pertama) dipertahankan.
+         v22 — param ?inv= yang HADIR tapi kosong/tidak dapat dipetakan
+         diperlakukan sebagai konteks eksplisit yang GAGAL (fail-closed),
+         bukan default diam-diam ke undangan pertama: tautan checkout
+         yang rusak harus meminta pengguna memilih undangan secara
+         eksplisit, bukan menebak. */
+      const hasInvParam = !!(params && Object.prototype.hasOwnProperty.call(params, 'inv'));
+      const ctxId = hasInvParam ? params.inv : null;
       const ctxHash = location.hash || '';
-      if (ctxId){
+      if (hasInvParam){
         if (CO.ctxHash !== ctxHash){
           CO.ctxHash = ctxHash;
-          const ctx = mine.find(i => i.id === ctxId);
+          const ctx = ctxId ? mine.find(i => i.id === ctxId) : null;
           if (ctx){ CO.invId = ctxId; CO.ctxMissing = false; }
           else { CO.invId = null; CO.ctxMissing = true; }
         }
@@ -310,7 +316,7 @@
       </div>
       ${!cancelled && !done && pay && pay.status !== 'Pending' ? `<div class="card" style="text-align:center"><p class="sub" style="margin:0">Percobaan pembayaran terakhir berstatus <b>${esc(pay.status)}</b> dan record-nya sudah final — record pembayaran yang sudah final tidak pernah ditulis ulang di jalur mana pun. Mensimulasikan hasil baru di bawah akan membuat <b>record pembayaran baru</b> untuk pesanan ini; kode di atas adalah kode percobaan terakhir.</p></div>` : ''}
       ${cancelled ? `<div class="card" style="text-align:center"><h2>Pesanan Dibatalkan</h2><p class="sub" style="margin-bottom:14px">Pesanan ini berstatus <b>Dibatalkan</b> — status terminal. Pembayaran tidak lagi ditawarkan untuk pesanan ini dan hasil pembayaran apa pun tidak dapat mengubahnya. Bila masih memerlukan paket ini, buat pesanan baru lewat checkout simulasi.</p>
-        <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout">Buat Pesanan Baru</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
+        <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/checkout?inv=${order.invitationId}">Buat Pesanan Baru</a><a class="btn ghost" href="#/dashboard?tab=pesanan">Ke Pesanan Saya</a></div></div>`
       : done ? `<div class="card" style="text-align:center"><h2>Pembayaran Simulasi Berhasil</h2><p class="sub" style="margin-bottom:14px">Paket ${esc(order.packageName)} kini aktif untuk undangan “${esc(inv ? inv.title : '')}”. Pesanan dan dashboard Anda sudah diperbarui dari record yang sama.</p>
         <div style="display:flex;gap:9px;justify-content:center;flex-wrap:wrap"><a class="btn gold" href="#/faktur/${order.id}">Lihat Faktur</a>${inv && inv.status !== 'published' ? `<button class="btn" data-s2="pay-publish" data-id="${order.id}">Publikasikan Undangan Sekarang</button>` : ''}<a class="btn ghost" href="#/dashboard">Ke Dashboard</a></div></div>`
       : (order.needsNewOrder || hold21.held) ? `<div class="card" style="text-align:center"><h2>Pembayaran Ditahan — Paket Tidak Sesuai Tier Template</h2><p class="sub" style="margin-bottom:14px">${hold21.unresolved && !order.tierHold ? 'Tier template undangan “' + esc(inv ? inv.title : '') + '” tidak dapat dibuktikan dari versi template yang dipakai, jadi pembayaran untuk pesanan ini <b>ditahan</b>.' : 'Pesanan ini memakai paket <b>' + esc(order.packageName) + '</b>, tetapi undangan “' + esc(inv ? inv.title : '') + '” memakai template tier <b>' + esc(holdExpectedName) + '</b>.'} Hasil pembayaran untuk pesanan ini <b>ditahan</b>: paket yang salah tidak diaktifkan, dan snapshot pesanan ini (paket, harga, total) <b>tidak diubah</b> sebagai riwayat. Buat pesanan baru dengan paket yang benar lewat checkout — checkout kini terkunci ke tier template undangan.</p>
@@ -380,7 +386,7 @@
       return `<div class="card"><h2>Keamanan & Pemulihan Data Lokal</h2><p class="sub">Sebelum migrasi apa pun berjalan, aplikasi menyimpan satu snapshot cadangan seluruh data lokal di perangkat ini${bk && bk.at ? ' (terakhir: ' + new Date(bk.at).toLocaleString('id-ID') + ')' : ''}. Record yang rusak tidak dihapus — isinya dipindah ke karantina dan dapat dipulihkan.</p>
       <p style="font-size:14.5px;margin:0 0 14px">Record di karantina: <b>${q.length}</b>${q.length ? ' — ' + q.map(x => esc(x.key)).join(', ') : ''}</p>
       <p style="font-size:14px;margin:0 0 12px"><b>Reproduksi uji:</b> klik kedua tombol uji di bawah pada halaman ini — hasil tampil per kasus (LOLOS/GAGAL) dengan <i>expected</i> vs <i>actual</i> untuk kasus-kasus v19. Kedua suite berjalan pada stub/record sintetis disposable dan memulihkan seluruh storage &amp; state sesi sesudahnya (kasus isolasi + snapshot seluruh key memverifikasinya).</p>
-      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Tier Order Lama · Versi Template · Expiry Clamp · Identitas RSVP · Kode Bayar · Isolasi · Snapshot Key · v21: Tier Ditahan Tampil · Fail-Closed · Bukti Silang · Kode Baru QRIS · RSVP Multi-Tamu · Rollback Jujur · State Machine · Badge Nusantara · v21.2: Konteks Checkout · Reset Kunci Sementara · Demo Layout)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP · Tier Ditahan · RSVP Dua Tamu · Kode Bayar · v21: Hold Tampil · Tolak Percobaan Baru · Kode Baru QRIS · RSVP Nama Sama · Rollback Gagal · Assign/Unassign · Batal Terminal · v21.2: Konteks Checkout · Reset Kunci Sementara)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
+      <div style="display:flex;gap:9px;flex-wrap:wrap"><button class="btn ghost sm" data-s2="backup-download">Unduh Cadangan (JSON)</button><button class="btn ghost sm" data-s2="fixture-test">Jalankan Uji Fixture Terisolasi (Reset · Handler · Payment Gate · Impor · Orphan · Publish · Owner · RSVP · Layanan · Seed · Grant · Autosave · Rollback · Unassign · Badge · Checkout Terkunci · Batal · Rekonsiliasi · Nama RSVP · Tier Order Lama · Versi Template · Expiry Clamp · Identitas RSVP · Kode Bayar · Isolasi · Snapshot Key · v21: Tier Ditahan Tampil · Fail-Closed · Bukti Silang · Kode Baru QRIS · RSVP Multi-Tamu · Rollback Jujur · State Machine · Badge Nusantara · v21.2: Konteks Checkout · Reset Kunci Sementara · Demo Layout · v22: CTA Order Batal · Alias Bantuan · Header 821px)</button><button class="btn ghost sm" data-s2="handler-test">Jalankan Uji Handler Penuh (Event Nyata: Checkout · Batal · Bayar/Rekonsiliasi · RSVP · Tier Ditahan · RSVP Dua Tamu · Kode Bayar · v21: Hold Tampil · Tolak Percobaan Baru · Kode Baru QRIS · RSVP Nama Sama · Rollback Gagal · Assign/Unassign · Batal Terminal · v21.2: Konteks Checkout · Reset Kunci Sementara · v22: CTA Order Batal · Alias Bantuan)</button>${q.length ? '<button class="btn gold sm" data-s2="quarantine-restore">Pulihkan Record Karantina</button>' : ''}</div><div id="fixture-results" style="margin-top:12px"></div><div id="handler-results" style="margin-top:12px"></div></div>`;
     }
     function dashSettings(){
       return storageHealthHTML() + `<div class="card"><h2>Reset Data Demo</h2><p class="sub">Mengembalikan seluruh lingkungan demo ke data awal bawaan Stage 2: undangan demo, 22 tamu, respons RSVP, 8 pesanan & pembayaran, 4 permintaan desain, kupon, notifikasi, dan aktivitas. Tepat sebelum reset berjalan, snapshot cadangan data saat ini disimpan dan record karantina dipertahankan — jalur pemulihan tidak ikut terhapus. Bila cadangan gagal ditulis (mis. penyimpanan penuh), reset berhenti dan tidak ada data yang dihapus.</p>
@@ -545,12 +551,20 @@
       return '';
     }
     function viewAdmin(params){
-      const tab = params.tab || 'ringkasan';
+      /* v22 — alias tab 'bantuan' -> 'layanan' (Antrean Layanan Bantuan,
+         tab yang benar); tab tak dikenal -> kembali ke tab default
+         'ringkasan' DENGAN pesan yang jelas (bukan panel kosong tanpa
+         penjelasan). */
+      let tab = params.tab || 'ringkasan';
+      if (tab === 'bantuan') tab = 'layanan';
+      const unknownTab = ADMIN_TABS.some(t => t[0] === tab) ? null : tab;
+      if (unknownTab) tab = 'ringkasan';
       let inner = '';
       if (tab === 'ringkasan') inner = adminOverview();
       else if (tab === 'template') inner = adminTemplates(params);
       else if (tab === 'kategori' || tab === 'gaya') inner = adminTaxonomy(tab);
       else inner = adminSimple(tab);
+      if (unknownTab) inner = `<div class="card" style="border-color:var(--err)"><h2>Tab tidak dikenal</h2><p class="sub">Tab “${esc(unknownTab)}” tidak ada di Panel Admin — menampilkan Ringkasan. Gunakan navigasi di samping untuk membuka tab yang tersedia.</p></div>` + inner;
       return adminShell(tab === 'template' && params.edit ? 'template' : tab, inner);
     }
 

@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Harness v21.2 (disertakan di branch): sajikan tree v21.2/ lewat HTTP
-// lokal, muat di jsdom (script eksternal ikut dimuat), jalankan suite
-// fixture + handler in-page, dump state untuk 5 rute yang SAMA.
+// Harness v21.2 (disertakan di branch; nama file DIPERTAHANKAN di ronde
+// v22 sesuai instruksi — harness ini kini menjalankan suite v22):
+// sajikan tree ini lewat HTTP lokal, muat di jsdom (script eksternal
+// ikut dimuat), jalankan suite fixture + handler in-page, dump state
+// untuk 5 rute yang SAMA.
 // Perbandingan storage dinormalisasi (buang field timestamp di semua
 // kedalaman — terbukti volatil antar-boot bahkan pada monolit yang sama).
 // Perbandingan baseline OPSIONAL: beri direktori baseline sebagai argumen
@@ -62,7 +64,11 @@ function loadPage(url, hash) {
       beforeParse(window) { window.structuredClone = structuredClone; window.scrollTo = () => {}; },
     });
     // Muat HTML lewat fetch (jsdom butuh dokumen dari URL agar src relatif resolve)
-    fetch(url).then(r => r.text()).then((html) => {
+    // v22: tiap fetch menutup koneksi (Connection: close) — tanpa ini,
+    // undici memakai ulang socket keep-alive yang server sudah tutup
+    // selama suite berjalan (idle > keepAliveTimeout 5 dtk) sehingga
+    // fetch berikutnya gagal ECONNRESET (teramati 5x berturut-turut).
+    fetch(url, { headers: { Connection: 'close' } }).then(r => r.text()).then((html) => {
       dom.window.document.open(); dom.window.document.write(html); dom.window.document.close();
       const done = () => resolve({ dom, errors });
       dom.window.addEventListener('load', () => setTimeout(done, 200));
@@ -98,7 +104,7 @@ async function main() {
         '06-s2-core.js', '07-s2-access.js', '08-s2-reset.js', '09-s2-fixtures.js',
         '10-s2-rsvp.js', '11-s2-seed.js', '12-s2-views.js', '13-s2-handlers.js'].map((f) => '/js/' + f)];
     for (const p of paths) {
-      const r = await fetch(`http://127.0.0.1:${port}${p}`);
+      const r = await fetch(`http://127.0.0.1:${port}${p}`, { headers: { Connection: 'close' } });
       result.httpStatus[p] = r.status;
       await r.arrayBuffer();
     }

@@ -763,6 +763,79 @@
         const detHtml23 = tplLux23 ? viewDetail(tplLux23) : '';
         out.push({name:'v21.2 — Layout demo (kontrol): halaman detail template Luxury Ivory TIDAK tersentuh — tetap "detail-grid" polos tanpa demo-layout', pass: detHtml23.indexOf('detail-grid') >= 0 && detHtml23.indexOf('demo-layout') === -1, exp:'detail-grid polos, tanpa demo-layout', act:'detail-grid=' + (detHtml23.indexOf('detail-grid') >= 0) + '; demo-layout=' + (detHtml23.indexOf('demo-layout') >= 0)});
       } catch(e){ out.push({name:'Uji v21.2 (konteks checkout, reset kunci sementara, probe cleanup, penanda demo)', pass:false}); }
+      /* --- 24: v22 — CTA order batal, alias tab bantuan, ?inv= kosong --- */
+      try {
+        /* 24a: CTA "Buat Pesanan Baru" pada kartu order DIBATALKAN
+           (KI-2026-1004, Salsa) membawa konteks ?inv=seed-inv-4 */
+        const o1004 = S2.orders.find(o => o.id === 'seed-order-4');
+        const hashBak24 = location.hash;
+        const ordersBefore24 = S2.orders.length;
+        try {
+          /* (a1) Tautan kartu batal SEED membawa konteks undangan */
+          const payHtml24 = o1004 ? viewPay(o1004) : '';
+          out.push({name:'v22 — CTA order batal (tautan seed): halaman bayar KI-2026-1004 memuat tautan "#/checkout?inv=seed-inv-4" dan TIDAK ada lagi tautan checkout polos', pass: payHtml24.indexOf('href="#/checkout?inv=seed-inv-4"') >= 0 && payHtml24.indexOf('href="#/checkout">') === -1, exp:'tautan konteks seed-inv-4; tanpa href="#/checkout"> polos', act:'konteks=' + (payHtml24.indexOf('href="#/checkout?inv=seed-inv-4"') >= 0) + '; polos=' + (payHtml24.indexOf('href="#/checkout">') >= 0)});
+          /* (a2) Order batal TETAP terminal di render yang sama */
+          out.push({name:'v22 — CTA order batal (terminal): kartu batal menampilkan "Pesanan Dibatalkan" + "status terminal", TANPA tombol simulasi pembayaran, VA dicoret', pass: payHtml24.indexOf('Pesanan Dibatalkan') >= 0 && payHtml24.indexOf('status terminal') >= 0 && payHtml24.indexOf('data-s2="pay-result"') === -1 && payHtml24.indexOf('line-through') >= 0, exp:'terminal; tanpa pay-result; VA dicoret', act:'dibatalkan=' + (payHtml24.indexOf('Pesanan Dibatalkan') >= 0) + '; pay-result=' + (payHtml24.indexOf('data-s2="pay-result"') >= 0)});
+          /* (a3) Alur batal ujung-ke-ujung lewat UI nyata — dengan order
+             + undangan fixture milik pelanggan aktif (CURRENT_USER
+             hard-coded 'cust-1', jadi alur SEED sebagai Salsa tidak
+             dapat dijalankan di prototipe ini; yang dibuktikan: tautan
+             seed membawa ID yang benar (a1) + jalur kode yang sama
+             bekerja untuk order batal milik pelanggan aktif). */
+          const fxInv24 = {id:'fx-inv-24s', templateId:'champagne-vow', templateVersion:1, slug:'fx-24s', title:'Fixture Salsa & Fikri', categoryId:'lamaran', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+          const fxOrd24 = {id:'fx-o-24c', number:'KI-FX-24C', invitationId:'fx-inv-24s', customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Dibatalkan', paymentStatus:'Failed', createdAt:Date.now()};
+          S.invitations.push(fxInv24); S2.orders.push(fxOrd24);
+          try {
+            CO.ctxHash = null; CO.ctxMissing = false; CO.coupon = null; CO.couponCode = '';
+            location.hash = '#/bayar/fx-o-24c'; s2Render();
+            const link24 = document.querySelector('a[href="#/checkout?inv=fx-inv-24s"]');
+            let navOk24 = false;
+            if (link24){ link24.click(); if (location.hash !== '#/checkout?inv=fx-inv-24s') location.hash = link24.getAttribute('href'); s2Render(); navOk24 = CO.invId === 'fx-inv-24s' && CO.pkgId === 'premium' && CO.ctxMissing === false; }
+            const appHtml24 = (document.getElementById('app') || {}).innerHTML || '';
+            out.push({name:'v22 — CTA order batal (navigasi): dari halaman bayar order batal fixture (champagne-vow) tautan membawa konteks -> checkout memilih undangan fixture + kunci PREMIUM Rp59.000, tombol konfirmasi aktif, TANPA order baru sampai Konfirmasi', pass: !!link24 && navOk24 && appHtml24.indexOf('Konfirmasi Pesanan Simulasi — Rp59.000') >= 0 && S2.orders.length === ordersBefore24 + 1, exp:'inv=fx-inv-24s; pkg=premium; konfirmasi Rp59.000; order tetap ' + (ordersBefore24 + 1) + ' (termasuk fixture)', act:'tautan=' + !!link24 + '; inv=' + CO.invId + '; pkg=' + CO.pkgId + '; order=' + S2.orders.length});
+          } finally { S.invitations.splice(S.invitations.indexOf(fxInv24), 1); S2.orders.splice(S2.orders.indexOf(fxOrd24), 1); }
+          /* (a4) Regresi v21.2: dua entry point lama tetap membawa konteks */
+          const kir24 = S.invitations.find(i => i.id === 'seed-inv-2');
+          const o1008 = S2.orders.find(o => o.id === 'seed-order-8');
+          const tabBak24 = B.tab; B.tab = 'terbit';
+          const edHtml24 = editorPanel(kir24);
+          B.tab = tabBak24;
+          const ocHtml24 = o1008 ? orderCard(o1008, false) : '';
+          const payHtml24b = o1008 ? viewPay(o1008) : '';
+          out.push({name:'v22 — Konteks checkout (regresi v21.2): Builder Kirana + order tertahan KI-2026-1008 tetap membawa ?inv=seed-inv-2', pass: edHtml24.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0 && ocHtml24.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0 && payHtml24b.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0, exp:'ketiga tautan membawa ?inv=seed-inv-2', act:'builder=' + (edHtml24.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0) + '; orderCard=' + (ocHtml24.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0) + '; viewPay=' + (payHtml24b.indexOf('href="#/checkout?inv=seed-inv-2"') >= 0)});
+          /* (b1) ?inv= KOSONG -> fail-closed (konteks eksplisit yang gagal) */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/checkout?inv='; s2Render();
+          const appHtml24b = (document.getElementById('app') || {}).innerHTML || '';
+          out.push({name:'v22 — Konteks checkout (?inv= kosong): param hadir tapi kosong -> checkout DITAHAN ("Undangan Tidak Ditemukan") + placeholder + tombol disabled, TANPA default diam-diam ke undangan pertama, tanpa order baru', pass: CO.invId === null && CO.ctxMissing === true && appHtml24b.indexOf('Checkout Ditahan — Undangan Tidak Ditemukan') >= 0 && appHtml24b.indexOf('— pilih undangan —') >= 0 && appHtml24b.indexOf('co-confirm" style="margin-top:8px" disabled') >= 0 && S2.orders.length === ordersBefore24, exp:'ctxMissing=true; ditahan; order tetap ' + ordersBefore24, act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing + '; order=' + S2.orders.length});
+          /* (b2) ?inv= milik akun demo lain -> fail-closed (bukti live v21.2) */
+          CO.ctxHash = null; CO.ctxMissing = false;
+          location.hash = '#/checkout?inv=seed-inv-3'; s2Render();
+          out.push({name:'v22 — Konteks checkout (ID milik akun lain): #/checkout?inv=seed-inv-3 (Nusantara Tech, milik cust-2) sebagai Nadia -> checkout DITAHAN, tanpa order baru', pass: CO.invId === null && CO.ctxMissing === true && S2.orders.length === ordersBefore24, exp:'ctxMissing=true; order tetap ' + ordersBefore24, act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing + '; order=' + S2.orders.length});
+          /* (b3) Tanpa ?inv= -> default lama (regresi guard perubahan v22) */
+          CO.ctxHash = null; CO.ctxMissing = false; CO.invId = null;
+          const firstMine24 = myInvitations().filter(i => !i.archived)[0].id;
+          location.hash = '#/checkout'; s2Render();
+          out.push({name:'v22 — Konteks checkout (tanpa ?inv=): navigasi #/checkout polos tetap memakai default lama (undangan pertama milik pengguna), tidak ditahan', pass: CO.invId === firstMine24 && CO.ctxMissing === false, exp:'inv=' + firstMine24 + '; ctxMissing=false', act:'inv=' + CO.invId + '; ctxMissing=' + CO.ctxMissing});
+        } finally { try { history.replaceState(null, '', hashBak24); } catch(e){ location.hash = hashBak24; } render(); }
+        /* 24c: alias tab Admin 'bantuan' + semua tab dikenal + fallback */
+        const roleBak24 = S2.role;
+        try {
+          S2.role = 'admin';
+          const appHtml = () => (document.getElementById('app') || {}).innerHTML || '';
+          /* (c1) Alias lama -> Layanan Bantuan */
+          location.hash = '#/admin?tab=bantuan'; s2Render();
+          out.push({name:'v22 — Alias tab Admin: #/admin?tab=bantuan membuka Antrean Layanan Bantuan (bukan panel kosong), nav "Layanan Bantuan" tersorot', pass: appHtml().indexOf('Antrean Layanan Bantuan') >= 0 && appHtml().indexOf('href="#/admin?tab=layanan" class="on"') >= 0, exp:'konten layanan + nav layanan on', act:'layanan=' + (appHtml().indexOf('Antrean Layanan Bantuan') >= 0) + '; nav-on=' + (appHtml().indexOf('href="#/admin?tab=layanan" class="on"') >= 0)});
+          /* (c2) Semua 14 tab dikenal menampilkan kontennya */
+          const tabs24 = [['ringkasan','stat-grid'],['template','Template CMS'],['kategori','Kategori Acara'],['gaya','Gaya Visual'],['pelanggan','Pelanggan &amp; Akun Demo'],['undangan','Semua Undangan'],['pesanan','Semua Pesanan'],['pembayaran','Pembayaran (Simulasi)'],['layanan','Antrean Layanan Bantuan'],['media','Pustaka Media'],['paket','Paket &amp; Harga'],['kupon','<h2>Kupon</h2>'],['notifikasi','Notifikasi Platform'],['pengaturan','Pengaturan Platform (Demo)']];
+          const bad24 = [];
+          for (const [t, marker] of tabs24){ location.hash = '#/admin?tab=' + t; s2Render(); const h = appHtml(); if (h.indexOf(marker) === -1 || h.indexOf('href="#/admin?tab=' + t + '" class="on"') === -1 || h.indexOf('Tab tidak dikenal') >= 0) bad24.push(t); }
+          out.push({name:'v22 — Tab Admin dikenal (14 tab): tiap tab menampilkan kontennya + nav tersorot + tanpa pesan "Tab tidak dikenal"', pass: bad24.length === 0, exp:'14/14 tab OK', act: bad24.length === 0 ? '14/14 OK' : 'gagal: ' + bad24.join(',')});
+          /* (c3) Tab tak dikenal -> fallback JELAS ke Ringkasan + pesan */
+          location.hash = '#/admin?tab=ngawur'; s2Render();
+          out.push({name:'v22 — Tab Admin tak dikenal: #/admin?tab=ngawur menampilkan pesan "Tab tidak dikenal" + konten Ringkasan (bukan panel kosong), nav Ringkasan tersorot', pass: appHtml().indexOf('Tab tidak dikenal') >= 0 && appHtml().indexOf('Tab “ngawur” tidak ada') >= 0 && appHtml().indexOf('stat-grid') >= 0 && appHtml().indexOf('href="#/admin?tab=ringkasan" class="on"') >= 0, exp:'pesan jelas + ringkasan + nav ringkasan on', act:'notice=' + (appHtml().indexOf('Tab tidak dikenal') >= 0) + '; stat-grid=' + (appHtml().indexOf('stat-grid') >= 0)});
+        } finally { S2.role = roleBak24; try { history.replaceState(null, '', hashBak24); } catch(e){ location.hash = hashBak24; } s2Render(); }
+      } catch(e){ out.push({name:'Uji v22 (CTA order batal, alias tab bantuan, ?inv= kosong)', pass:false}); }
       } catch(e){ out.push({name:'Uji fixture — lempar tak tertangkap di luar grup (cleanup tetap dijalankan)', pass:false}); } finally {
       /* PEMULIHAN ISOLASI (v18): kembalikan SEMUA state sesi yang dapat
          disentuh suite ke snapshot awal — peran, desainer aktif, flag &
@@ -1446,6 +1519,64 @@
           const tmpStill19b = store.getItem(KI_TMP_BK) !== null;
           out.push({name:'Handler penuh — reset kunci sementara (removeItem DIAM-DIAM GAGAL): reset DIBATALKAN, toast "kunci sementara ... tidak dapat dibersihkan", data utuh, kunci sementara masih tertinggal', pass: t19b.indexOf('DIBATALKAN') >= 0 && t19b.indexOf('kunci sementara') >= 0 && store.getItem(K2.orders) === ordersBefore19b && tmpStill19b, exp:'toast DIBATALKAN + kunci sementara; orders utuh; tmp masih ada', act:'toast="' + t19b.slice(0, 120) + '"; tmp-ada=' + tmpStill19b});
         } finally { Storage.prototype.removeItem = origRemove19; }
+        /* (H20) v22 — CTA order batal + alias tab Admin lewat handler +
+           navigasi NYATA. (a) klik tautan batal (fixture order milik
+           pelanggan aktif — CURRENT_USER hard-coded 'cust-1', jadi
+           tautan SEED KI-2026-1004 sebagai Salsa tidak dapat dijalankan
+           di prototipe; tautan seed-nya dibuktikan render-level di 24a,
+           jalur kodenya dibuktikan di sini). (b) Konfirmasi ASLI ->
+           pesanan BARU Premium untuk undangan fixture. (c) alias +
+           fallback tab Admin. (d) pay-result Success pada order batal
+           SEED ditolak handler (tetap terminal). */
+        const coBak20 = {invId:CO.invId, pkgId:CO.pkgId, coupon:CO.coupon, couponCode:CO.couponCode, method:CO.method, ctxHash:CO.ctxHash, ctxMissing:CO.ctxMissing};
+        const hashBak20 = location.hash;
+        const roleBak20 = S2.role;
+        try {
+          /* (a) */
+          const fxInv20 = {id:'fx-inv-20s', templateId:'champagne-vow', templateVersion:1, slug:'fx-20s', title:'Fixture Salsa & Fikri', categoryId:'lamaran', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+          const fxOrd20 = {id:'fx-o-20c', number:'KI-FX-20C', invitationId:'fx-inv-20s', customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Dibatalkan', paymentStatus:'Failed', createdAt:Date.now()};
+          S.invitations.push(fxInv20); S2.orders.push(fxOrd20);
+          const ordersBefore20 = S2.orders.length;
+          try {
+            CO.ctxHash = null; CO.ctxMissing = false; CO.coupon = null; CO.couponCode = ''; CO._lock = null;
+            location.hash = '#/bayar/fx-o-20c'; s2Render();
+            const link20 = document.querySelector('a[href="#/checkout?inv=fx-inv-20s"]');
+            let linkOk20 = false;
+            if (link20){ link20.click(); if (location.hash !== '#/checkout?inv=fx-inv-20s') location.hash = link20.getAttribute('href'); s2Render(); linkOk20 = CO.invId === 'fx-inv-20s' && CO.pkgId === 'premium' && CO.ctxMissing === false; }
+            const appHtml20 = (document.getElementById('app') || {}).innerHTML || '';
+            out.push({name:'Handler penuh — CTA order batal (klik tautan): klik "Buat Pesanan Baru" di halaman bayar order batal fixture -> checkout terbuka dengan undangan fixture terpilih + paket PREMIUM Rp59.000, tanpa order baru sampai Konfirmasi', pass: !!link20 && linkOk20 && appHtml20.indexOf('Konfirmasi Pesanan Simulasi — Rp59.000') >= 0 && S2.orders.length === ordersBefore20, exp:'tautan ada; inv=fx-inv-20s pkg=premium; konfirmasi Rp59.000; order tetap ' + ordersBefore20, act:'tautan=' + !!link20 + '; inv=' + CO.invId + '; pkg=' + CO.pkgId + '; order=' + S2.orders.length});
+            /* (b) */
+            const idsBefore20b = new Set(S2.orders.map(o => o.id));
+            const payIdsBefore20b = new Set(S2.payments.map(p => p.id));
+            fire({'data-s2':'co-confirm'});
+            const newOrder20 = S2.orders.find(o => !idsBefore20b.has(o.id));
+            const newPay20 = S2.payments.find(p => !payIdsBefore20b.has(p.id));
+            out.push({name:'Handler penuh — CTA order batal (Konfirmasi ASLI): klik Konfirmasi pada checkout dari tautan batal -> pesanan BARU tercipta untuk undangan fixture paket Premium Rp59.000 + payment tertaut (order batal lama TIDAK berubah)', pass: !!newOrder20 && newOrder20.invitationId === 'fx-inv-20s' && newOrder20.packageId === 'premium' && newOrder20.total === 59000 && !!newPay20 && newPay20.orderId === newOrder20.id, exp:'order baru inv=fx-inv-20s pkg=premium total=59000 + payment tertaut', act: newOrder20 ? ('inv=' + newOrder20.invitationId + '; pkg=' + newOrder20.packageId + '; total=' + newOrder20.total) : 'tidak ada order baru'});
+            if (newOrder20) S2.orders = S2.orders.filter(o => o.id !== newOrder20.id);
+            if (newPay20) S2.payments = S2.payments.filter(p => p.id !== newPay20.id);
+            saveColl('orders'); saveColl('payments');
+            CO._lock = null;
+          } finally { S.invitations.splice(S.invitations.indexOf(fxInv20), 1); S2.orders.splice(S2.orders.indexOf(fxOrd20), 1); }
+          /* (c) */
+          S2.role = 'admin';
+          location.hash = '#/admin?tab=bantuan'; s2Render();
+          const appHtml20c = (document.getElementById('app') || {}).innerHTML || '';
+          const aliasOk20 = appHtml20c.indexOf('Antrean Layanan Bantuan') >= 0 && appHtml20c.indexOf('href="#/admin?tab=layanan" class="on"') >= 0;
+          location.hash = '#/admin?tab=ngawur'; s2Render();
+          const appHtml20d = (document.getElementById('app') || {}).innerHTML || '';
+          const unknownOk20 = appHtml20d.indexOf('Tab tidak dikenal') >= 0 && appHtml20d.indexOf('stat-grid') >= 0;
+          out.push({name:'Handler penuh — alias tab Admin (navigasi hash NYATA sebagai Admin): #/admin?tab=bantuan -> Layanan Bantuan; #/admin?tab=ngawur -> pesan jelas + Ringkasan', pass: aliasOk20 && unknownOk20, exp:'alias->layanan; ngawur->notice+ringkasan', act:'alias=' + aliasOk20 + '; unknown=' + unknownOk20});
+          /* (d) */
+          const paysBefore20d = S2.payments.length;
+          fire({'data-s2':'pay-result', 'data-id':'seed-order-4', 'data-res':'Success'});
+          const o1004after = S2.orders.find(o => o.id === 'seed-order-4') || {};
+          out.push({name:'Handler penuh — order batal tetap terminal: klik "Pembayaran Berhasil" (handler pay-result ASLI) pada KI-2026-1004 -> DITOLAK, status tetap Dibatalkan/Failed, 0 payment baru', pass: o1004after.status === 'Dibatalkan' && o1004after.paymentStatus === 'Failed' && S2.payments.length === paysBefore20d, exp:'status Dibatalkan; paymentStatus Failed; 0 payment baru', act:'status=' + o1004after.status + '; payStatus=' + o1004after.paymentStatus + '; payments=' + S2.payments.length});
+        } finally {
+          Object.assign(CO, coBak20);
+          S2.role = roleBak20;
+          try { history.replaceState(null, '', hashBak20); } catch(e){ location.hash = hashBak20; }
+          s2Render();
+        }
       } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); } finally {
       /* v21.2 — pemulihan di finally: berjalan walau ada kasus yang
          melempar; sessionStorage dipulihkan PERSIS (bukan hanya

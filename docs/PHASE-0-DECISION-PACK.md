@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.2 (dokumen perencanaan Fase 0; revisi dari v0.1.1 — riwayat revisi di §8) |
+| Versi | v0.1.3 (dokumen perencanaan Fase 0; revisi dari v0.1.2 — riwayat revisi di §8) |
 | Tanggal | 11 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
@@ -62,9 +62,9 @@ MVP adalah hasil Fase 0 sampai Fase 8 yang dikunci owner, dalam urutan yang bisa
 | M7 | Admin dan assisted service (dasar): CMS operasional untuk customer/order/media, assignment, revisions, approvals, notifications sesuai template yang disetujui, activity log | Fase 7 | Assisted service adalah bagian dari layanan; tanpa jejak, perubahan oleh Admin/Designer tidak dapat ditelusuri | Assignment, revisions, dan approvals tercatat dari awal sampai akhir; tidak ada perubahan order atau media tanpa jejak di activity log |
 | M8 | Kesiapan peluncuran: UAT, security review dan accessibility review, observability, restore test, staged cutover dan rollback | Fase 8 | Peluncuran tanpa rencana rollback adalah risiko yang tidak dapat diterima | UAT lolos sesuai kriteria Fase 0; restore test dijalankan dan terdokumentasi; langkah rollback jelas dan dapat dijalankan |
 
-### 1.2 Fitur yang lebih tepat ditunda (REKOMENDASI — pasca-MVP)
+### 1.2 Fitur kandidat pasca-MVP yang lebih tepat ditunda (REKOMENDASI — belum disetujui owner sebagai roadmap pasca-MVP final)
 
-Daftar ini mengikuti kandidat pasca-MVP di roadmap v0.1.1 §7. Setiap penundaan membawa konsekuensi praktis yang ditulis di bawah ini agar owner memutuskan dengan mata terbuka.
+P1–P8 adalah daftar fitur kandidat yang tidak termasuk scope MVP saat ini dan direkomendasikan untuk ditinjau/diprioritaskan kemudian; daftar ini mengikuti kandidat pasca-MVP di roadmap v0.1.1 §7. Owner belum menyetujui tiap fitur sebagai roadmap pasca-MVP final dan belum berkomitmen membangunnya. Setiap penundaan membawa konsekuensi praktis yang ditulis di bawah ini agar owner memutuskan dengan mata terbuka.
 
 | # | Fitur yang ditunda (REKOMENDASI) | Konsekuensi praktis bila ditunda |
 |---|---|---|
@@ -118,7 +118,7 @@ Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP
 
 ### 2.1 (a) Batas MVP dan fitur pasca-MVP
 
-- **Pilihan yang sudah dibuat (DECIDED BY OWNER):** scope MVP M1–M8 seperti tertulis di §1.1, dengan P1–P8 sebagai pasca-MVP. Scope M1–M8 tidak perlu ditanyakan kembali.
+- **Pilihan yang sudah dibuat (DECIDED BY OWNER):** scope MVP M1–M8 seperti tertulis di §1.1, dengan P1–P8 sebagai daftar kandidat pasca-MVP (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final). Scope M1–M8 tidak perlu ditanyakan kembali.
 - **Opsi yang layak:** (i) terima scope §1.1 apa adanya — **ini pilihan owner**; (ii) MVP lebih sempit — hanya M1 sampai M4 pada gelombang pertama, checkout dan admin menyusul — opsi yang tidak dipilih; (iii) MVP lebih luas — memasukkan satu atau lebih fitur P1–P8 — opsi yang tidak dipilih.
 - **Rekomendasi Muse:** `REKOMENDASI` di v0.1 — terima scope §1.1 apa adanya — kini sudah menjadi keputusan owner (11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos") dan tidak lagi berstatus rekomendasi untuk bagian scope. Trade-off yang dicatat di v0.1 tetap berlaku sebagai catatan: scope ini mencakup satu alur utuh (daftar, buat, terbitkan, RSVP, bayar, kelola) sehingga dapat diuji end-to-end, tanpa menambah permukaan keputusan di luar yang sudah ada di roadmap.
 - **Pemutus:** Owner.
@@ -428,7 +428,7 @@ Checklist ini membedakan empat hal yang berbeda: **(A) keputusan owner yang suda
 
 | # | Exit criterion | Status | Yang kurang | Yang perlu bertindak |
 |---|---|---|---|---|
-| 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Detail operasional yang masih belum diputuskan adalah keputusan turunan D1–D10 di §1.4, masing-masing dengan waktu yang diperlukan: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8, dan TIDAK semua detail harus ditetapkan untuk menutup Fase 0 — register (§2) menyatakan hanya kunci MVP, pilihan stack final, dan keputusan status K6 yang wajib final di Fase 0 | Owner (verifikasi pencatatan keputusan M1–M8; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
+| 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final) yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang masih kurang untuk butir ini hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Keputusan turunan D1–D10 di §1.4 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8. | Owner (verifikasi pencatatan keputusan M1–M8; meratifikasi status/penundaan keputusan turunan D1–D10 di Fase 0; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
 | 2 | Semua baris register (§2) sudah memiliki status (2 DECIDED BY OWNER, 10 MENUNGGU beserta metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris sudah tercatat: §2.1 DECIDED BY OWNER — M1–M8 dan §2.12 DECIDED BY OWNER (status K6 tetap terbuka); 10 baris lainnya (§2.2–§2.11) masih MENUNGGU beserta metode uji aman K6. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang sudah dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus sudah dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
 | 3 | Review Agent Meta diterima dan dicatat dengan verdict serta keberatan/tindak lanjut; jika belum tersedia, gerbang arsitektur masih tertahan | [ ] BELUM | Review Agent Meta nyata **belum diterima** (status: MASIH MENUNGGU, §4.1); dokumen ini tidak mengklaim sudah ada review. Tanpa review ini kriteria masuk gerbang tidak terpenuhi, dan stack final belum dipilih | Agent Meta (memberi review); owner/tim (mencatat verdict, keberatan, dan jawaban setelah diterima) |
 | 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | ADR di §3 masih berstatus **DRAFT** (rekomendasi provisional Hono + React + TypeScript + Vite, D1, R2). Finalisasi menunggu review Agent Meta (§4.1), acceptance OG (§4.2), dan keputusan eksplisit owner atas pilihan final. Gerbang Arsitektur belum lulus | Owner (menyetujui pilihan final setelah bukti gerbang ditinjau); tim (menyiapkan bukti gerbang) |
@@ -455,6 +455,21 @@ Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.2 → v0.1.3
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.2 (branch `docs/phase0-planning-v0.1.2`, commit `aecec9d253c2a9979f55b3dccbd3995fcfc1d11d`) |
+| Versi ini | v0.1.3 (11 November 2026) — revisi dokumentasi-only dari v0.1.2 |
+| Pemicu revisi | Prompt klarifikasi Lora yang diteruskan owner 11 November 2026 pukul 20:13 WIB |
+
+Perubahan pada revisi ini (hanya §6 butir 1, rujukan P1–P8, §0, dan §8):
+
+1. **Checklist §6 butir 1 — keputusan turunan D1–D10.** "Yang kurang" disusun ulang: yang masih kurang untuk butir 1 hanyalah verifikasi pencatatan keputusan M1–M8. D1–D10 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2. Daftar D1–D10 tidak lagi tampil seolah seluruhnya "masih kurang" sebagai syarat exit Fase 0.
+2. **P1–P8 sebagai daftar kandidat (bukan roadmap pasca-MVP final).** Pengantar dan judul §1.2, §2.1, serta §6 butir 1 kini menyebut P1–P8 sebagai daftar fitur kandidat yang tidak termasuk scope MVP saat ini dan direkomendasikan untuk ditinjau/diprioritaskan kemudian — daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final). Owner belum menyetujui tiap fitur sebagai roadmap pasca-MVP final dan belum berkomitmen membangunnya. Isi dan urutan 8 baris tabel P1–P8 tidak berubah.
+
+Pernyataan penutup revisi: revisi ini dokumentasi-only; tidak ada kode produk, resource Cloudflare, atau deployment yang diubah. Fase 0 tetap **SEDANG BERJALAN**; Gerbang Arsitektur **belum lulus** dan Fase 1 **belum disetujui**. Revisi ini bukan approval Fase 0 — hanya klarifikasi redaksional atas dua ambiguitas kecil.
 
 ### v0.1.1 → v0.1.2
 

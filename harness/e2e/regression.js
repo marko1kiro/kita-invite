@@ -1,8 +1,18 @@
-// Modul regresi v24 — pengukuran layout yang sudah ditutup di ronde
+// Modul regresi v25 — pengukuran layout yang sudah ditutup di ronde
 // sebelumnya (header tablet + demo Luxury Ivory). Port ringkas dari
 // browser-test/measure-brand.js dan measure-demo.js (Playwright nyata).
-// Ekspektasi = hasil v23 yang tercatat di TESTS.md; modul ini HANYA
-// menguji ulang, tidak mengubah perilaku.
+// v25 (Stage 2 correction): assertion brand TIDAK LAGI memakai lebar
+// persis 148,3px — angka itu adalah lebar fallback Liberation Serif di
+// runtime tes (Google Fonts tidak termuat: request fonts.googleapis.com
+// gagal net::ERR_TUNNEL_CONNECTION_FAILED, document.fonts kosong), BUKAN
+// lebar Playfair Display. Syarat visual sekarang: (i) wordmark satu
+// baris, (ii) brand sepenuhnya di dalam .topbar (toleransi 0,5px),
+// (iii) tanpa overlap dengan anak topbar lain, (iv) tanpa overflow
+// horizontal. Font wordmark (Playfair Display 700 + Manrope 700) dicek
+// eksplisit per route SEBELUM assertion visual: bila face-nya tidak ada
+// di document.fonts dengan status loaded, tes FAIL menyebut nama font
+// (document.fonts.check() saja TIDAK cukup — ia mengembalikan true
+// bahkan untuk nama font yang tidak ada).
 module.exports = {
   id: 'regression',
   name: 'Regresi layout (header tablet + demo)',
@@ -55,33 +65,90 @@ module.exports = {
       const brandRect = rect(brand);
       const btn = document.querySelector('.topbar a.btn.gold.sm.desk');
       const btnRect = rect(btn);
+      // v25: containment penuh brand di dalam topbar (4 sisi, toleransi
+      // 0,5px) — clippedVertically di atas hanya mencakup sisi vertikal.
+      const insideTopbar = (topbarRect && brandRect) ? (
+        brandRect.left >= topbarRect.left - 0.5 &&
+        brandRect.right <= topbarRect.right + 0.5 &&
+        brandRect.top >= topbarRect.top - 0.5 &&
+        brandRect.bottom <= topbarRect.bottom + 0.5) : null;
+      // v25: irisan yang melibatkan brand saja (subset overlaps di atas),
+      // supaya pesan kegagalan brand menyebut langsung lawannya.
+      const brandOverlaps = overlaps.filter(o => o.a.indexOf('brand') !== -1 || o.b.indexOf('brand') !== -1);
+      // v25: ketersediaan font wordmark BERDASARKAN Face yang benar-benar
+      // termuat (family + weight 700 + status loaded). document.fonts.check()
+      // TIDAK dipakai: ia true bahkan untuk nama font khayalan, dan
+      // document.fonts.status 'loaded' meski document.fonts kosong.
+      // Brand: teks utama "Kita Invite" = Playfair Display 700 24px
+      // (var --font-display); tagline <small> = Manrope 700 9,5px
+      // (var --font-ui). Keduanya dimuat via Google Fonts di index.html.
+      const faceLoaded = (fam) => {
+        let found = false;
+        document.fonts.forEach(f => { if (f.family === fam && f.weight === '700' && f.status === 'loaded') found = true; });
+        return found;
+      };
+      let totalFaces = 0;
+      document.fonts.forEach(() => { totalFaces++; });
       return {
         innerWidth: iw,
         docScrollWidth: de.scrollWidth,
         clientWidth: de.clientWidth,
         overflowPx: de.scrollWidth - iw,
+        topbarRect,
         brand: brandRect ? {
           rect: brandRect,
           clippedVertically: topbarRect ? (brandRect.top < topbarRect.top - 0.5 || brandRect.bottom > topbarRect.bottom + 0.5) : null,
+          insideTopbar,
+          brandOverlaps,
           mainTextLines,
           smallH: small ? r1(small.getBoundingClientRect().height) : null,
         } : null,
         overlaps,
         btnRight: btnRect ? btnRect.right : null,
-        fontsLoaded: document.fonts.status === 'loaded',
+        fonts: { playfairLoaded: faceLoaded('Playfair Display'), manropeLoaded: faceLoaded('Manrope'), totalFaces },
       };
+    };
+    // v25: gate font wordmark — async, menunggu document.fonts.ready
+    // dulu supaya face yang sedang diunduh sempat berstatus loaded.
+    // Dijalankan sekali per route SEBELUM assertion visual; bila font
+    // tidak tersedia, check ini FAIL menyebut nama fontnya.
+    const fontEval = async () => {
+      await document.fonts.ready;
+      const faceLoaded = (fam) => {
+        let found = false;
+        document.fonts.forEach(f => { if (f.family === fam && f.weight === '700' && f.status === 'loaded') found = true; });
+        return found;
+      };
+      let totalFaces = 0;
+      document.fonts.forEach(() => { totalFaces++; });
+      return { playfairLoaded: faceLoaded('Playfair Display'), manropeLoaded: faceLoaded('Manrope'), totalFaces };
     };
     for (const route of ['', 'demo/luxury-ivory']) {
       const label = route === '' ? '#/' : '#/' + route;
       t.section('header ' + label);
+      // v25: gate font sebelum loop lebar (page-level, bukan per lebar).
+      await t.setViewport(768, 844);
+      await t.goto(route);
+      const f = await t.eval(fontEval);
+      const missingFonts = [];
+      if (!f.playfairLoaded) missingFonts.push('Playfair Display (700)');
+      if (!f.manropeLoaded) missingFonts.push('Manrope (700)');
+      t.check(`font wordmark ${label}`, missingFonts.length === 0,
+        missingFonts.length === 0
+          ? `Playfair Display 700 + Manrope 700 termuat (${f.totalFaces} face di document.fonts)`
+          : `FONT WORDMARK TIDAK TERSEDIA di runtime tes: ${missingFonts.join(', ')} — wordmark dirender font fallback, bukan font aslinya (document.fonts berisi ${f.totalFaces} face)`);
       for (const w of WIDTHS) {
         await t.setViewport(w, 844);
         await t.goto(route);
         const m = await t.eval(brandEval);
         const b = m.brand;
-        const okBrand = b && b.rect.top === 6.7 && b.rect.bottom === 57.3 && b.rect.height === 50.6 && b.rect.width === 148.3 && b.mainTextLines === 1 && b.clippedVertically === false;
-        t.check(`brand ${w}px ${label}`, okBrand, `top=${b && b.rect.top} bottom=${b && b.rect.bottom} h=${b && b.rect.height} w=${b && b.rect.width} lines=${b && b.mainTextLines} clip=${b && b.clippedVertically}`);
-        t.check(`overflow horizontal ${w}px ${label}`, m.overflowPx === 0, `overflowPx=${m.overflowPx} doc=${m.docScrollWidth} client=${m.clientWidth}`);
+        // v25: syarat visual sebenarnya, TANPA lebar persis. (i) satu
+        // baris; (ii) sepenuhnya di dalam topbar (insideTopbar, ±0,5px;
+        // clippedVertically dipertahankan sebagai komponen vertikalnya);
+        // (iii) tidak beririsan dengan anak topbar lain (brandOverlaps).
+        const okBrand = b && b.mainTextLines === 1 && b.clippedVertically === false && b.insideTopbar === true && b.brandOverlaps.length === 0;
+        t.check(`brand ${w}px ${label}`, okBrand, `top=${b && b.rect.top} bottom=${b && b.rect.bottom} left=${b && b.rect.left} right=${b && b.rect.right} h=${b && b.rect.height} w=${b && b.rect.width} lines=${b && b.mainTextLines} clip=${b && b.clippedVertically} insideTopbar=${b && b.insideTopbar} brandOverlaps=${b ? JSON.stringify(b.brandOverlaps) : null} topbar=${JSON.stringify(m.topbarRect)}`);
+        t.check(`overflow horizontal ${w}px ${label}`, m.overflowPx <= 0, `overflowPx=${m.overflowPx} doc=${m.docScrollWidth} client=${m.clientWidth}`);
         t.check(`tumpang tindih ${w}px ${label}`, m.overlaps.length === 0, JSON.stringify(m.overlaps));
       }
       await t.shot('header-' + (route === '' ? 'home' : 'demo') + '-821');

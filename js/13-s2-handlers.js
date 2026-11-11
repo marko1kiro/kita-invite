@@ -239,9 +239,23 @@
         /* Transisi pembayaran eksplisit & IDEMPOTEN: callback/hasil yang
            sama dengan status saat ini adalah duplikat — diakui tanpa
            mengubah apa pun dan tanpa aktivitas/notifikasi kedua. Success
-           adalah status akhir pembayaran: hasil lain sesudahnya ditolak. */
-        if (o.paymentStatus === res){ toast('Hasil “' + res + '” untuk pesanan ' + o.number + ' sudah tercatat sebelumnya — pengiriman ulang hasil yang sama diabaikan (idempoten), tidak ada perubahan atau catatan ganda.', true); rerender2(); return; }
+           adalah status akhir pembayaran: hasil lain sesudahnya ditolak.
+           v25 F1 — PENGECUALIAN RETRY EXPIRED: hasil “Expired” pada
+           pesanan yang paymentStatus-nya sudah Expired BUKAN duplikat —
+           itu retry yang sah (keputusan produk Lora): percobaan lama
+           sudah final Expired, jadi hasil baru diterapkan pada
+           percobaan BARU di bawah, pesanan tetap Menunggu Pembayaran.
+           Hasil “Failed” yang diulang tetap diperlakukan idempoten
+           seperti sebelumnya (keputusan Lora hanya menyebut Expired). */
+        if (o.paymentStatus === res && res !== 'Expired'){ toast('Hasil “' + res + '” untuk pesanan ' + o.number + ' sudah tercatat sebelumnya — pengiriman ulang hasil yang sama diabaikan (idempoten), tidak ada perubahan atau catatan ganda.', true); rerender2(); return; }
         if (o.paymentStatus === 'Success'){ toast('Pesanan ' + o.number + ' sudah berstatus Success (terminal) — hasil “' + res + '” ditolak dan tidak mengubah apa pun.', true); rerender2(); return; }
+        /* v25 F1 — GERBANG STATUS PESANAN: retry HANYA bila pesanan
+           masih “Menunggu Pembayaran”. Pesanan Selesai / Diproses /
+           Dibatalkan TIDAK BOLEH dibuka kembali oleh hasil pembayaran
+           apa pun (Dibatalkan sudah ditolak di atas dengan pesannya
+           sendiri; gerbang ini menahan Selesai/Diproses — termasuk
+           bila paymentStatus-nya bukan Success). */
+        if (o.status !== 'Menunggu Pembayaran'){ toast('Percobaan pembayaran untuk pesanan ' + o.number + ' DITOLAK: pesanan berstatus ' + o.status + ' (bukan “Menunggu Pembayaran”) — pesanan yang sudah selesai/diproses/dibatalkan tidak dapat dibuka kembali untuk pembayaran. Buat pesanan baru lewat checkout bila masih memerlukan paket ini.', true); rerender2(); return; }
         /* Hasil pembayaran hanya boleh memakai record pembayaran yang
            terhubung ke ORDER ini dan UNDANGAN yang sama — ketat, tanpa
            fallback legacy: record tanpa invitationId tidak pernah
@@ -791,17 +805,41 @@
       if (!inv) return;
       const fd = new FormData(form);
       const typedName = (fd.get('name') || '').toString().trim(); if (!typedName) return;
-      form.dataset.kiBridged = '1';
-      const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
-      const count = status === 'Hadir' ? +(fd.get('count') || 1) : status === 'Masih Ragu' ? +(fd.get('count') || 1) : 0;
-      const message = (fd.get('message') || '').toString().trim();
       /* Kaitkan RSVP ke tamu HANYA lewat ID stabil: kode tautan personal
          ?to= -> record tamu (guestId). Pencocokan nama TIDAK lagi dipakai
          sebagai identitas — dua tamu bisa bernama sama dan ejaan bisa
          berubah. Tanpa kode yang cocok, submit membuat record tamu BARU
-         dengan ID-nya sendiri, bukan menempel ke tamu bernama mirip. */
-      const toCode = new URLSearchParams((location.hash.split('?')[1] || '')).get('to');
+         dengan ID-nya sendiri, bukan menempel ke tamu bernama mirip.
+         v25 F2 — STRICT ?to=: parameter to yang ADA tetapi kosong,
+         tidak dikenal, atau bukan milik undangan ini DITOLAK DI SINI —
+         SEBELUM kiBridged ditandai dan SEBELUM jalur identitas-web
+         (kiRespondentToken/kiPublicGuestId) sempat membuat tamu baru.
+         Walk-in tetap boleh HANYA bila parameter to memang TIDAK ADA
+         (get() mengembalikan null); ?to= kosong (get() '') tetap
+         ditolak karena parameternya ada. Penolakan TIDAK mengubah apa
+         pun: tidak ada tamu/RSVP/token baru. Pesan tampil ganda —
+         toast + kotak error inline di zona RSVP (jalur yang sama
+         dengan kotak error gagal-simpan di bawah) — supaya tetap
+         terbaca setelah toast 2,8 detik menghilang; formulir tetap
+         tampil dan tombol kirim diaktifkan lagi agar dapat dikirim
+         ulang setelah tautan diperbaiki. */
+      const toParams = new URLSearchParams((location.hash.split('?')[1] || ''));
+      const toCode = toParams.get('to');
       let g = toCode ? S2.guests.find(x => x.invitationId === inv.id && x.code === toCode) : null;
+      if (toParams.has('to') && !g){
+        const shownCode = (toCode || '').trim();
+        const rejMsg = 'RSVP ditolak: kode tamu ' + (shownCode ? '“' + shownCode + '”' : '(kosong)') + ' tidak dikenal / tidak cocok dengan undangan ini — kode tidak ditemukan pada daftar tamu undangan ini, jadi tidak ada respons yang tercatat. Periksa kembali tautan undangan Anda, atau buka undangan tanpa kode bila Anda tamu tanpa undangan personal.';
+        const zoneR = form.closest('[data-rsvp-zone]');
+        if (zoneR){ const prevR = zoneR.querySelector('.rsvp-reject'); if (prevR) prevR.remove(); zoneR.insertAdjacentHTML('afterbegin', '<div class="ok-box rsvp-reject" style="border-color:var(--err)"><b>RSVP ditolak — kode tamu tidak dikenal</b><p class="muted small" style="margin:4px 0 0">' + esc(rejMsg) + '</p></div>'); }
+        toast(rejMsg, true);
+        try { delete form.dataset.kiSent; } catch(e){}
+        const sbR = form.querySelector('[type="submit"]'); if (sbR) sbR.disabled = false;
+        return;
+      }
+      form.dataset.kiBridged = '1';
+      const status = (form.querySelector('[data-seg] button.on') || {}).dataset?.val || 'Hadir';
+      const count = status === 'Hadir' ? +(fd.get('count') || 1) : status === 'Masih Ragu' ? +(fd.get('count') || 1) : 0;
+      const message = (fd.get('message') || '').toString().trim();
       /* Tanpa kode tamu: pakai identitas stabil responden AKTIF
          perangkat ini (kiRespondentToken/kiPublicGuestId) — submit
          ulang oleh orang yang sama menemukan record tamunya dan

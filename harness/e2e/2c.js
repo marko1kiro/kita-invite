@@ -213,7 +213,13 @@ module.exports = {
     // .qr-fake, bukan .va (js/12:313); bukti nonaktif = pemberitahuan kode.
     const va1005 = await t.eval(() => { const v = document.querySelector('.va'); const q = document.querySelector('.qr-fake'); return v ? (v.getAttribute('style') || '') : (q ? 'QRIS-qr-fake' : 'NO-VA'); });
     t.check('1005 halaman bayar: kode percobaan lama dinyatakan tidak aktif + pesan Expired tampil', txt1005.includes('Kode percobaan ini sudah tidak aktif') && txt1005.includes('Expired'), 'va=' + va1005 + ' | teks-tidak-aktif=' + txt1005.includes('Kode percobaan ini sudah tidak aktif'));
-    t.check('KRITERIA-EXPIRED: order Expired TIDAK bisa dibayar (tanpa tombol simulasi)', btns1005.length === 0, 'pay-result buttons=' + JSON.stringify(btns1005) + ' | kartu simulasi tampil=' + txt1005.includes('Simulasikan Hasil Pembayaran'));
+    // v25 F1 — KRITERIA LAMA ("order Expired TIDAK bisa dibayar")
+    // DICABUT: keputusan produk Lora — retry DIIZINKAN bila attempt
+    // lama Expired dan order induk masih Menunggu Pembayaran. Halaman
+    // bayar 1005 MENAWARKAN ketiga tombol simulasi; perilaku retry
+    // (attempt baru + kode baru, attempt lama utuh) dibuktikan
+    // handler-level di §F2.
+    t.check('KRITERIA-v25-F1: order Expired BOLEH retry (3 tombol simulasi tampil)', JSON.stringify(btns1005) === JSON.stringify(['Success', 'Failed', 'Expired']), 'pay-result buttons=' + JSON.stringify(btns1005) + ' | kartu simulasi tampil=' + txt1005.includes('Simulasikan Hasil Pembayaran'));
     await t.shot('2c-e-bayar-1005-expired');
 
     // ================= F. 1004 terminal (admin + grant) =================
@@ -237,7 +243,59 @@ module.exports = {
     await sleep(500);
     const o1004 = await orderByNum('KI-2026-1004');
     t.check('pay-result Success pada 1004 DITOLAK handler: tetap Dibatalkan/Failed, 0 payment baru', toast1004.includes('sudah dibatalkan (status terminal)') && o1004.status === 'Dibatalkan' && o1004.paymentStatus === 'Failed' && (await payments()).length === paysBefore1004, `toast="${toast1004}" order=${o1004.status}/${o1004.paymentStatus} payments=${(await payments()).length} sebelum=${paysBefore1004}`);
+    // v25 F1 — kontrol negatif: retry Expired pada order Dibatalkan juga ditolak.
+    const paysBefore1004b = (await payments()).length;
+    const toast1004b = await firePayResult('seed-order-4', 'Expired');
+    await sleep(500);
+    const o1004b = await orderByNum('KI-2026-1004');
+    t.check('retry Expired pada 1004 DITOLAK handler: tetap Dibatalkan/Failed, 0 payment baru', toast1004b.includes('sudah dibatalkan (status terminal)') && o1004b.status === 'Dibatalkan' && o1004b.paymentStatus === 'Failed' && (await payments()).length === paysBefore1004b, `toast="${toast1004b}" order=${o1004b.status}/${o1004b.paymentStatus} payments=${(await payments()).length} sebelum=${paysBefore1004b}`);
     await t.shot('2c-f-bayar-1004-batal');
+
+    // ================= F2. v25 F1: retry Expired 1005 diizinkan + gate Selesai =================
+    t.section('F2 retry Expired 1005 diizinkan (admin+grant)');
+    const grantStill = await t.eval(() => window.__kiAdminWrite === true);
+    t.check('F2 prasyarat: grant tulis Admin masih aktif dari §F', grantStill === true, 'window.__kiAdminWrite=' + grantStill);
+    const pays5Before = await paysOf('seed-order-5');
+    const old5 = pays5Before[pays5Before.length - 1];
+    const inv4Before = await invRec('seed-inv-4');
+    const ordBeforeF2 = (await orders()).length;
+    await t.goto('bayar/seed-order-5');
+    t.check('F2 halaman bayar 1005: 3 tombol simulasi (retry ditawarkan)', JSON.stringify(await payButtons()) === JSON.stringify(['Success', 'Failed', 'Expired']), 'payButtons=' + JSON.stringify(await payButtons()));
+    await t.click('button[data-s2="pay-result"][data-res="Expired"]');
+    await sleep(700);
+    const pays5e = await paysOf('seed-order-5');
+    const o1005e = await orderByNum('KI-2026-1005');
+    const inv4e = await invRec('seed-inv-4');
+    const old5e = pays5e.find((p) => p.id === 'seed-pay-5');
+    const new5e = pays5e[pays5e.length - 1];
+    t.check('F2 retry Expired 1005 (klik nyata): attempt BARU + kode BARU, attempt lama utuh, order tetap Menunggu Pembayaran/Expired, undangan tidak berubah', pays5e.length === pays5Before.length + 1 && new5e.id !== 'seed-pay-5' && new5e.status === 'Expired' && new5e.code !== old5.code && new5e.code === 'QRIS-SIM-KI-2026-1005-A2' && old5e && old5e.status === 'Expired' && old5e.code === old5.code && o1005e.status === 'Menunggu Pembayaran' && o1005e.paymentStatus === 'Expired' && (await orders()).length === ordBeforeF2 && inv4e && inv4e.status === inv4Before.status && inv4e.packageId === inv4Before.packageId && inv4e.publishedAt === inv4Before.publishedAt, `pays=${pays5e.length} (sebelum ${pays5Before.length}) baru=${new5e.id}/${new5e.code}/${new5e.status} lama=${old5e.id}/${old5e.code}/${old5e.status} order=${o1005e.status}/${o1005e.paymentStatus} inv4=${inv4e.status}/${inv4e.packageId}`);
+    await t.click('button[data-s2="pay-result"][data-res="Failed"]');
+    await sleep(700);
+    const pays5f = await paysOf('seed-order-5');
+    const o1005f = await orderByNum('KI-2026-1005');
+    const inv4f = await invRec('seed-inv-4');
+    t.check('F2 retry Expired 1005 berakhir Failed: attempt ke-3 Failed, order tetap Menunggu Pembayaran/Failed, undangan tetap tidak berubah', pays5f.length === pays5e.length + 1 && pays5f[pays5f.length - 1].status === 'Failed' && o1005f.status === 'Menunggu Pembayaran' && o1005f.paymentStatus === 'Failed' && inv4f.packageId === inv4Before.packageId && inv4f.status === inv4Before.status, `pays=${pays5f.length} terakhir=${pays5f[pays5f.length - 1].status} order=${o1005f.status}/${o1005f.paymentStatus} inv4pkg=${inv4f.packageId}`);
+    await t.click('button[data-s2="pay-result"][data-res="Success"]');
+    await sleep(700);
+    const pays5s = await paysOf('seed-order-5');
+    const o1005s = await orderByNum('KI-2026-1005');
+    const inv4s = await invRec('seed-inv-4');
+    t.check('F2 retry 1005 lalu Berhasil: attempt ke-4 Success, order Diproses, paket Premium aktif pada undangan Salsa (tanpa order duplikat)', pays5s.length === pays5f.length + 1 && pays5s[pays5s.length - 1].status === 'Success' && o1005s.status === 'Diproses' && o1005s.paymentStatus === 'Success' && inv4s.packageId === 'premium' && (await orders()).length === ordBeforeF2, `pays=${pays5s.length} terakhir=${pays5s[pays5s.length - 1].status} order=${o1005s.status}/${o1005s.paymentStatus} inv4pkg=${inv4s.packageId} orders=${(await orders()).length}`);
+    // Kontrol negatif Selesai: 1001 & 1006 (Success-terminal) + halaman bayar tanpa tombol.
+    const paysBeforeS = (await payments()).length;
+    const toast1001 = await firePayResult('seed-order-1', 'Failed');
+    await sleep(500);
+    const o1001f = await orderByNum('KI-2026-1001');
+    t.check('F2 retry pada 1001 Selesai DITOLAK handler: tetap Selesai/Success, 0 payment baru', o1001f.status === 'Selesai' && o1001f.paymentStatus === 'Success' && (await payments()).length === paysBeforeS, `toast="${toast1001}" order=${o1001f.status}/${o1001f.paymentStatus} payments=${(await payments()).length} sebelum=${paysBeforeS}`);
+    const toast1006 = await firePayResult('seed-order-6', 'Expired');
+    await sleep(500);
+    const o1006f = await orderByNum('KI-2026-1006');
+    t.check('F2 retry pada 1006 Selesai DITOLAK handler: tetap Selesai/Success, 0 payment baru', o1006f.status === 'Selesai' && o1006f.paymentStatus === 'Success' && (await payments()).length === paysBeforeS, `toast="${toast1006}" order=${o1006f.status}/${o1006f.paymentStatus} payments=${(await payments()).length} sebelum=${paysBeforeS}`);
+    await t.goto('bayar/seed-order-1');
+    t.check('F2 halaman bayar 1001 Selesai: kartu berhasil, tanpa tombol simulasi', (await appText()).includes('Pembayaran Simulasi Berhasil') && (await payButtons()).length === 0, 'payButtons=' + JSON.stringify(await payButtons()));
+    await t.goto('bayar/seed-order-6');
+    t.check('F2 halaman bayar 1006 Selesai: kartu berhasil, tanpa tombol simulasi', (await appText()).includes('Pembayaran Simulasi Berhasil') && (await payButtons()).length === 0, 'payButtons=' + JSON.stringify(await payButtons()));
+    await t.shot('2c-f2-retry-1005');
 
     // ================= G. Salsa CTA sebagai Nadia (non-pemilik) =================
     t.section('G CTA Salsa sebagai Nadia');
@@ -284,7 +342,9 @@ module.exports = {
     const pkgOvBack = await t.eval(() => JSON.parse(localStorage.getItem('vowora:v1:packages') || '{}'));
     t.check('harga Basic dikembalikan ke Rp29.000', pkgOvBack.basic && pkgOvBack.basic.price === 29000, 'override=' + JSON.stringify(pkgOvBack.basic));
     const fin = await t.storageCounts();
-    t.check('akhir: orders=10 payments=11 (8 seed + 2 order baru + 1 percobaan Expired baru)', fin.orders === 10 && fin.payments === 11, `orders=${fin.orders} payments=${fin.payments}`);
+    // v25 F1: payments 11 -> 14 = +3 percobaan retry 1005 di §F2 (Expired,
+    // Failed, Success); orders tetap 10 (retry tidak membuat order baru).
+    t.check('akhir: orders=10 payments=14 (8 seed + 2 order baru + 1 percobaan Expired baru §D + 3 percobaan retry 1005 §F2)', fin.orders === 10 && fin.payments === 14, `orders=${fin.orders} payments=${fin.payments}`);
     await t.shot('2c-h-snapshot');
   },
 };

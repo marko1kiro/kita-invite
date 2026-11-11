@@ -1577,6 +1577,136 @@
           try { history.replaceState(null, '', hashBak20); } catch(e){ location.hash = hashBak20; }
           s2Render();
         }
+        /* (H21) v25 F1 — RETRY PEMBAYARAN ATAS ATTEMPT EXPIRED lewat
+           handler pay-result ASLI. (a) Order fixture Menunggu
+           Pembayaran/Expired + attempt QRIS Expired: klik “Kedaluwarsa”
+           lagi -> percobaan BARU + kode BARU untuk order yang SAMA,
+           attempt lama utuh (Expired, kode/id sama), order tetap
+           Menunggu Pembayaran, undangan tidak berubah; klik “Gagal”
+           pada retry itu -> percobaan ke-3 Failed, order tetap
+           Menunggu Pembayaran; klik “Berhasil” -> percobaan ke-4
+           Success, order Diproses, paket aktif. (b) Retry pada order
+           Dibatalkan / Selesai DITOLAK handler: 0 attempt baru, status
+           tidak berubah — termasuk order Selesai sintetis berstatus
+           Failed yang menguji gerbang status secara langsung.
+           (c) Retry attempt Failed dengan hasil Failed yang sama
+           tetap idempoten seperti sebelumnya (keputusan Lora hanya
+           menyebut Expired). (d) Gerbang kedua di render: halaman
+           bayar order Selesai sintetis tanpa tombol simulasi. */
+        const fxInv21 = {id:'fx-inv-21', templateId:'luxury-ivory', templateVersion:1, slug:'fx-21', title:'Fixture Retry Expired', categoryId:'pernikahan', status:'draft', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:null};
+        S.invitations.push(fxInv21);
+        const fxOrd21a = {id:'fx-o-21a', number:'KI-FX-21A', invitationId:fxInv21.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Expired', createdAt:Date.now()};
+        S2.orders.unshift(fxOrd21a); saveColl('orders');
+        S2.payments.push({id:'fx-p-21a1', orderId:fxOrd21a.id, invitationId:fxInv21.id, method:'QRIS', status:'Expired', amount:59000, code:'QRIS-SIM-KI-FX-21A-A1', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+        try {
+          const invSnap21 = {status:fxInv21.status, publishedAt:fxInv21.publishedAt, packageId:fxInv21.packageId};
+          const toast21 = () => (document.getElementById('toast') || {}).textContent || '';
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21a.id, 'data-res':'Expired'});
+          const pays21a = S2.payments.filter(p => p.orderId === fxOrd21a.id);
+          const old21a = pays21a.find(p => p.id === 'fx-p-21a1') || {};
+          const new21a = pays21a.find(p => p.id !== 'fx-p-21a1');
+          const o21a = S2.orders.find(o => o.id === fxOrd21a.id) || {};
+          out.push({name:'Handler penuh — F1 retry Expired: klik “Kedaluwarsa” pada order Menunggu Pembayaran/Expired -> percobaan BARU + kode BARU untuk order yang SAMA; attempt lama utuh (Expired, kode/id sama); order tetap Menunggu Pembayaran; undangan tidak berubah', pass: pays21a.length === 2 && !!new21a && new21a.status === 'Expired' && new21a.code === 'QRIS-SIM-KI-FX-21A-A2' && new21a.attempt === 2 && old21a.status === 'Expired' && old21a.code === 'QRIS-SIM-KI-FX-21A-A1' && o21a.status === 'Menunggu Pembayaran' && o21a.paymentStatus === 'Expired' && fxInv21.status === invSnap21.status && fxInv21.publishedAt === invSnap21.publishedAt && fxInv21.packageId === invSnap21.packageId, exp:'2 record; baru Expired kode QRIS-SIM-KI-FX-21A-A2 attempt=2; lama Expired/kode sama; order Menunggu Pembayaran/Expired; undangan draft/null/null', act:'records=' + pays21a.length + '; baru=' + (new21a ? new21a.code + '/attempt=' + new21a.attempt + '/' + new21a.status : 'null') + '; lama=' + old21a.status + '/' + old21a.code + '; order=' + o21a.status + '/' + o21a.paymentStatus + '; inv=' + fxInv21.status + '/' + fxInv21.packageId});
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21a.id, 'data-res':'Failed'});
+          const pays21b = S2.payments.filter(p => p.orderId === fxOrd21a.id);
+          const o21b = S2.orders.find(o => o.id === fxOrd21a.id) || {};
+          const last21b = pays21b[pays21b.length - 1] || {};
+          out.push({name:'Handler penuh — F1 retry Expired berakhir Failed: percobaan ke-3 Failed; order tetap Menunggu Pembayaran, undangan tetap draft tanpa paket', pass: pays21b.length === 3 && last21b.status === 'Failed' && o21b.status === 'Menunggu Pembayaran' && o21b.paymentStatus === 'Failed' && fxInv21.status === 'draft' && fxInv21.packageId === null && fxInv21.publishedAt === null, exp:'3 record; terakhir Failed; order Menunggu Pembayaran/Failed; inv draft/null/null', act:'records=' + pays21b.length + '; terakhir=' + last21b.status + '; order=' + o21b.status + '/' + o21b.paymentStatus + '; inv=' + fxInv21.status + '/' + fxInv21.packageId});
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21a.id, 'data-res':'Success'});
+          const pays21c = S2.payments.filter(p => p.orderId === fxOrd21a.id);
+          const o21c = S2.orders.find(o => o.id === fxOrd21a.id) || {};
+          out.push({name:'Handler penuh — F1 retry lalu Berhasil: percobaan ke-4 Success; order Diproses dan paket Premium aktif pada undangan (retry tidak membuat order duplikat)', pass: pays21c.length === 4 && o21c.status === 'Diproses' && o21c.paymentStatus === 'Success' && fxInv21.packageId === 'premium' && S2.orders.filter(o => o.number === 'KI-FX-21A').length === 1, exp:'4 record; order Diproses/Success; packageId undangan=premium; 1 order bernomor sama', act:'records=' + pays21c.length + '; order=' + o21c.status + '/' + o21c.paymentStatus + '; packageId=' + fxInv21.packageId});
+          /* (b) */
+          const fxOrd21b = {id:'fx-o-21b', number:'KI-FX-21B', invitationId:fxInv21.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Dibatalkan', paymentStatus:'Failed', createdAt:Date.now()};
+          S2.orders.unshift(fxOrd21b); saveColl('orders');
+          S2.payments.push({id:'fx-p-21b1', orderId:fxOrd21b.id, invitationId:fxInv21.id, method:'QRIS', status:'Failed', amount:59000, code:'QRIS-SIM-KI-FX-21B-A1', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+          const paysBefore21b = S2.payments.length;
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21b.id, 'data-res':'Expired'});
+          const o21b2 = S2.orders.find(o => o.id === fxOrd21b.id) || {};
+          const t21b = toast21();
+          out.push({name:'Handler penuh — F1 tolak retry order Dibatalkan: klik “Kedaluwarsa” pada order Dibatalkan/Failed -> DITOLAK, 0 attempt baru, status tetap Dibatalkan/Failed', pass: S2.payments.length === paysBefore21b && o21b2.status === 'Dibatalkan' && o21b2.paymentStatus === 'Failed' && t21b.indexOf('dibatalkan') >= 0, exp:'0 payment baru; status Dibatalkan/Failed; toast menyebut dibatalkan', act:'payments=' + S2.payments.length + ' (sebelum ' + paysBefore21b + '); status=' + o21b2.status + '/' + o21b2.paymentStatus + '; toast="' + t21b.slice(0, 80) + '"'});
+          const paysBefore21c = S2.payments.length;
+          fire({'data-s2':'pay-result', 'data-id':'seed-order-1', 'data-res':'Failed'});
+          const o1001 = S2.orders.find(o => o.id === 'seed-order-1') || {};
+          out.push({name:'Handler penuh — F1 tolak retry order Selesai (seed KI-2026-1001): klik “Gagal” pada order Selesai/Success -> DITOLAK, 0 attempt baru, status tetap Selesai/Success', pass: S2.payments.length === paysBefore21c && o1001.status === 'Selesai' && o1001.paymentStatus === 'Success', exp:'0 payment baru; status Selesai/Success', act:'payments=' + S2.payments.length + ' (sebelum ' + paysBefore21c + '); status=' + o1001.status + '/' + o1001.paymentStatus});
+          const fxOrd21d = {id:'fx-o-21d', number:'KI-FX-21D', invitationId:fxInv21.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Selesai', paymentStatus:'Failed', createdAt:Date.now()};
+          S2.orders.unshift(fxOrd21d); saveColl('orders');
+          S2.payments.push({id:'fx-p-21d1', orderId:fxOrd21d.id, invitationId:fxInv21.id, method:'QRIS', status:'Failed', amount:59000, code:'QRIS-SIM-KI-FX-21D-A1', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+          const paysBefore21d = S2.payments.length;
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21d.id, 'data-res':'Success'});
+          const o21d = S2.orders.find(o => o.id === fxOrd21d.id) || {};
+          const t21d = toast21();
+          out.push({name:'Handler penuh — F1 gerbang status: order Selesai sintetis berstatus Failed (bukan Success) tetap DITOLAK saat klik “Berhasil” -> 0 attempt baru, status tetap Selesai/Failed', pass: S2.payments.length === paysBefore21d && o21d.status === 'Selesai' && o21d.paymentStatus === 'Failed' && t21d.indexOf('Selesai') >= 0, exp:'0 payment baru; status Selesai/Failed; toast menyebut Selesai', act:'payments=' + S2.payments.length + ' (sebelum ' + paysBefore21d + '); status=' + o21d.status + '/' + o21d.paymentStatus + '; toast="' + t21d.slice(0, 80) + '"'});
+          /* (c) */
+          const fxOrd21e = {id:'fx-o-21e', number:'KI-FX-21E', invitationId:fxInv21.id, customerId:'cust-1', packageId:'premium', packageName:'Premium', price:59000, discount:0, couponCode:null, total:59000, status:'Menunggu Pembayaran', paymentStatus:'Failed', createdAt:Date.now()};
+          S2.orders.unshift(fxOrd21e); saveColl('orders');
+          S2.payments.push({id:'fx-p-21e1', orderId:fxOrd21e.id, invitationId:fxInv21.id, method:'QRIS', status:'Failed', amount:59000, code:'QRIS-SIM-KI-FX-21E-A1', createdAt:Date.now(), paidAt:null, attempt:1}); saveColl('payments');
+          const paysBefore21e = S2.payments.length;
+          fire({'data-s2':'pay-result', 'data-id':fxOrd21e.id, 'data-res':'Failed'});
+          const o21e = S2.orders.find(o => o.id === fxOrd21e.id) || {};
+          const t21e = toast21();
+          out.push({name:'Handler penuh — F1 retry Failed (perilaku lama dipertahankan): klik “Gagal” pada order Menunggu Pembayaran/Failed -> idempoten DITOLAK, 0 attempt baru, status tetap Menunggu Pembayaran/Failed', pass: S2.payments.length === paysBefore21e && o21e.status === 'Menunggu Pembayaran' && o21e.paymentStatus === 'Failed' && t21e.indexOf('idempoten') >= 0, exp:'0 payment baru; status Menunggu Pembayaran/Failed; toast idempoten', act:'payments=' + S2.payments.length + ' (sebelum ' + paysBefore21e + '); status=' + o21e.status + '/' + o21e.paymentStatus + '; toast="' + t21e.slice(0, 80) + '"'});
+          /* (d) gerbang kedua di render: halaman bayar order Selesai
+             sintetis (21d) TIDAK menampilkan tombol simulasi. */
+          location.hash = '#/bayar/fx-o-21d'; s2Render();
+          const btns21d = [...document.querySelectorAll('[data-s2="pay-result"]')].map(b => b.dataset.res);
+          const html21d = (document.getElementById('app') || {}).innerHTML || '';
+          out.push({name:'Handler penuh — F1 gerbang render: halaman #/bayar order Selesai sintetis menampilkan kartu “Pesanan Selesai” tanpa tombol simulasi pembayaran', pass: btns21d.length === 0 && html21d.indexOf('Pesanan Selesai') >= 0, exp:'0 tombol simulasi; kartu Pesanan Selesai tampil', act:'tombol=' + JSON.stringify(btns21d)});
+        } finally {
+          S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-21');
+          S2.orders = S2.orders.filter(o => ['fx-o-21a','fx-o-21b','fx-o-21d','fx-o-21e'].indexOf(o.id) < 0);
+          S2.payments = S2.payments.filter(p => ['fx-o-21a','fx-o-21b','fx-o-21d','fx-o-21e'].indexOf(p.orderId) < 0);
+          saveColl('orders'); saveColl('payments');
+          try { history.replaceState(null, '', origHash); } catch(e){ location.hash = origHash; }
+          s2Render();
+        }
+        /* (H22) v25 F2 — RSVP STRICT ?to= lewat listener submit ASLI
+           pada rute publik undangan fixture: (1) ?to= tak dikenal,
+           (2) ?to= kosong, (3) ?to= milik undangan LAIN — ketiganya
+           DITOLAK tanpa mutasi (tamu & RSVP tidak bertambah, token
+           identitas-web TIDAK dibuat); (4) ?to= valid menghubungkan
+           RSVP ke tamu + undangan yang tepat tanpa tamu baru;
+           (5) walk-in tanpa ?to= membuat tamu + RSVP baru. */
+        const fxInv22 = {id:'fx-inv-22', templateId:'luxury-ivory', templateVersion:1, slug:'fx-22-rsvp', title:'Fixture RSVP Strict', categoryId:'pernikahan', status:'published', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:Date.now()};
+        const fxInv22b = {id:'fx-inv-22b', templateId:'confetti-pop', templateVersion:1, slug:'fx-22-lain', title:'Fixture RSVP Lain', categoryId:'ulang-tahun', status:'published', ownerId:'cust-1', archived:false, packageId:null, content:{}, design:{}, sections:{}, createdAt:Date.now(), updatedAt:Date.now(), publishedAt:Date.now()};
+        S.invitations.push(fxInv22, fxInv22b);
+        S2.guests.push({id:'fx-g-22a', invitationId:fxInv22.id, name:'Tamu Kode Valid', group:'Teman', contact:'', rsvpStatus:'Belum Menjawab', attendees:0, code:'T2101', createdAt:Date.now()});
+        S2.guests.push({id:'fx-g-22b', invitationId:fxInv22b.id, name:'Tamu Undangan Lain', group:'Keluarga', contact:'', rsvpStatus:'Belum Menjawab', attendees:0, code:'U2201', createdAt:Date.now()});
+        saveColl('guests');
+        try {
+          const toast22 = () => (document.getElementById('toast') || {}).textContent || '';
+          const counts22 = () => ({g: S2.guests.filter(x => x.invitationId === fxInv22.id).length, r: S2.rsvps.filter(x => x.invitationId === fxInv22.id).length, gb: S2.guests.filter(x => x.invitationId === fxInv22b.id).length, rb: S2.rsvps.filter(x => x.invitationId === fxInv22b.id).length, tok: kiRespondentRaw(fxInv22.id)});
+          const mkForm22 = (nm, st, cnt, msg) => { const f = document.createElement('form'); f.setAttribute('data-rsvp-form', ''); f.innerHTML = '<input name="name" value="' + nm + '"><input name="count" value="' + cnt + '"><textarea name="message">' + msg + '</textarea><div data-seg><button type="button" class="on" data-val="' + st + '">x</button></div>'; document.body.appendChild(f); return f; };
+          const submit22 = (hash, nm, st, cnt, msg) => { location.hash = hash; const f = mkForm22(nm, st, cnt, msg); f.dispatchEvent(new Event('submit', {bubbles:true, cancelable:true})); f.remove(); };
+          const base22 = counts22();
+          submit22('#/u/fx-22-rsvp?to=T9999', 'Tamu Kode Salah 22', 'Hadir', '1', 'Ucapan kode salah');
+          const c22a = counts22();
+          out.push({name:'Handler penuh — F2 ?to= tak dikenal DITOLAK: submit dengan ?to=T9999 -> tidak ada tamu/RSVP/token baru, toast menyebut kode tidak dikenal', pass: c22a.g === base22.g && c22a.r === base22.r && c22a.gb === base22.gb && c22a.rb === base22.rb && c22a.tok === null && !S2.guests.some(g => g.name === 'Tamu Kode Salah 22') && toast22().indexOf('tidak dikenal') >= 0 && toast22().indexOf('ditolak') >= 0, exp:'tamu/rsvp/token tetap ' + base22.g + '/' + base22.r + '/null; toast ditolak + tidak dikenal', act:'tamu=' + c22a.g + '; rsvp=' + c22a.r + '; token=' + c22a.tok + '; toast="' + toast22().slice(0, 90) + '"'});
+          submit22('#/u/fx-22-rsvp?to=', 'Tamu Kode Kosong 22', 'Hadir', '1', 'Ucapan kode kosong');
+          const c22b = counts22();
+          out.push({name:'Handler penuh — F2 ?to= kosong DITOLAK: submit dengan ?to= (parameter ada tapi kosong) -> tidak ada tamu/RSVP/token baru', pass: c22b.g === base22.g && c22b.r === base22.r && c22b.tok === null && !S2.guests.some(g => g.name === 'Tamu Kode Kosong 22') && toast22().indexOf('tidak dikenal') >= 0, exp:'tamu/rsvp/token tetap ' + base22.g + '/' + base22.r + '/null; toast tidak dikenal', act:'tamu=' + c22b.g + '; rsvp=' + c22b.r + '; token=' + c22b.tok + '; toast="' + toast22().slice(0, 90) + '"'});
+          submit22('#/u/fx-22-rsvp?to=U2201', 'Tamu Kode Silang 22', 'Hadir', '1', 'Ucapan kode silang');
+          const c22c = counts22();
+          out.push({name:'Handler penuh — F2 ?to= milik undangan lain DITOLAK: submit dengan ?to=U2201 (kode tamu undangan fx-22-lain) pada undangan fx-22-rsvp -> tidak ada tamu/RSVP baru di undangan mana pun', pass: c22c.g === base22.g && c22c.r === base22.r && c22c.gb === base22.gb && c22c.rb === base22.rb && c22c.tok === null && !S2.guests.some(g => g.name === 'Tamu Kode Silang 22') && toast22().indexOf('tidak cocok') >= 0, exp:'tamu/rsvp kedua undangan tetap; toast tidak cocok', act:'tamu=' + c22c.g + '/' + c22c.gb + '; rsvp=' + c22c.r + '/' + c22c.rb + '; token=' + c22c.tok + '; toast="' + toast22().slice(0, 90) + '"'});
+          submit22('#/u/fx-22-rsvp?to=T2101', 'Tamu Kode Valid', 'Hadir', '2', 'Hadir, terima kasih!');
+          const c22d = counts22();
+          const g22d = S2.guests.find(g => g.id === 'fx-g-22a') || {};
+          const r22d = S2.rsvps.find(r => r.guestId === 'fx-g-22a');
+          out.push({name:'Handler penuh — F2 ?to= valid TERHUBUNG: submit dengan ?to=T2101 -> RSVP tertaut ke tamu + undangan yang tepat, tanpa tamu baru', pass: c22d.g === base22.g && c22d.r === base22.r + 1 && !!r22d && r22d.invitationId === fxInv22.id && r22d.status === 'Hadir' && r22d.count === 2 && g22d.rsvpStatus === 'Hadir', exp:'tamu tetap ' + base22.g + '; rsvp +1 tertaut fx-g-22a/fx-inv-22 Hadir/2', act:'tamu=' + c22d.g + '; rsvp=' + c22d.r + '; rsvp-guest=' + (r22d ? r22d.guestId : 'null') + '/' + (r22d ? r22d.invitationId : 'null')});
+          submit22('#/u/fx-22-rsvp', 'Tamu Walk-in 22', 'Hadir', '1', 'Walk-in hadir');
+          const c22e = counts22();
+          const g22e = S2.guests.find(g => g.name === 'Tamu Walk-in 22');
+          const r22e = g22e ? S2.rsvps.find(r => r.guestId === g22e.id) : null;
+          out.push({name:'Handler penuh — F2 walk-in tanpa ?to= DIIZINKAN: submit tanpa parameter to -> tamu + RSVP baru dibuat dan tertaut ke undangan yang tepat', pass: c22e.g === c22d.g + 1 && c22e.r === c22d.r + 1 && !!g22e && g22e.invitationId === fxInv22.id && !!r22e && r22e.invitationId === fxInv22.id && c22e.tok !== null, exp:'tamu/rsvp +1 dari sesudah ?to= valid (' + c22d.g + '/' + c22d.r + '); tamu baru tertaut fx-inv-22; token identitas dibuat', act:'tamu=' + c22e.g + '; rsvp=' + c22e.r + '; tamuBaru=' + (g22e ? g22e.id : 'null') + '; token=' + (c22e.tok ? 'ada' : 'null')});
+        } finally {
+          S.invitations = S.invitations.filter(i => i.id !== 'fx-inv-22' && i.id !== 'fx-inv-22b');
+          S2.guests = S2.guests.filter(g => g.invitationId !== 'fx-inv-22' && g.invitationId !== 'fx-inv-22b');
+          S2.rsvps = S2.rsvps.filter(r => r.invitationId !== 'fx-inv-22' && r.invitationId !== 'fx-inv-22b');
+          saveColl('guests'); saveColl('rsvps');
+          try { const st22 = storageBackend(); if (st22) st22.removeItem(kiRespondentKey(fxInv22.id)); } catch(e){}
+          try { history.replaceState(null, '', origHash); } catch(e){ location.hash = origHash; }
+          s2Render();
+        }
       } catch(e){ out.push({name:'Uji handler penuh (event nyata)', pass:false}); } finally {
       /* v21.2 — pemulihan di finally: berjalan walau ada kasus yang
          melempar; sessionStorage dipulihkan PERSIS (bukan hanya

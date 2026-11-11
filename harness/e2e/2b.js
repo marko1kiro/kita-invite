@@ -375,7 +375,7 @@ module.exports = {
       `wishList=${wishMod.slice(0, 500)}`);
     await t.shot('buku-tamu-moderasi');
 
-    // ---------- 11. RSVP kode SALAH (fail-closed?) — TERAKHIR karena menulis data ----------
+    // ---------- 11. RSVP kode SALAH (strict ?to= v25) — disusul §12 (kosong/silang/walk-in) ----------
     t.section('RSVP kode salah');
     await t.goto('u/nadia-dan-reza?to=T9999');
     await t.click('[data-open-inv]');
@@ -401,13 +401,108 @@ module.exports = {
       const g = G.find(x => x.name === 'Tamu Kode Salah');
       const r = g ? R.find(x => x.guestId === g.id) : null;
       const bodyTxt = document.body.innerText;
+      const rejBox = document.querySelector('.rsvp-reject');
       return { guestCreated: !!g, guestId: g ? g.id : null, guestInv: g ? g.invitationId : null,
         rsvpCreated: !!r, rsvpStatus: r ? r.status : null,
         totalInv: G.filter(x => x.invitationId === INV).length,
-        anyRejectionText: /ditolak|tidak ditemukan|kode (tamu )?tidak|tidak valid|tidak sah/i.test(bodyTxt) };
+        anyRejectionText: /ditolak|tidak ditemukan|kode (tamu )?tidak|tidak valid|tidak sah/i.test(bodyTxt),
+        rejectBox: !!rejBox, rejectText: rejBox ? rejBox.textContent.replace(/\s+/g, ' ').trim().slice(0, 200) : null,
+        formStillThere: !!document.querySelector('form[data-rsvp-form]') };
     }, INV);
-    t.check('kode salah DITOLAK dengan pesan jelas (fail-closed)', wrongRes.guestCreated === false && wrongRes.rsvpCreated === false && wrongRes.anyRejectionText === true,
-      `guestCreated=${wrongRes.guestCreated} guestId=${wrongRes.guestId} inv=${wrongRes.guestInv} rsvpCreated=${wrongRes.rsvpCreated} status=${wrongRes.rsvpStatus} totalInvA=${wrongRes.totalInv} (sebelum=${guestsBeforeWrong}) adaTeksPenolakan=${wrongRes.anyRejectionText} — handler js/13-s2-handlers.js:758+ tidak memvalidasi ?to=, kode tak cocok jatuh ke identitas web dan membuat tamu baru`);
+    // v25 F2 — KRITERIA LAMA ("kode salah DITOLAK fail-closed" longgar)
+    // DICABUT: dulu kode tak cocok jatuh ke identitas-web dan membuat
+    // tamu baru (guestCreated=true). Kriteria BARU strict-?to=: ?to=
+    // yang ADA tapi tak dikenal DITOLAK handler SEBELUM identitas-web
+    // — tanpa tamu/RSVP/token baru, jumlah tamu undangan tetap, pesan
+    // jelas tampil inline (.rsvp-reject) + toast, formulir tetap ada.
+    t.check('KRITERIA-v25-F2: kode salah DITOLAK strict-?to= (tanpa mutasi, pesan jelas)', wrongRes.guestCreated === false && wrongRes.rsvpCreated === false && wrongRes.anyRejectionText === true && wrongRes.totalInv === guestsBeforeWrong && wrongRes.rejectBox === true && wrongRes.formStillThere === true,
+      `guestCreated=${wrongRes.guestCreated} guestId=${wrongRes.guestId} inv=${wrongRes.guestInv} rsvpCreated=${wrongRes.rsvpCreated} status=${wrongRes.rsvpStatus} totalInvA=${wrongRes.totalInv} (sebelum=${guestsBeforeWrong}) adaTeksPenolakan=${wrongRes.anyRejectionText} kotakTolak=${wrongRes.rejectBox} teksKotak=${JSON.stringify(wrongRes.rejectText)} formMasihAda=${wrongRes.formStillThere}`);
     await t.shot('rsvp-kode-salah');
+
+    // ---------- 12. v25 F2: ?to= kosong, ?to= milik undangan lain, walk-in ----------
+    t.section('RSVP strict ?to= kosong/silang + walk-in');
+    // ?to= kosong: parameter ADA tapi kosong -> tolak, tanpa mutasi.
+    const countsBeforeEmpty = await t.eval((INV) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      return { g: G.filter(x => x.invitationId === INV).length, r: R.filter(x => x.invitationId === INV).length,
+        tok: localStorage.getItem('vowora:v1:respondent:' + INV) };
+    }, INV);
+    await t.goto('u/nadia-dan-reza?to=');
+    await t.click('[data-open-inv]');
+    await t.page.waitForTimeout(400);
+    await t.fill('form[data-rsvp-form] input[name="name"]', 'Tamu Kode Kosong');
+    await t.fill('form[data-rsvp-form] textarea[name="message"]', 'Ucapan dari kode kosong');
+    await t.click('form[data-rsvp-form] button[type="submit"]');
+    await t.page.waitForTimeout(600);
+    const emptyRes = await t.eval((INV) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      const bodyTxt = document.body.innerText;
+      const rejBox = document.querySelector('.rsvp-reject');
+      return { guestCreated: G.some(x => x.name === 'Tamu Kode Kosong'),
+        totalInv: G.filter(x => x.invitationId === INV).length,
+        rsvpInv: R.filter(x => x.invitationId === INV).length,
+        tok: localStorage.getItem('vowora:v1:respondent:' + INV),
+        anyRejectionText: /ditolak|tidak ditemukan|kode (tamu )?tidak|tidak valid|tidak sah/i.test(bodyTxt),
+        rejectBox: !!rejBox };
+    }, INV);
+    t.check('?to= kosong DITOLAK: tanpa tamu/RSVP/token baru, pesan jelas', emptyRes.guestCreated === false && emptyRes.totalInv === countsBeforeEmpty.g && emptyRes.rsvpInv === countsBeforeEmpty.r && emptyRes.tok === countsBeforeEmpty.tok && emptyRes.anyRejectionText === true && emptyRes.rejectBox === true,
+      `guestCreated=${emptyRes.guestCreated} totalInvA=${emptyRes.totalInv} (sebelum=${countsBeforeEmpty.g}) rsvpInvA=${emptyRes.rsvpInv} (sebelum=${countsBeforeEmpty.r}) tokenBerubah=${emptyRes.tok !== countsBeforeEmpty.tok} adaTeksPenolakan=${emptyRes.anyRejectionText} kotakTolak=${emptyRes.rejectBox}`);
+    // ?to= milik undangan lain: U2001 = tamu seed-inv-2 (Kirana), dipakai di inv-1 -> tolak.
+    const countsBeforeCross = await t.eval(({ INV, INV2 }) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      return { g1: G.filter(x => x.invitationId === INV).length, r1: R.filter(x => x.invitationId === INV).length,
+        g2: G.filter(x => x.invitationId === INV2).length, r2: R.filter(x => x.invitationId === INV2).length };
+    }, { INV, INV2 });
+    await t.goto('u/nadia-dan-reza?to=U2001');
+    await t.click('[data-open-inv]');
+    await t.page.waitForTimeout(400);
+    await t.fill('form[data-rsvp-form] input[name="name"]', 'Tamu Kode Silang');
+    await t.fill('form[data-rsvp-form] textarea[name="message"]', 'Ucapan dari kode silang');
+    await t.click('form[data-rsvp-form] button[type="submit"]');
+    await t.page.waitForTimeout(600);
+    const crossRes = await t.eval(({ INV, INV2 }) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      const bodyTxt = document.body.innerText;
+      const rejBox = document.querySelector('.rsvp-reject');
+      return { guestCreated: G.some(x => x.name === 'Tamu Kode Silang'),
+        g1: G.filter(x => x.invitationId === INV).length, r1: R.filter(x => x.invitationId === INV).length,
+        g2: G.filter(x => x.invitationId === INV2).length, r2: R.filter(x => x.invitationId === INV2).length,
+        anyRejectionText: /ditolak|tidak ditemukan|kode (tamu )?tidak|tidak valid|tidak sah/i.test(bodyTxt),
+        rejectSaysMismatch: /tidak cocok/i.test(rejBox ? rejBox.textContent : '') };
+    }, { INV, INV2 });
+    t.check('?to= milik undangan lain DITOLAK: tanpa mutasi di undangan mana pun, pesan "tidak cocok"', crossRes.guestCreated === false && crossRes.g1 === countsBeforeCross.g1 && crossRes.r1 === countsBeforeCross.r1 && crossRes.g2 === countsBeforeCross.g2 && crossRes.r2 === countsBeforeCross.r2 && crossRes.anyRejectionText === true && crossRes.rejectSaysMismatch === true,
+      `guestCreated=${crossRes.guestCreated} invA=${crossRes.g1}/${crossRes.r1} (sebelum ${countsBeforeCross.g1}/${countsBeforeCross.r1}) invB=${crossRes.g2}/${crossRes.r2} (sebelum ${countsBeforeCross.g2}/${countsBeforeCross.r2}) adaTeksPenolakan=${crossRes.anyRejectionText} sebutTidakCocok=${crossRes.rejectSaysMismatch}`);
+    // Walk-in tanpa ?to=: tamu + RSVP baru dibuat dan tertaut ke inv-1.
+    const countsBeforeWalk = await t.eval((INV) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      return { g: G.filter(x => x.invitationId === INV).length, r: R.filter(x => x.invitationId === INV).length };
+    }, INV);
+    await t.goto('u/nadia-dan-reza');
+    await t.click('[data-open-inv]');
+    await t.page.waitForTimeout(400);
+    await t.fill('form[data-rsvp-form] input[name="name"]', 'Tamu Walk-in 2B');
+    await t.fill('form[data-rsvp-form] textarea[name="message"]', 'Hadir sebagai walk-in');
+    await t.click('form[data-rsvp-form] button[type="submit"]');
+    await t.page.waitForTimeout(600);
+    const walkRes = await t.eval((INV) => {
+      const G = JSON.parse(localStorage.getItem('vowora:v1:guests') || '[]');
+      const R = JSON.parse(localStorage.getItem('vowora:v1:rsvps') || '[]');
+      const g = G.find(x => x.name === 'Tamu Walk-in 2B');
+      const r = g ? R.find(x => x.guestId === g.id) : null;
+      const okBox = document.querySelector('[data-rsvp-zone] .ok-box');
+      return { guest: g ? { id: g.id, inv: g.invitationId } : null,
+        rsvp: r ? { status: r.status, inv: r.invitationId } : null,
+        totalInv: G.filter(x => x.invitationId === INV).length,
+        rsvpInv: R.filter(x => x.invitationId === INV).length,
+        okSent: okBox ? okBox.textContent.includes('Respons Anda sudah terkirim') : false };
+    }, INV);
+    t.check('walk-in tanpa ?to= DIIZINKAN: tamu + RSVP baru tertaut ke undangan yang tepat', !!walkRes.guest && walkRes.guest.inv === INV && !!walkRes.rsvp && walkRes.rsvp.inv === INV && walkRes.totalInv === countsBeforeWalk.g + 1 && walkRes.rsvpInv === countsBeforeWalk.r + 1 && walkRes.okSent === true,
+      `guest=${JSON.stringify(walkRes.guest)} rsvp=${JSON.stringify(walkRes.rsvp)} totalInvA=${walkRes.totalInv} (sebelum=${countsBeforeWalk.g}) rsvpInvA=${walkRes.rsvpInv} (sebelum=${countsBeforeWalk.r}) okSent=${walkRes.okSent}`);
+    await t.shot('rsvp-strict-to-walkin');
   },
 };

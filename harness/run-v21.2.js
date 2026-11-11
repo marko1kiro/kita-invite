@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Harness v21.2 (disertakan di branch; nama file DIPERTAHANKAN di ronde
-// v22 sesuai instruksi — harness ini kini menjalankan suite v22):
+// v22/v23 sesuai instruksi — harness ini kini menjalankan suite v23):
 // sajikan tree ini lewat HTTP lokal, muat di jsdom (script eksternal
 // ikut dimuat), jalankan suite fixture + handler in-page, dump state
 // untuk 5 rute yang SAMA.
@@ -10,6 +10,10 @@
 // ke-2 (atau env KI_BASELINE); tanpa itu, perbandingan dilewati dan
 // hasil run dilaporkan apa adanya.
 // Penggunaan: node run-v21.2.js [out.json] [baseline-dir]
+//   atau: npm test   (menjalankan "node run-v21.2.js ./suite-result.json"
+//   dari dalam folder harness/ — hasil JSON ditulis ke
+//   harness/suite-result.json, artefak run lokal, BUKAN bagian commit;
+//   ringkasan jelas juga dicetak ke stdout, lihat TEST SUMMARY di akhir)
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -247,6 +251,12 @@ async function main() {
     result.exitCode = (anyFail || !cleanupOk) ? 1 : 0;
     if (OUT) fs.writeFileSync(OUT, JSON.stringify(result, null, 2));
     console.log(JSON.stringify({ httpStatus: result.httpStatus, compare: result.compare, bootErrors: result.bootErrors, storageKeysAfterSuite: result.storageKeysAfterSuite, suites: Object.fromEntries(Object.entries(result.suites).map(([n, s]) => [n, s.error ? { error: s.error } : { total: s.total, passed: s.passed, failed: s.total - s.passed }])), cleanup: result.cleanup, exitCode: result.exitCode }, null, 2));
+    // v23 — ringkasan jelas untuk `npm test` (dan run manual): jumlah
+    // lolos/gagal per suite + status cleanup + HTTP + exit code, satu baris.
+    const httpVals = Object.values(result.httpStatus);
+    const httpOk = httpVals.filter((v) => v === 200).length + '/' + httpVals.length;
+    const sumParts = Object.entries(result.suites).map(([n, s]) => (s.error ? `${n}: ERROR (${s.error})` : `${n}: ${s.passed}/${s.total} PASS`)).join(' | ');
+    console.log(`\nTEST SUMMARY: ${sumParts} | cleanup: ${cleanupOk ? 'ok' : 'NOT OK'} | HTTP: ${httpOk} | exit: ${result.exitCode}`);
   } finally {
     server.close();
   }

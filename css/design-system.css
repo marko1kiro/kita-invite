@@ -261,8 +261,22 @@
            padding tautan nav supaya semua tombol tetap di header,
            terbaca, dan bisa dipakai (hemat ~66px). Tidak menyentuh
            layout demo (.demo-layout) atau breakpoint 820px. */
-        .topbar-in{gap:16px}
-        .nav a{padding:9px 10px}
+        .topbar-in{gap:12px}
+        .nav a{padding:9px 8px;font-size:14px}
+        /* v23 — wordmark 821-~1023px: brand dua baris ("Kita Invite" +
+           tagline <small>) terjepit di bawah lebar satu barisnya (~148px)
+           karena baris flex dipenuhi nav 7 tautan + tombol, sehingga teks
+           utama DAN tagline membungkus (brand ~104px, keluar bar 64px
+           ±20px atas-bawah — terukur di REPORT-v22 §4, sudah ada sejak
+           baseline v21.2, BUKAN regresi v22). Perbaikan: brand tidak
+           membungkus (white-space:nowrap — wordmark tetap satu baris,
+           teks tidak disembunyikan/dipotong) + ruang dilonggarkan dengan
+           memperketat lagi gap 16→12px, padding nav 10→8px, font nav
+           14,5→14px, dan margin tombol 8→0px (total hemat ~61px ≥
+           44,6px yang dibutuhkan di 821px). Tanpa overflow:hidden;
+           ≤820px & ≥1024px tidak tersentuh; layout demo tidak disentuh. */
+        .brand{white-space:nowrap}
+        .topbar .btn{margin-left:0}
       }
       @media (max-width:820px){
         .nav{display:none}

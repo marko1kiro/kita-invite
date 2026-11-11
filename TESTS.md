@@ -1,158 +1,227 @@
-# Kita Invite V22 — TESTS.md
+# Kita Invite V23 — TESTS.md
 
-Ronde perbaikan sempit atas koreksi Agent Lora untuk v21.2 (3 backlog).
-Baseline: branch `muse-fix-v21.2`, commit
-`eef0a7ef78a1edc38e0dc2b590ccb819bfef378f`. Tree ini (`v22/`)
-mempertahankan struktur modular V20/V21/V21.1/V21.2 (18 file:
-`index.html` + 4 CSS + 13 JS, classic `<script src>`, bukan ES
-modules) + direktori `harness/` (harness yang dapat dijalankan,
-disertakan di branch — lihat § Reproduksi). Harness di branch TETAP
-bernama `harness/run-v21.2.js` (JANGAN di-rename — instruksi Lora
-menyebut "harness V21.2 yang ada di branch"); komentar header-nya
-diperbarui supaya jelas ia kini menjalankan suite v22.
+## Struktur tree (v23, dari v22)
 
-## File yang berubah vs V21.2 (4 file + TESTS.md; 17 file lain byte-identical)
+Perintah kerja (di `~/workspace/kita-invite-refactor/`):
 
-| File | Perubahan | Alasan (satu baris) |
+```bash
+# Verifikasi dasar — tidak ada perubahan yang merusak struktur
+node --check v23/js/*.js          # semua PASS
+diff -rq v22 v23                  # HANYA 3 file + TESTS.md ini yang berbeda
+```
+
+| File | Perubahan di v23 |
+|---|---|
+| `css/design-system.css` | Item 1 — wordmark 821–~1023 px: `.brand{white-space:nowrap}` + `.topbar-in{gap:12px}` + `.nav a{padding:9px 8px;font-size:14px}` + `.topbar .btn{margin-left:0}` — semua di dalam `@media (max-width:1023px)` yang sudah ada (295→309 baris). |
+| `harness/package.json` | Item 2 — script `test`: dari default npm (`echo "Error: no test specified" && exit 1`) → `"test": "node run-v21.2.js ./suite-result.json"`. |
+| `harness/run-v21.2.js` | Item 2 — komentar header diperbarui (suite kini v23 + cara `npm test`) + baris ringkasan `TEST SUMMARY` di akhir run (255→264 baris). Nama file DIPERTAHANKAN. |
+| `TESTS.md` | Dokumen ini. |
+| 18 file lainnya | Byte-identical dengan v22 (4 CSS sisanya, 13 JS, `index.html`, `harness/package-lock.json`). |
+
+SHA `index.html` TIDAK berubah
+(`77b315814854f9c940a1e3326dd75a972585f3339ab5af7bba8859036affe5b1`).
+Tidak ada node_modules / suite-result.json / PNG / JSON di dalam
+tree. Tidak ada file yang di-rename.
+
+## Cara reproduksi (utama: `npm ci && npm test`)
+
+```bash
+# Dari dalam folder harness/ (node ≥18):
+cd harness/
+npm ci      # instalasi deterministik dari package-lock.json (acorn 8.19.0 + jsdom 31.0.0) — exit 0
+npm test    # menjalankan "node run-v21.2.js ./suite-result.json" — exit 0
+```
+
+Hasil yang diharapkan (tercetak di stdout, baris terakhir):
+
+```
+TEST SUMMARY: kiFixtureTests: 172/172 PASS | kiHandlerTests: 50/50 PASS | cleanup: ok | HTTP: 19/19 | exit: 0
+```
+
+Hasil JSON lengkap ditulis ke `harness/suite-result.json` (313.418 B)
+— artefak run lokal, BUKAN bagian commit. Jangan push file itu
+(daftar file push eksplisit tidak memasukkannya).
+
+Verifikasi dari clone bersih (sudah dijalankan 11 Nov 2026):
+salin tree ke `/tmp/clean-clone-v23` (tanpa node_modules, tanpa
+suite-result.json), lalu dari dalam `harness/`: `npm ci` → exit 0,
+`npm test` → exit 0, ringkasan yang sama tercetak.
+Arsip: `after-v23/suite-result-clean-clone.json`.
+
+## Cara reproduksi (manual — tetap bekerja, tidak berubah)
+
+```bash
+# Jalankan manual dari layout branch (v23/harness), tanpa instalasi di tree:
+NODE_PATH=/home/hatch/workspace/kita-invite-refactor/harness/node_modules node run-v21.2.js [out.json] [baseline-dir]
+# Contoh: NODE_PATH=... node run-v21.2.js out.json
+# (tanpa argumen: tidak menulis file — hasil hanya dicetak ke stdout)
+# Perintah di atas bekerja dari folder mana pun; harness membaca layout
+# branch relatif terhadap file run-v21.2.js itu sendiri.
+```
+
+Harness mengembalikan kode keluar 1 bila ada kasus gagal / ada
+suite yang throw / cleanup gagal (tampilan lama tetap ditulis),
+dan 2 bila runner itu sendiri throw. Argumen `[out.json]` dan
+`[baseline-dir]` boleh diabaikan. Jalankan manual itu hanya
+menguji in-page suite (172/172 + 50/50) + HTTP lokal; TIDAK
+menguji `npm test` itu sendiri (buktikan dengan clone bersih di
+atas). `package-lock.json` WAJIB ada di branch (`npm ci`).
+
+Catatan: run manual dengan node_modules luar memakai `NODE_PATH`
+karena di dalam branch tidak ada node_modules terinstal — JANGAN
+instal di tree (node_modules tidak boleh masuk commit).
+
+## Suite
+
+Suite terdiri dari **222 kasus**: 172 `kiFixtureTests` (logika murni
+in-page) + 50 `kiHandlerTests` (handler produksi asli + event DOM
+nyata). Teks fixture disintesis (tamu, layanan, pesanan) — TIDAK
+menyentuh server produksi. HTTP lokal disajikan dari `index.html`
++ semua aset branch oleh server HTTP Node bawaan di port acak
+(127.0.0.1). 19/19 URL lokal → 200. Jalankan dari layout branch
+mana pun (v23/harness): suite membaca file branch lewat `fs`.
+
+### Cara memeriksa hasil
+
+- Jalankan dengan argumen output, mis.
+  `NODE_PATH=... node run-v21.2.js out.json`, lalu baca out.json
+  (`suites.kiFixtureTests.total/passed`,
+  `suites.kiHandlerTests.total/passed`, `cleanup.ok`,
+  `exitCode`).
+- Suite menulis `result.cleanup` (storage keys + kunci window
+  sebelum/sesudah suite — harus identik sesudah cleanup) dan
+  `result.httpStatus` (semua harus 200) ke JSON output.
+- Harness mencetak ringkasan JSON + baris `TEST SUMMARY` ke stdout.
+
+### Hasil v23 (dijalankan pada tree v23 sesudah perubahan)
+
+| Run | kiFixtureTests | kiHandlerTests | Exit | Cleanup | HTTP | Storage keys |
+|---|---|---|---|---|---|---|
+| Baseline V22 (sebelum perubahan) | 172/172 | 50/50 | 0 | ok | 19/19 | 16 |
+| `npm test` di branch (NODE_PATH) | **172/172** | **50/50** | 0 | ok | 19/19 | 16 |
+| `npm test` clone bersih (`npm ci` dulu) | **172/172** | **50/50** | 0 | ok | 19/19 | 16 |
+| Run final manual (NODE_PATH) | **172/172** | **50/50** | 0 | ok | 19/19 | 16 |
+
+Boot errors: hanya 1 jsdomError Google Fonts (artefak harness —
+request non-localhost diblokir interceptor menjadi 404 sintetis).
+Tidak ada kasus yang gagal. Suite TIDAK berubah di v23 (lihat
+bawah kenapa).
+
+### Kenapa suite tidak berubah di v23
+
+Item 1 murni CSS/layout: jsdom TIDAK PUNYA mesin layout
+(`getBoundingClientRect` mengembalikan 0), jadi TIDAK ADA kasus
+fixture yang bisa mengamati clipping vertikal — kasus seperti itu
+akan selalu lolos palsu di jsdom. Bukti item 1 HANYA lewat
+Playwright (bagian "Pengukuran header" di bawah). Item 2 (npm test)
+adalah perubahan tooling harness, bukan perilaku aplikasi —
+dibuktikan lewat run `npm ci && npm test` dari clone bersih,
+bukan lewat kasus in-page. Tidak ada kasus yang ditambah demi angka.
+
+## Pengukuran header — wordmark vertikal (item 1, Playwright nyata)
+
+Skrip BARU `browser-test/measure-brand.js` (Playwright Chromium
+nyata; mengukur vertikal: rect brand vs tinggi bar, jumlah garis
+teks utama via Range, rect `<small>`, line-height/font-size
+terkomputasi, tumpang tindih, overflow horizontal, posisi tombol,
+status font). Route `#/` DAN `#/demo/luxury-ivory` (hasil identik
+di kedua route). Bar header: 65 px (`.topbar-in` 64 px +
+border-bottom 1 px). Brand normal: top 6,7 / bottom 57,3 /
+tinggi 50,6 / lebar 148,3 (teks utama 1 baris, tagline 1 baris).
+
+### Baseline v22 (sebelum perbaikan)
+
+| Lebar | Brand top / bottom / tinggi | Brand lebar | Teks utama | Tagline | Clipping vertikal | Overflow horizontal | Tombol kanan |
+|---|---|---|---|---|---|---|---|
+| 768 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan (burger) |
+| 800 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan |
+| 820 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan |
+| 821 px | **−20,1 / 84,1 / 104,2** | 103,7 | **2 baris** | **2 baris** | **YA (±20 px)** | 0 px | 801,0 |
+| 825 px | **−20,1 / 84,1 / 104,2** | 106,0 | **2 baris** | **2 baris** | **YA** | 0 px | 805,0 |
+| 830 px | **−20,1 / 84,1 / 104,2** | 108,9 | **2 baris** | **2 baris** | **YA** | 0 px | 810,0 |
+| 840 px | **−20,1 / 84,1 / 104,2** | 114,8 | **2 baris** | **2 baris** | **YA** | 0 px | 820,0 |
+| 860 px | **−20,1 / 84,1 / 104,2** | 126,5 | **2 baris** | **2 baris** | **YA** | 0 px | 840,0 |
+| 880 px | **−20,1 / 84,1 / 104,2** | 138,1 | **2 baris** | **2 baris** | **YA** | 0 px | 860,0 |
+| 900 px | **−12,5 / 76,5 / 89,0** | 142,2 | **2 baris** | 1 baris | **YA (±12 px)** | 0 px | 880,0 |
+| 1024 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | 1004,0 |
+
+Diagnosis (lihat REPORT-v23.md §2): di 821–~1023 px baris flex
+dipenuhi nav 7 tautan + tombol, brand terjepit di bawah lebar satu
+barisnya (~148,3 px) dan KEDUA barisnya membungkus (teks utama
+38,4 px × 2 + tagline 15,2 px × 2 − 3 = 104,2 px — cocok persis;
+di 900 px 2×38,4 + 15,2 − 3 = 89,0 px — cocok persis; normal
+38,4 + 15,2 − 3 = 50,6 px). Rect text node "Kita " menyusut
+68,1 → 58,8 px di 821 px (spasi akhir runtuh di ujung baris).
+Zona clipping = rentang `@media (max-width:1023px)`; sudah ada
+sejak baseline v21.2, BUKAN regresi v22; perubahan v22 (gap 16px +
+padding nav 10px) tidak menyebabkan dan tidak memperbaikinya.
+Tidak ada tumpang tindih antar anak header di lebar mana pun.
+
+### Sesudah perbaikan (v23)
+
+| Lebar | Brand top / bottom / tinggi | Brand lebar | Teks utama | Tagline | Clipping vertikal | Overflow horizontal | Tombol kanan |
+|---|---|---|---|---|---|---|---|
+| 768 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan |
+| 800 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan |
+| 820 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK | 0 px | disembunyikan |
+| 821 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 801,0 (sama seperti v22) |
+| 825 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 805,0 (sama) |
+| 830 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 810,0 (sama) |
+| 840 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 820,0 (sama) |
+| 860 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 840,0 (sama) |
+| 880 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 860,0 (sama) |
+| 900 px | **6,7 / 57,3 / 50,6** | 148,3 | 1 baris | 1 baris | **TIDAK** | 0 px | 880,0 (sama) |
+| 1024 px | 6,7 / 57,3 / 50,6 | 148,3 | 1 baris | 1 baris | TIDAK — tidak berubah | 0 px | 1004,0 (sama) |
+
+Brand di 821 px (v23): top 6,7 / bottom 57,3 / tinggi 50,6 /
+lebar 148,3 — IDENTIK dengan keadaan normal di ≤820 px dan
+1024 px. Tumpang tindih: `[]` di semua lebar, kedua route.
+`document.fonts.status = 'loaded'` di semua lebar; kelima
+keluarga ter-check true (Playfair Display, Cormorant Garamond,
+Marcellus, Jost, Manrope) — pengukuran memakai font web asli,
+bukan fallback. Posisi tombol TIDAK BERUBAH dari v22 karena
+`.nav{margin-left:auto}` menyerap ruang yang dilonggarkan.
+
+Konfirmasi silang dengan skrip v22 (`measure-header.js`, metrik
+horizontal penuh): 0 px overflow di semua 11 lebar di kedua route,
+0 pelanggar nyata (`realOffenders: []`), 0 tumpang tindih, tombol
+kanan identik dengan v22 (801/805/810/820/840/860/880/1004).
+
+File: `after-v23/brand-measure.json` +
+`after-v23/brand-measure-demo.json` + screenshot
+`after-v23/shots-brand/*.png` +
+`after-v23/shots-brand-demo/*.png` (11 lebar × 2 route).
+Baseline: `after-v23/brand-measure-baseline.json` +
+`after-v23/brand-measure-demo-baseline.json` + screenshot
+`after-v23/shots-brand-baseline/` +
+`after-v23/shots-brand-demo-baseline/`.
+Konfirmasi silang: `after-v23/header-measure.json` +
+`after-v23/header-measure-demo.json` +
+`after-v23/shots-header/` + `after-v23/shots-header-demo/`.
+
+## Demo Luxury Ivory — regresi v23 (Playwright nyata)
+
+Skrip `browser-test/measure-demo.js` (sama seperti v21.2/v22).
+Route `#/demo/luxury-ivory`. File:
+`after-v23/demo-measure.json` + `after-v23/shots-demo/demo-<lebar>.png`.
+
+| Lebar | Hasil v23 | Kolom |
 |---|---|---|
-| `js/12-s2-views.js` | −7 / +21 baris | Item 1: tautan "Buat Pesanan Baru" pada kartu order DIBATALKAN (viewPay) membawa `?inv=${order.invitationId}`; item 1 (fail-closed): `viewCheckout` memperlakukan param `?inv=` yang hadir-tapi-kosong sebagai konteks eksplisit yang gagal (`ctxMissing=true`); item 2: `viewAdmin` mengalihkan alias `bantuan` → tab `layanan` + fallback JELAS untuk tab tak dikenal (pesan + kembali ke Ringkasan); label tombol uji diperbarui ke v22 |
-| `css/design-system.css` | −0 / +8 baris | Item 3: di dalam `@media (max-width:1023px)` yang sudah ada — `.topbar-in{gap:16px}` + `.nav a{padding:9px 10px}` — menghemat ±66 px agar tombol header muat di 821–845 px; ≥1024 px tidak tersentuh |
-| `js/09-s2-fixtures.js` | −0 / +131 baris | Grup (24) baru (10 kasus: CTA order batal, `?inv=` kosong/tidak valid, alias + semua tab Admin) + H20 (4 kasus handler penuh) |
-| `harness/run-v21.2.js` | −5 / +11 baris | Komentar header diperbarui (nama dipertahankan, suite kini v22) + perbaikan robustness: tiap `fetch` memakai `Connection: close` agar undici tidak memakai ulang socket keep-alive yang server sudah tutup selama suite berjalan (idle > keepAliveTimeout 5 dtk) — penyebab 5× ECONNRESET berturut-turut; lihat REPORT-v22.md §5 |
-| `TESTS.md` | ditulis ulang | Dokumen ini |
+| 320 px | OK (320), 0 px | 1 kolom (`280px`) |
+| 360 px | OK (360), 0 px | 1 kolom (`320px`) |
+| 375 px | OK (375), 0 px | 1 kolom (`335px`) |
+| 390 px | OK (390), 0 px | 1 kolom (`350px`) |
+| 430 px | OK (430), 0 px | 1 kolom (`390px`) |
+| 820 px | OK (820), 0 px | 1 kolom (`780px`) |
+| 821 px | OK (821), 0 px | 2 kolom (`400px 345px`) — breakpoint demo sendiri (≤820 = 1 kolom) |
+| 1024 px | OK (1024), 0 px | 2 kolom (`400px 548px`) — sama seperti v21.2/v22 |
 
-Tidak ada perubahan pada: `index.html`, 3 CSS lain (`renderer.css`,
-`builder.css`, `stage2.css`), `01-core.js`, `02-catalog.js`,
-`03-state.js`, `04-views.js`, `05-builder.js`, `06-s2-core.js`,
-`07-s2-access.js`, `08-s2-reset.js`, `10-s2-rsvp.js`,
-`11-s2-seed.js`, `13-s2-handlers.js`, `harness/package.json`,
-`harness/package-lock.json`. Tidak ada perubahan seed data, harga,
-durasi masa aktif, skema storage, aturan expiry V20, layout demo
-Luxury Ivory (`.demo-layout` + CSS responsifnya TIDAK disentuh),
-KI-2026-1008 (hold v21 + konteks v21.2 dipertahankan), atau tanggal
-Nusantara Tech / Nadia–Reza / Salsa. Order batal tetap terminal
-(tombol bayar tetap hilang, hasil pembayaran tetap ditolak handler).
+Urutan mobile dibuktikan bounding rect: preview → detail →
+buybox di dalam detail (`previewAboveDetail: true`,
+`buyboxInsideDetail: true`). Class tetap `detail-grid demo-layout`,
+tanpa inline style — layout demo TIDAK disentuh di v23.
 
-Total tree: 7.080.353 B (v21.2: 7.061.637 B; +18.716 B).
-
-## Reproduksi — instalasi deterministik + harness di branch (cara yang diutamakan)
-
-Harness disertakan di branch (`v22/harness/`) supaya audit dapat
-mereproduksi tanpa file luar. Dari clone bersih tree ini:
-
-```bash
-cd v22/harness
-npm ci                 # instalasi deterministik dari package-lock.json
-                       # (acorn 8.19.0 + jsdom 31.0.0; 29 paket)
-                       # node_modules TIDAK ikut di-push
-node run-v21.2.js ../../after-v22/suite-result.json
-# Dengan perbandingan baseline (opsional): beri direktori baseline
-# yang berisi suite-result.json + index.html + state-*.json, mis.:
-node run-v21.2.js ../../after-v22/suite-result.json ../../baseline-v19
-```
-
-Perintah ini MENJALANKAN suite in-page yang sebenarnya
-(`kiFixtureTests` + `kiHandlerTests`) di jsdom atas tree yang disajikan
-lewat HTTP lokal, bukan sekadar memeriksa sintaks. **Harness keluar
-NONZERO bila ada kasus gagal, suite melempar, atau cleanup tidak
-memulihkan sessionStorage/global persis** (`process.exitCode = 1`;
-lempar runner tetap keluar 2). Hasil run yang benar-benar dijalankan
-dari layout branch (11 Nov 2026, ~06:05 WIB — run final; 2 run
-berturut-turut hasil identik; run pertama sesudah perbaikan
-172/172 + 50/50, run kedua sama):
-
-- `kiFixtureTests`: **172/172 PASS** (baseline V21.2: 162/162; +10 kasus)
-- `kiHandlerTests`: **50/50 PASS** (baseline V21.2: 46/46; +4 kasus)
-- HTTP lokal 19/19 → 200 (semua file tree)
-- 5 rute render (`#/`, `#/dashboard`, `#/admin`, `#/u/nadia-dan-reza`,
-  `#/template`); storage keys 16
-- `result.cleanup.ok: true` (sessionStorage + kunci window kembali
-  identik dengan snapshot pra-suite); `result.exitCode: 0`
-- Tanpa argumen baseline: `compare` berisi catatan "Baseline tidak
-  diberikan/ditemukan — perbandingan dilewati." (Perbandingan rute
-  v21.2-vs-v22 dilakukan terpisah dari dua file suite-result —
-  lihat § Perbandingan rute.)
-
-Setelah menjalankan, HAPUS `v22/harness/node_modules` supaya tree
-yang di-push tetap bersih — yang masuk commit: `run-v21.2.js` +
-`package.json` + `package-lock.json`. **`package-lock.json` WAJIB
-tetap ada di branch** (bukan artefak instalasi — ini bagian dari
-deliverable).
-
-CATATAN — flake ECONNRESET (diperbaiki di v22): sebelum perbaikan
-`Connection: close`, harness gagal 5× berturut-turut dengan
-`HARNESS ERROR [TypeError: fetch failed]`, cause `ECONNRESET` —
-fetch pertama di `loadPage` (dan/atau fetch dump rute setelah suite)
-memakai ulang socket keep-alive yang server lokal sudah tutup
-(keepAliveTimeout 5 dtk; suite berjalan lebih lama dari itu).
-Diagnosis dibuktikan dengan harness instrumentasi di `/tmp`
-(fetch mana yang gagal + kapan) dan probe server lokal identik
-(10/10 OK di isolasi). Setelah perbaikan: 3/3 run salinan
-instrumentasi + 2/2 run branch harness berhasil tanpa satu pun
-ECONNRESET. Bila `npm ci` gagal karena CDN, pakai `NODE_PATH`
-menuju node_modules luar seperti § Reproduksi — harness luar di
-bawah (cara itu juga terverifikasi 172/172 + 50/50).
-
-## Reproduksi — harness luar (cara lama, tetap berlaku)
-
-Perintah dijalankan dari `~/workspace/kita-invite-refactor/`:
-
-```bash
-# Syntax check semua file yang diubah
-for f in 09-s2-fixtures.js 12-s2-views.js; do node --check v22/js/$f; done
-node --check v22/harness/run-v21.2.js
-# (CSS tidak punya checker — perubahan design-system.css diperiksa
-# lewat pengukuran Playwright, lihat § Header.)
-
-# Suite lengkap pada tree v22 (NODE_PATH menunjuk node_modules luar
-# supaya tidak perlu npm install di dalam tree)
-cd v22/harness
-NODE_PATH=/home/hatch/workspace/kita-invite-refactor/harness/node_modules \
-  node run-v21.2.js ../../after-v22/suite-result.json
-```
-
-Hasil run yang benar-benar dijalankan dari layout branch (11 Nov 2026,
-~06:05 WIB; 2 run, hasil identik):
-
-- `kiFixtureTests`: **172/172 PASS**
-- `kiHandlerTests`: **50/50 PASS**
-- HTTP lokal 19/19 → 200; storage keys 16; cleanup ok; exit 0
-- Boot errors: hanya 1 jsdomError Google Fonts (artefak harness —
-  request non-localhost diblokir interceptor menjadi 404 sintetis)
-
-## Reproduksi — tombol fixture in-page (browser, disposable)
-
-Buka preview Pages branch `muse-fix-v22`, lalu:
-
-1. Dashboard → Pengaturan (tab Pengaturan).
-2. Klik **"Jalankan Uji Fixture Terisolasi (… v22: CTA Order Batal ·
-   Alias Bantuan · Header 821px)"** — menjalankan `kiFixtureTests`
-   (172 kasus, termasuk grup 24).
-3. Klik **"Jalankan Uji Handler Penuh (… v22: CTA Order Batal ·
-   Alias Bantuan)"** — menjalankan `kiHandlerTests` (50 kasus,
-   termasuk H20).
-4. Hasil tampil di bawah tombol (`#fixture-results` / `#handler-results`).
-
-PENTING — aturan audit yang berlaku (dari Lora): tombol fixture/grant
-hanya ditekan pada clone/fixture lokal disposable, BUKAN pada preview
-publik. Suite ini terisolasi penuh: sebelum berjalan, seluruh state sesi
-(peran, desainer aktif, flag + generasi grant, referensi koleksi, daftar
-ID undangan, dump storage, kunci window, sessionStorage, timer autosave)
-di-snapshot; sesudah berjalan semuanya dipulihkan — termasuk MENGHAPUS
-property global yang sebelumnya tidak ada (bukan mengubahnya menjadi
-`false`/`0`) dan MEMULIHKAN sessionStorage persis (hapus yang
-ditambahkan, kembalikan yang diubah/dihapus) — dan pemulihan kini
-berjalan di `finally`, jadi TETAP BERJALAN walau ada kasus yang
-melempar; kasus isolasi terakhir MEMVERIFIKASI pemulihan itu (storage
-byte-per-byte, set kunci window identik, sessionStorage identik, timer
-identik, tidak ada record fixture tertinggal).
-
-## Perbandingan rute (v21.2 baseline vs v22 sesudah)
-
-Lima rute yang dirender segar oleh harness pada kedua tree
-(`after-v22-baseline/suite-result.json` vs
-`after-v22/suite-result.json` — perbandingan dilakukan dari kedua
-file, karena baseline run tidak membawa state-*.json terpisah):
+## Perbandingan rute (baseline V22 vs v23 sesudah)
 
 | Rute | appHtmlSha | counts | invitations | orders | storageKeys | storageNorm |
 |---|---|---|---|---|---|---|
@@ -162,143 +231,73 @@ file, karena baseline run tidak membawa state-*.json terpisah):
 | `#/u/nadia-dan-reza` | IDENTICAL | identik | identik | identik | identik | identik |
 | `#/template` | IDENTICAL | identik | identik | identik | identik | identik |
 
-\* `#/dashboard` appHtmlSha beda, tetapi counts/invitations/orders/
-storageKeys/storageNorm SEMUA identik — perbedaan hanya stempel
-waktu aktivitas seed (`new Date(a.at).toLocaleString`, monolit
-baris 3970) yang berubah tiap menit; volatilitas yang sudah diketahui
-sejak v20 (BASELINE-v19.md §8: perbandingan back-to-back hash segar
-= 0 baris beda). BUKAN perubahan v22.
+\* `#/dashboard` appHtmlSha beda, tetapi counts/invitations/
+orders/storageKeys/storageNorm SEMUA identik — perbedaan hanya
+stempel waktu aktivitas seed (`new Date(a.at).toLocaleString`)
+yang berubah tiap menit; volatilitas yang sudah diketahui sejak
+v20 (BASELINE-v19.md §8). BUKAN perubahan v23.
 
-## Header 821 px — pengukuran Playwright (browser nyata, bukan jsdom)
+## Cakupan kasus (suite v23 — sama seperti v22, 222 kasus)
 
-Skrip `~/workspace/kita-invite-refactor/browser-test/measure-header.js`
-(Chromium Playwright, binary Chrome for Testing 158.0.8127.18 di
-`~/.cache/ms-playwright/chromium-1254/chrome-linux64/chrome`,
-`executablePath` eksplisit). Route `#/` DAN `#/demo/luxury-ivory`
-(hasil identik di kedua route). Metrik per lebar:
-`documentElement.scrollWidth` vs `clientWidth`, overflow px, bounding
-rect tiap anak `.topbar-in` (brand, nav + tiap tautan, burger, tombol
-"Buat Undangan"), tumpang tindih, clipping tombol (scrollWidth vs
-clientWidth), status font web (`document.fonts`), daftar pelanggar,
-screenshot tiap lebar.
-
-| Lebar | V21.2 (baseline) | V22 |
+| Grup | Jumlah | Status v23 |
 |---|---|---|
-| 768 px | OK (768), tombol disembunyikan (burger) | OK (768), sama |
-| 800 px | OK (800), tombol disembunyikan | OK (800), sama |
-| 820 px | OK (820), tombol disembunyikan | OK (820), sama |
-| 821 px | OVERFLOW +23 px (doc 844; tombol kanan 844,4) | **OK (821), tombol kanan 801,0 — 20 px dari tepi** |
-| 825 px | OVERFLOW +19 px (844) | **OK (825), tombol kanan 805,0** |
-| 830 px | OVERFLOW +14 px (844) | **OK (830), tombol kanan 810,0** |
-| 840 px | OVERFLOW +4 px (844) | OK (840), tombol kanan 820,0 |
-| 860 px | OK (860) | OK (860), tombol kanan 840,0 |
-| 880 px | OK (880) | OK (880), tombol kanan 860,0 |
-| 900 px | OK (900) | OK (900), tombol kanan 880,0 |
-| 1024 px | OK (1024), tombol kanan 1004 | OK (1024), tombol kanan 1004 — **tidak berubah** |
+| Reset safety (js/08-s2-reset.js) | 16 (7 kasus dasar + 4 kunci + 5 pemulihan) | PASS |
+| Owner guard (js/07-s2-access.js) | 5 | PASS |
+| State machine layanan (js/07-s2-access.js) | 10 | PASS |
+| Order: pembatalan + audit log (js/06-s2-core.js) | 7 | PASS |
+| Order: pay-result terminal (js/06-s2-core.js) | 7 | PASS |
+| Order: penyelarasan tier dengan template (js/06-s2-core.js) | 4 | PASS |
+| Order: expired + VA (js/12-s2-views.js) | 6 | PASS |
+| Order: harga paket (js/06-s2-core.js) | 5 | PASS |
+| Renderer: harga + detail paket (js/12-s2-views.js) | 5 | PASS |
+| Renderer: kartu tamu & RSVP (js/12-s2-views.js) | 10 | PASS |
+| Renderer: tombol aksi multi-peran (js/12-s2-views.js) | 5 | PASS |
+| Renderer: banner order (js/12-s2-views.js) | 6 | PASS |
+| Renderer: banner akses lintas pemilik (js/12-s2-views.js) | 3 | PASS |
+| Renderer: expiry (js/06-s2-core.js) | 5 | PASS |
+| Builder: tier dari template (js/05-builder.js) | 4 | PASS |
+| Builder: paket yang dikunci + kunci tier (js/05-builder.js) | 8 | PASS |
+| Builder: QRIS -A<n> (js/11-s2-seed.js) | 3 | PASS |
+| Builder: validasi + rollback (js/05-builder.js) | 2 | PASS |
+| Checkout: pemrosesan + kunci tier (js/12-s2-views.js) | 2 | PASS |
+| Checkout: tier versi + rollback (js/05-builder.js) | 4 | PASS |
+| Checkout: konteks `?inv=` (js/12-s2-views.js) | 6 (v21.2) | PASS |
+| Grup 24 (v22): CTA order batal (24a, 6) + konteks `?inv=` (24b, 3) + alias/fallback tab (24c, 4) | 13 | PASS — regresi v23, hanya diuji ulang |
+| RSVP: multi-tamu + tamu tambahan (js/10-s2-rsvp.js) | 10 | PASS |
+| RSVP: keamanan + isolasi (js/10-s2-rsvp.js) | 2 | PASS |
+| Akses lintas pemilik: grant + pemulihan peran (js/07-s2-access.js) | 4 | PASS |
+| Isolasi suite v21.1 (timer + storage + peran + grant) | 4 | PASS |
+| Isolasi suite v21.1 — pemulihan penuh sesudah suite (kedua suite) | 2 | PASS |
+| v21.1 — Grup 23: tier fail-closed, Paid fail-closed, isolasi, reset aman, overflow | 10 | PASS |
+| Performa (js/06-s2-core.js — beban render 600 tamu + 400 order) | 3 | PASS |
+| H8–H14 — handler produksi asli (js/13-s2-handlers.js) | 7 | PASS |
+| H15–H18 — handler + rollback + fail-closed (js/13-s2-handlers.js) | 4 | PASS |
+| H19 — isolasi handler + storage (js/13-s2-handlers.js) | 1 | PASS |
+| H20 — handler v22: CTA batal (a/b/d) + alias hash nyata (c) + order batal terminal | 5 | PASS — regresi v23, hanya diuji ulang |
+| **Total** | **222 (172 + 50)** | **PASS semua** |
 
-Diagnosis (baseline): di ≤820 px media query menyembunyikan nav +
-tombol (burger tampil); di 821 px nav desktop kembali tampil, tetapi
-baris flex `.topbar-in` (brand + 7 tautan nav + tombol) lebar
-intrinsiknya tetap 844,4 px sementara kotak konten hanya 781 px
-(821 − padding 40 px) — overflow 821–~845 px. Perbaikan MINIMAL:
-di dalam `@media (max-width:1023px)` yang sudah ada,
-`.topbar-in{gap:16px}` (dari 28 px) + `.nav a{padding:9px 10px}`
-(dari 9px 13px) — hemat ±66 px (2 gap × 12 px + 7 tautan × 6 px)
-terhadap overflow 23 px. Semua tombol header tetap TERBACA dan BISA
-DIPAKAI: tidak ada `overflow:hidden`, tidak ada tombol yang dipindah
-ke burger, tidak ada teks yang dipotong — nav 139,7–661,1 px,
-tombol 685,1–801,0 px, tanpa tumpang tindih (`overlaps: []`), tanpa
-pelanggar (`offenders: []`), tombol tidak ter-clipping
-(scrollW == clientW). Font web: `document.fonts.status = 'loaded'`,
-kelima keluarga ter-check true (Playfair Display, Cormorant
-Garamond, Marcellus, Jost, Manrope) di semua lebar — pengukuran
-memakai font web asli, bukan fallback. File:
-`after-v22/header-measure.json` +
-`after-v22/header-measure-demo.json` + screenshot
-`after-v22/shots-header/*.png` +
-`after-v22/shots-header-demo/*.png` (11 lebar × 2 route).
-Baseline: `after-v22/header-measure-baseline.json` +
-`after-v22/header-measure-demo-baseline.json`.
+## Catatan isolasi (v23)
 
-Catatan: rect brand di 821+ px memanjang vertikal melewati bar
-64 px (top −20,1 / bottom 84,1) — SUDAH ADA di baseline, tidak
-berubah oleh perbaikan (perbaikan hanya mengubah gap + padding),
-bukan overflow horizontal dan tidak masuk daftar pelanggar.
-Di ≤820 px dan 1024 px rect brand normal (top 6,7).
+- Setiap kasus mendapat salinan storage baru (snapshot → pulihkan)
+  sehingga mutasi satu kasus tidak bocor ke kasus lain.
+- Suite tidak meninggalkan mutasi: `cleanup.ok: true` di setiap run
+  v23 (baseline, npm test branch, npm test clone bersih, run final
+  manual) — sessionStorage (added/removed/changed: []) + kunci
+  window (added/removed: []) kembali identik dengan snapshot
+  pra-suite; 16 storage keys sesudah suite.
+- Tidak ada write ke preview publik / storage produksi.
 
-## Demo Luxury Ivory — regresi Playwright (browser nyata)
+## Ringkasan file bukti v23
 
-Skrip `browser-test/measure-demo.js` yang sama seperti v21.2.
-Route `#/demo/luxury-ivory`, data seed lengkap. Hasil v22
-(`after-v22/demo-measure.json` + `after-v22/shots-demo/demo-<lebar>.png`):
-
-| Lebar | Hasil v22 |
-|---|---|
-| 320 px | OK (320), 1 kolom (`280px`), preview → detail → buybox |
-| 360 px | OK (360), 1 kolom (`320px`) |
-| 375 px | OK (375), 1 kolom (`335px`) |
-| 390 px | OK (390), 1 kolom (`350px`) |
-| 430 px | OK (430), 1 kolom (`390px`) |
-| 820 px | OK (820), 1 kolom (`780px`) |
-| 821 px | OK (821), 2 kolom (`400px 345px`) — breakpoint demo sendiri (≤820 = 1 kolom) |
-| 1024 px | OK (1024), 2 kolom (`400px 548px`) — sama seperti v21.2 |
-
-Urutan mobile dibuktikan bounding rect: preview (top 89) →
-detail (top 788,4) → buybox di dalam detail. Class tetap
-`detail-grid demo-layout`, tanpa inline style — layout demo
-TIDAK disentuh di v22.
-
-## Cakupan kasus baru
-
-- **Grup (24) `kiFixtureTests` (10 kasus):** 24a CTA order batal
-  (4): tautan halaman bayar KI-2026-1004 memuat
-  `#/checkout?inv=seed-inv-4` dan TIDAK ada lagi tautan checkout
-  polos; kartu batal tetap terminal (tanpa tombol simulasi, VA
-  dicoret); navigasi ujung-ke-ujung lewat UI nyata dengan order +
-  undangan fixture milik pelanggan aktif (champagne-vow) → checkout
-  memilih undangan fixture + kunci PREMIUM Rp59.000, tombol
-  konfirmasi aktif, 0 order baru; regresi v21.2 — Builder Kirana +
-  order tertahan KI-2026-1008 tetap membawa `?inv=seed-inv-2`.
-  24b `?inv=` fail-closed (3): `#/checkout?inv=` (kosong) →
-  `ctxMissing=true` + "Checkout Ditahan — Undangan Tidak
-  Ditemukan" + placeholder + tombol disabled, TANPA default
-  diam-diam, 0 order baru; `#/checkout?inv=seed-inv-3` (milik
-  cust-2, sebagai Nadia) → ditahan, 0 order baru; `#/checkout`
-  polos → default lama (undangan pertama), tidak ditahan
-  (regression guard perubahan `hasInvParam`). 24c tab Admin (3):
-  alias `#/admin?tab=bantuan` → konten "Antrean Layanan Bantuan"
-  + nav layanan tersorot; SEMUA 14 tab dikenal menampilkan
-  kontennya + nav tersorot + tanpa pesan "Tab tidak dikenal"
-  (ringkasan, template, kategori, gaya, pelanggan, undangan,
-  pesanan, pembayaran, layanan, media, paket, kupon, notifikasi,
-  pengaturan); tab tak dikenal `#/admin?tab=ngawur` → pesan
-  "Tab tidak dikenal" + konten Ringkasan + nav ringkasan tersorot.
-- **H20 `kiHandlerTests` (4 kasus, handler produksi asli + event
-  DOM nyata):** (a) klik ASLI tautan "Buat Pesanan Baru" di halaman
-  bayar order batal fixture → checkout memilih undangan fixture +
-  PREMIUM Rp59.000, 0 order baru; (b) klik Konfirmasi ASLI pada
-  checkout itu → pesanan BARU tercipta (undangan fixture, Premium
-  Rp59.000, payment tertaut), lalu dibersihkan; (c) navigasi hash
-  NYATA sebagai Admin: `#/admin?tab=bantuan` → Layanan Bantuan,
-  `#/admin?tab=ngawur` → pesan jelas + Ringkasan; (d) pay-result
-  Success (handler ASLI) pada KI-2026-1004 → DITOLAK, status
-  tetap Dibatalkan/Failed, 0 payment baru.
-- **Batasan pengujian item 1 (didokumentasikan, bukan ditutup-tutupi):**
-  `CURRENT_USER` hard-coded `'cust-1'` (js/06-s2-core.js:9, `const`,
-  tidak ada pengalih pengguna demo — persona hanya ganti peran).
-  Alur SEED "Salsa mengklik CTA order batalnya sendiri" TIDAK DAPAT
-  dijalankan di prototipe ini karena tidak ada cara menjadi Salsa.
-  Yang dibuktikan: (1) tautan seed KI-2026-1004 membawa ID yang
-  benar (render-level, 24a-a1); (2) jalur kode yang sama bekerja
-  ujung-ke-ujung untuk order batal milik pelanggan aktif (24a-a3 +
-  H20-a/b); (3) sebagai Nadia, mengikuti tautan seed itu DITAHAN
-  dengan benar (ctxMissing — undangan bukan miliknya; 24b-b2
-  membuktikan pola yang sama untuk seed-inv-3). Lihat
-  REPORT-v22.md §2 + §8.
-- **Satu kegagalan tes saat pengembangan (bukan bug aplikasi):** run
-  pertama 171/172 — kasus "Tab Admin dikenal (14 tab)" gagal untuk
-  tab `pelanggan` + `paket` karena marker ekspektasi memakai `&`
-  mentah, sementara `innerHTML` menyerialisasinya sebagai `&amp;`.
-  Marker diperbaiki ke bentuk `&amp;`; run berikutnya 172/172.
-  (Pola yang sama seperti v21.1 run 1: kesalahan ekspektasi tes,
-  bukan bug aplikasi.)
+- `after-v23-baseline/suite-result.json` — baseline V22 (172/172 + 50/50).
+- `after-v23/suite-result.json` — run final v23, manual (172/172 + 50/50).
+- `after-v23/suite-result-npmtest.json` — `npm test` di branch (172/172 + 50/50).
+- `after-v23/suite-result-clean-clone.json` — `npm test` clone bersih sesudah `npm ci` (172/172 + 50/50).
+- `after-v23/cases.json` — 222 kasus (`name` + `pass`).
+- `after-v23/brand-measure-baseline.json` + `brand-measure-demo-baseline.json` — brand v22.
+- `after-v23/brand-measure.json` + `brand-measure-demo.json` — brand v23.
+- `after-v23/header-measure.json` + `header-measure-demo.json` — horizontal v23.
+- `after-v23/demo-measure.json` — regresi demo v23.
+- `after-v23/shots-brand-baseline/` + `shots-brand-demo-baseline/` + `shots-brand/` + `shots-brand-demo/` + `shots-header/` + `shots-header-demo/` + `shots-demo/` — screenshot.
+- `browser-test/measure-brand.js` — skrip ukur brand (BARU di v23).
+- `REPORT-v23.md` + `BASELINE-v23.md` — laporan + baseline ronde ini.

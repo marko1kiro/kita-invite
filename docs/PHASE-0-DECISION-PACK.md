@@ -5,8 +5,8 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.3 (dokumen perencanaan Fase 0; revisi dari v0.1.2 — riwayat revisi di §8) |
-| Tanggal | 11 November 2026 |
+| Versi | v0.1.4 (dokumen perencanaan Fase 0; revisi dari v0.1.3 — riwayat revisi di §8) |
+| Tanggal | 12 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
 | Baseline produk | Stage 2 V25, commit `68bf66ceb62e2182a6559fe7a238d354568e7cbf` (provenance hasil tes di §5.2) |
@@ -318,26 +318,28 @@ Kita Invite membutuhkan satu renderer untuk undangan publik dinamis: HTML awal h
 
 ADR ini tetap **DRAFT** sampai owner menyetujui pilihan final setelah bukti dan masukan gerbang ditinjau (exit criterion 4). Stack final **BELUM** ditetapkan sampai review Agent Meta dan syarat Gerbang Arsitektur selesai.
 
+**Tindak lanjut terbuka dari laporan review POC yang diterima 12 November 2026:** laporan merekomendasikan agar pilihan stack Hono/React/Vite dipisahkan dari pilihan D1/R2 dan provider. Ini adalah rekomendasi untuk dipertimbangkan dalam revisi ADR-001, bukan keputusan atau perubahan arsitektur yang sudah disetujui. ADR tetap DRAFT/provisional; keputusan arsitektur tetap milik owner setelah masukan peninjau ditinjau.
+
 ---
 
 ## 4. Status Agent Meta dan POC OG
 
-### 4.1 Review Agent Meta — MASIH MENUNGGU
+### 4.1 Masukan untuk peninjau arsitektur diterima; verdict review — MASIH MENUNGGU
 
-**Status pada saat dokumen ini ditulis: MASIH MENUNGGU (belum diterima).** Dokumen ini tidak mengarang bahwa review sudah diterima. Bila review belum tersedia ketika keputusan arsitektur diminta, gerbang belum lengkap — jangan menandainya lulus.
+**Laporan review POC untuk peninjau arsitektur diterima pada 12 November 2026.** Laporan tersebut adalah input/evidence untuk peninjau arsitektur, bukan review atau verdict peninjau arsitektur. Identitas reviewer dan verdict review peninjau arsitektur tetap **MENUNGGU**; dokumen ini tidak menyatakan review tersebut sudah diterima. Tanpa review/verdict peninjau yang sebenarnya, gerbang belum lengkap — jangan menandainya lulus.
 
-Slot pencatatan review (diisi setelah hasilnya tersedia):
+Slot pencatatan review/verdict peninjau arsitektur (diisi setelah review peninjau tersedia; laporan input di atas bukan verdict):
 
 | Field | Isi |
 |---|---|
 | Reviewer | (menunggu) |
-| Tanggal diterima | (menunggu) |
+| Tanggal diterima | (menunggu — tanggal penerimaan review/verdict peninjau arsitektur) |
 | Verdict | (menunggu) |
 | Keberatan yang harus dijawab | (menunggu) |
 | Jawaban owner/tim atas tiap keberatan | (menunggu) |
 | Status tindak lanjut | (menunggu) |
 
-Ketentuan: bila review belum diterima saat gerbang dinilai, kriteria masuk gerbang tidak terpenuhi dan gerbang dinyatakan **tidak lolos**. Review Agent Meta adalah prasyarat Gerbang Arsitektur, bukan formalitas.
+Ketentuan: bila review/verdict peninjau arsitektur belum diterima saat gerbang dinilai, kriteria masuk gerbang tidak terpenuhi dan gerbang dinyatakan **tidak lolos**. Laporan input POC di atas tidak menggantikan review itu. Review peninjau arsitektur adalah prasyarat Gerbang Arsitektur, bukan formalitas.
 
 ### 4.2 Status POC Open Graph — K1–K5 dilaporkan lulus, K6 OPEN / UNVERIFIED
 
@@ -346,8 +348,10 @@ Ketentuan: bila review belum diterima saat gerbang dinilai, kriteria masuk gerba
 - POC membandingkan dua arsitektur dengan konten, aset, CSS, dan data fixture sintetis yang sama, di branch `poc/og-arch`, commit `93df620d016562235c79238299c0f5491a8ca538`.
 - Varian A (Hono + React + Vite + TypeScript): https://ki-og-poc-a.xdirgawa.workers.dev — bundle 431.881 byte.
 - Varian B (React Router SSR + Vite + TypeScript): https://ki-og-poc-b.xdirgawa.workers.dev — bundle 664.078 byte.
-- Kriteria K1–K5 **dilaporkan lulus** untuk kedua varian di 8 run harness (125 cek per run), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik.
-- **K6 (kartu preview WhatsApp aktual) tetap OPEN / UNVERIFIED** sesuai keputusan owner (lihat §0 dan §2.12). POC tidak membuktikan kartu WhatsApp tampil. OG HTML yang benar hanya prasyarat crawler, bukan bukti kartu tampil.
+- Kriteria K1–K5 **dilaporkan lulus** untuk kedua varian di 8 run harness (125 cek per run), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Angka 8 run, smoke, dan rebuild ini berasal dari laporan POC awal dan berbeda provenance dari audit independen di bawah.
+- **Audit independen K1–K5 (dalam laporan review POC yang diterima 12 November 2026):** Varian A dan Varian B masing-masing **125/125, exit 0**. Satu run langsung per varian berhasil direproduksi secara independen. Salinan harness sementara untuk audit menghapus hanya konfigurasi proxy lokal `127.0.0.1:8888` yang tidak tersedia; URL target, fixtures, assertions, serta metode GET/browser dipertahankan. Hasil ini adalah bukti run independen terpisah, bukan hasil dari delapan run yang dilaporkan lingkungan pembuat.
+- Bukti perbandingan hanya berlaku untuk Varian A dan Varian B yang benar-benar diuji. Varian B adalah React Router 7.18.5 framework-less SSR, bukan integrasi resmi React Router v8 + Cloudflare Vite plugin; perbedaan versi/setup membatasi kesetaraan. Hasil A-vs-tested-B ini **bukan bukti umum bahwa Hono lebih unggul daripada React Router**.
+- **K6 (kartu preview WhatsApp aktual) tetap OPEN / UNVERIFIED** sesuai keputusan owner (lihat §0 dan §2.12). Kartu WhatsApp aktual **tidak diuji** dan tidak ada klaim kartu tampil. OG HTML yang benar hanya prasyarat crawler, bukan bukti kartu tampil.
 
 **Provenance bukti — baca dengan teliti:**
 
@@ -358,7 +362,7 @@ Ketentuan: bila review belum diterima saat gerbang dinilai, kriteria masuk gerba
   - Varian B (entry server SSR): https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-b/src/entry.server.tsx
   - Harness tes: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/run-tests.mjs
   - Server lokal untuk harness: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/local-server.mjs
-- Angka hasil tes yang dikutip di dokumen ini berasal dari laporan lokal tersebut. Langkah reproduksi terperinci tidak ditulis ulang di sini karena hanya ada di laporan lokal yang tidak terarsip.
+- Provenance hasil dibedakan: angka delapan run, smoke, dan rebuild berasal dari laporan POC awal yang hanya lokal; angka 125/125 per varian berasal dari audit independen yang dicatat dalam laporan review POC yang diterima. Audit independen adalah bukti run terpisah, bukan artefak source/harness yang terkomit. Laporan POC awal lengkap, raw HTML, screenshots, dan `results.json` **tidak committed ke GitHub**; source dan harness POC yang ditautkan di atas ada di branch, tetapi bukan pengganti bukti hasil run tersebut. Langkah reproduksi terperinci laporan awal tidak ditulis ulang di sini.
 - Dua Worker POC (`ki-og-poc-a` dan `ki-og-poc-b`) dipertahankan sebagai demo atas permintaan owner. Dokumen ini tidak memerintahkan penghapusan atau perubahan terhadap keduanya.
 
 **Kriteria acceptance HTML OG/crawler untuk Fase 0 (ditulis agar dapat diuji ulang):**
@@ -430,7 +434,7 @@ Checklist ini membedakan empat hal yang berbeda: **(A) keputusan owner yang suda
 |---|---|---|---|---|
 | 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final) yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang masih kurang untuk butir ini hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Keputusan turunan D1–D10 di §1.4 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8. | Owner (verifikasi pencatatan keputusan M1–M8; meratifikasi status/penundaan keputusan turunan D1–D10 di Fase 0; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
 | 2 | Semua baris register (§2) sudah memiliki status (2 DECIDED BY OWNER, 10 MENUNGGU beserta metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris sudah tercatat: §2.1 DECIDED BY OWNER — M1–M8 dan §2.12 DECIDED BY OWNER (status K6 tetap terbuka); 10 baris lainnya (§2.2–§2.11) masih MENUNGGU beserta metode uji aman K6. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang sudah dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus sudah dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
-| 3 | Review Agent Meta diterima dan dicatat dengan verdict serta keberatan/tindak lanjut; jika belum tersedia, gerbang arsitektur masih tertahan | [ ] BELUM | Review Agent Meta nyata **belum diterima** (status: MASIH MENUNGGU, §4.1); dokumen ini tidak mengklaim sudah ada review. Tanpa review ini kriteria masuk gerbang tidak terpenuhi, dan stack final belum dipilih | Agent Meta (memberi review); owner/tim (mencatat verdict, keberatan, dan jawaban setelah diterima) |
+| 3 | Review peninjau arsitektur diterima dan dicatat dengan verdict serta keberatan/tindak lanjut; jika belum tersedia, gerbang arsitektur masih tertahan | [ ] BELUM | Review/verdict peninjau arsitektur **belum diterima** (status: MASIH MENUNGGU, §4.1). Laporan review POC diterima 12 November 2026 sebagai input/evidence bagi peninjau, bukan verdict; identitas reviewer dan verdict tetap menunggu. Tanpa review peninjau ini kriteria masuk gerbang tidak terpenuhi, dan stack final belum dipilih | Peninjau arsitektur (memberi review); owner/tim (mencatat identitas, verdict, keberatan, dan jawaban setelah diterima) |
 | 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | ADR di §3 masih berstatus **DRAFT** (rekomendasi provisional Hono + React + TypeScript + Vite, D1, R2). Finalisasi menunggu review Agent Meta (§4.1), acceptance OG (§4.2), dan keputusan eksplisit owner atas pilihan final. Gerbang Arsitektur belum lulus | Owner (menyetujui pilihan final setelah bukti gerbang ditinjau); tim (menyiapkan bukti gerbang) |
 | 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [ ] BELUM | Kriteria **tertulis belum berarti disetujui owner atau tes ulang sudah terdokumentasi**. Bukti atau persetujuan yang masih diperlukan sebelum gerbang dinilai: (a) persetujuan owner atas kriteria §4.2; (b) pencatatan run ulang yang terdokumentasi dan dapat diulang (hasil harness beserta bukti run yang dapat diverifikasi). Pemisahan dari bukti kartu WhatsApp sudah dinyatakan tetapi belum dikonfirmasi owner | Owner (menyetujui kriteria §4.2); tim (menjalankan dan mendokumentasikan run ulang bila diminta) |
 | 6 | Pilihan owner K6 OPEN / UNVERIFIED sudah dicatat (§0, §2.12, §4.2); K6 bukan syarat yang dianggap lulus. Bila owner kemudian memilih K6 wajib dibuktikan sebelum final stack, gerbang menunggu metode uji aman | [ ] BELUM | Pilihan owner sudah dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — bukan pengulangan pilihan. Kartu WhatsApp aktual **belum diuji dan belum lulus**; dokumen ini tidak mengklaim kartu sudah diuji atau lulus | Owner (verifikasi pencatatan sudah benar saat meninjau revisi dokumen ini) |
@@ -455,6 +459,24 @@ Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.3 → v0.1.4
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.3 (branch `docs/phase0-planning-v0.1.3`, commit `2c1bba8d1f48a6d11097bb48b5118354c5cd1ed7`) |
+| Versi ini | v0.1.4 (12 November 2026) — revisi dokumentasi-only dari v0.1.3 |
+| Pemicu revisi | Laporan review POC untuk peninjau arsitektur diterima 12 November 2026; dicatat sebagai input/evidence, bukan verdict peninjau arsitektur |
+
+Perubahan pada revisi ini (hanya metadata §0, catatan terbuka §3, status §4.1–§4.2, klarifikasi §6 butir 3, dan riwayat §8):
+
+1. **Laporan POC dan status peninjau (§4.1):** laporan review POC dicatat diterima 12 November 2026 sebagai input untuk peninjau arsitektur. Identitas reviewer dan verdict review tetap MENUNGGU; laporan tersebut bukan verdict dan tidak membuat Gerbang Arsitektur lulus.
+2. **Audit independen dan provenance (§4.2):** K1–K5 dicatat 125/125, exit 0 untuk masing-masing varian yang diuji; satu run langsung per varian direproduksi independen. Salinan harness audit menghapus hanya konfigurasi proxy lokal yang tidak tersedia, sambil mempertahankan URL, fixtures, assertions, dan metode GET/browser. Source/harness yang terkomit dibedakan dari bukti run independen; laporan POC awal lengkap, raw HTML, screenshots, dan `results.json` tidak committed ke GitHub.
+3. **Batas klaim (§4.2):** K6 tetap OPEN / UNVERIFIED dan kartu WhatsApp aktual tidak diuji. Perbandingan A-vs-tested-B dibatasi pada dua varian dan konfigurasi yang diuji, bukan bukti umum bahwa Hono unggul atas React Router.
+4. **Tindak lanjut ADR (§3):** rekomendasi laporan untuk memisahkan pilihan Hono/React/Vite dari D1/R2/provider dicatat sebagai item terbuka; ADR-001 tetap DRAFT/provisional dan pilihan arsitektur tidak diputuskan oleh revisi ini.
+5. **Status fase dan kriteria:** klarifikasi §6 butir 3 menyatakan laporan input bukan verdict review peninjau. Ketujuh exit criteria tetap `[ ] BELUM`; Fase 0 tetap **SEDANG BERJALAN**, Gerbang Arsitektur belum lulus, Fase 1 belum disetujui, dan tidak ada status K6/stack yang dinaikkan.
+
+Pernyataan penutup revisi: revisi ini dokumentasi-only; tidak ada kode aplikasi, prototype, seed data, konfigurasi atau resource Cloudflare, atau deployment production yang diubah. Revisi ini bukan persetujuan implementasi, bukan kelulusan Gerbang Arsitektur, bukan penyelesaian Fase 0, dan bukan izin Fase 1.
 
 ### v0.1.2 → v0.1.3
 

@@ -7,3 +7,8 @@ harness/e2e-shots/
 # Dependencies Node.js (dibuat npm ci; bukan bagian commit).
 # Pola tanpa slash awal: mengabaikan node_modules/ di level mana pun.
 node_modules/
+# Build output POC Open Graph (bukan bagian commit; ditambahkan untuk POC v25).
+poc/og-a/dist/
+poc/og-b/dist/
+# File hasil generate build Varian A (dibuat ulang tiap npm run build).
+poc/og-a/src/generated.ts

@@ -1,0 +1,307 @@
+/* ==========================================================================
+   Kita Invite — POC Open Graph (shared.css)
+   --------------------------------------------------------------------------
+   CSS bersama untuk varian A (Hono) dan B (React Router SSR).
+   Dipakai IDENTIK oleh kedua varian — jangan ubah per varian.
+
+   Palet (bahasa visual prototype Kita Invite):
+     --ivory      #F8F5EF  latar utama
+     --champagne  #E8DED0  latar sekunder / aksen lembut
+     --gold       #B79B72  emas redup (aksen, garis, tombol)
+     --charcoal   #302D29  teks utama
+
+   Font: stack sistem saja — TIDAK ada @import webfont wajib. Bila Playfair
+   Display / Cormorant Garamond / Inter / Manrope terpasang di perangkat
+   atau dimuat halaman, dipakai; bila tidak, fallback ke serif / sans-serif
+   sistem sehingga tes tetap lolos tanpa jaringan.
+   ========================================================================== */
+
+:root {
+  --ivory: #f8f5ef;
+  --champagne: #e8ded0;
+  --gold: #b79b72;
+  --gold-dark: #9a7f57;
+  --charcoal: #302d29;
+  --charcoal-soft: #5c564e;
+  --white: #fffdf9;
+  --line: #ddd2c0;
+
+  --font-display: "Playfair Display", "Cormorant Garamond", Georgia, serif;
+  --font-ui: "Inter", "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --content-max: 640px;
+  --radius: 12px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ivory);
+  color: var(--charcoal);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* ------------------------------------------------------------------ layout */
+
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 20px 48px;
+}
+
+@media (min-width: 480px) {
+  .page {
+    padding-left: 28px;
+    padding-right: 28px;
+  }
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  text-align: center;
+  padding: 32px 0 24px;
+}
+
+.hero__cover {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 24px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+}
+
+.hero__eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gold-dark);
+}
+
+.hero__names {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+@media (min-width: 480px) {
+  .hero__names {
+    font-size: 54px;
+  }
+}
+
+.hero__date {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--charcoal-soft);
+}
+
+.hero__venue {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--charcoal-soft);
+}
+
+/* ------------------------------------------------------------- open button */
+
+.open-btn {
+  display: inline-block;
+  margin-top: 24px;
+  padding: 13px 34px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--white);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.open-btn:hover,
+.open-btn:focus-visible {
+  background: var(--gold-dark);
+  border-color: var(--gold-dark);
+}
+
+/* ---------------------------------------------------------------- countdown */
+
+.countdown {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 32px 0 8px;
+  padding: 20px 8px;
+  background: var(--champagne);
+  border-radius: var(--radius);
+}
+
+.countdown__cell {
+  min-width: 64px;
+  text-align: center;
+}
+
+.countdown__num {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.countdown__label {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--charcoal-soft);
+}
+
+/* ----------------------------------------------------------------- sections */
+
+.section {
+  margin-top: 40px;
+}
+
+.section__title {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.section__rule {
+  width: 56px;
+  height: 2px;
+  margin: 10px auto 20px;
+  background: var(--gold);
+  border: 0;
+}
+
+.section__lead {
+  margin: 0 0 20px;
+  text-align: center;
+  color: var(--charcoal-soft);
+}
+
+/* ------------------------------------------------------------ detail cards */
+
+.detail {
+  padding: 18px 20px;
+  margin-bottom: 12px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.detail__title {
+  margin: 0 0 2px;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.detail__time {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--gold-dark);
+}
+
+.detail__desc {
+  margin: 0;
+  font-size: 15px;
+  color: var(--charcoal-soft);
+}
+
+/* ------------------------------------------------------------------ gallery */
+
+.gallery {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .gallery {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.gallery__item {
+  overflow: hidden;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.gallery__item--wide {
+  grid-column: 1 / -1;
+}
+
+.gallery__img {
+  display: block;
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  background: var(--champagne);
+}
+
+.gallery__caption {
+  padding: 12px 14px;
+}
+
+.gallery__caption h3 {
+  margin: 0 0 2px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.gallery__caption p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--charcoal-soft);
+}
+
+/* ------------------------------------------------------------------- footer */
+
+.footer {
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 12px;
+  color: var(--charcoal-soft);
+}
+
+.footer p {
+  margin: 2px 0;
+}
+
+.footer__names {
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--charcoal);
+}

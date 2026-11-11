@@ -1,3 +1,6 @@
 # Artefak run lokal harness (bukan bagian commit).
 # npm test menulis hasil JSON ke sini setiap run.
 harness/suite-result.json
+# Dependencies Node.js (dibuat npm ci; bukan bagian commit).
+# Pola tanpa slash awal: mengabaikan node_modules/ di level mana pun.
+node_modules/

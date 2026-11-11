@@ -563,9 +563,35 @@
              penugasan baru dan tidak diblokir di sini. */
           const assigning = (s.status === 'New' || s.status === 'Paid');
           if (!isPaid && assigning){
-            toast(linkedOrder
-              ? 'Proyek ' + s.number + ' belum dapat ditugaskan: pembayaran pesanan terkait (' + linkedOrder.number + ' · ' + linkedOrder.paymentStatus + ') belum Success — alur wajib New → Paid → Assigned.'
-              : 'Proyek ' + s.number + ' belum dapat ditugaskan: belum ada pesanan terkait berstatus Success — alur wajib New → Paid → Assigned.', true);
+            /* v24: pesan penolakan dibedakan menurut pemblokir
+               sebenarnya — sebelumnya SEMUA penolakan berbunyi
+               "pembayaran ... belum Success", padahal bila
+               paymentStatus SUDAH Success, pemblokirnya adalah
+               tier-mismatch / bukti tak tertaut, bukan pembayaran
+               yang belum lunas. Pesan yang menyebut Success
+               "belum Success" menyesatkan (terbukti browser:
+               KI-2026-1007 Signature Success vs template Premium). */
+            let msgAsg;
+            if (!linkedOrder){
+              msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: belum ada pesanan terkait berstatus Success — alur wajib New → Paid → Assigned.';
+            } else if (linkedOrder.paymentStatus !== 'Success'){
+              msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: pembayaran pesanan terkait (' + linkedOrder.number + ' · ' + linkedOrder.paymentStatus + ') belum Success — alur wajib New → Paid → Assigned.';
+            } else {
+              const ivGate = S.invitations.find(i => i.id === s.invitationId);
+              if (!ivGate){
+                msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: record undangan tertaut tidak ditemukan — alur wajib New → Paid → Assigned.';
+              } else {
+                const gGate = kiOrderTierGate(linkedOrder, ivGate);
+                if (gGate.mismatch){
+                  msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: paket pesanan terkait (' + linkedOrder.number + ' · ' + (linkedOrder.packageName || linkedOrder.packageId) + ') tidak sesuai dengan tier template undangan ini (' + (gGate.expected ? gGate.expected.name : 'tidak terbukti') + ') — buat pesanan baru dengan paket yang sesuai tier template, atau pilih pesanan lain. Alur wajib New → Paid → Assigned.';
+                } else if (gGate.unresolved){
+                  msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: tier template undangan ini tidak dapat dibuktikan untuk pesanan terkait (' + linkedOrder.number + ') — alur wajib New → Paid → Assigned.';
+                } else {
+                  msgAsg = 'Proyek ' + s.number + ' belum dapat ditugaskan: tidak ditemukan record pembayaran Success yang tertaut ke pesanan terkait (' + linkedOrder.number + ') dan undangan ini — alur wajib New → Paid → Assigned.';
+                }
+              }
+            }
+            toast(msgAsg, true);
             rerender2(); return;
           }
           /* Validasi state asal penugasan: proyek yang sudah Approved /

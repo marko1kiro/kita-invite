@@ -1,6 +1,9 @@
 # Artefak run lokal harness (bukan bagian commit).
 # npm test menulis hasil JSON ke sini setiap run.
 harness/suite-result.json
+# Hasil run E2E (npm run test:e2e) — artefak run lokal, bukan commit.
+harness/e2e-result.json
+harness/e2e-shots/
 # Dependencies Node.js (dibuat npm ci; bukan bagian commit).
 # Pola tanpa slash awal: mengabaikan node_modules/ di level mana pun.
 node_modules/

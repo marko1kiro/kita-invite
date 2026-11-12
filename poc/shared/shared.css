@@ -78,6 +78,7 @@ body {
   display: block;
   width: 100%;
   max-width: 420px;
+  aspect-ratio: 9 / 11;
   margin: 0 auto 24px;
   border-radius: var(--radius);
   border: 1px solid var(--line);

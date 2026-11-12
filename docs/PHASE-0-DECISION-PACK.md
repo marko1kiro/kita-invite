@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.4 (dokumen perencanaan Fase 0; revisi dari v0.1.3 — riwayat revisi di §8) |
+| Versi | v0.1.5 (dokumen perencanaan Fase 0; revisi dari v0.1.4 — riwayat revisi di §8) |
 | Tanggal | 12 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
@@ -279,7 +279,8 @@ Kita Invite membutuhkan satu renderer untuk undangan publik dinamis: HTML awal h
 
 - Varian A (Hono + React 19.3.1 + Vite 7.3.8): bundle `dist/worker.mjs` 431.881 byte, SHA-256 `013cc380f800b89e6827f9885d94df986b025388e22ab885f70b855819b96e08`; preview https://ki-og-poc-a.xdirgawa.workers.dev.
 - Varian B (React Router 7.18.5 framework-less SSR, React 18.3.1 + Vite 6.4.6): bundle 664.078 byte, SHA-256 `c91c01cf817e26190584056fa2f1da9394a6a8a74f2538b1fc1968f4f82ff699`; preview https://ki-og-poc-b.xdirgawa.workers.dev.
-- Kedua varian lolos kriteria K1–K5 di 8 run harness (125 cek per run: K1 19, K2 6, K3 6, K4 50, K5 44), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik.
+- **Laporan harness lama (HISTORIS):** kedua varian dilaporkan lulus kriteria K1–K5 di 8 run harness (125 cek per run: K1 19, K2 6, K3 6, K4 50, K5 44), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Angka/kelulusan ini adalah hasil historis harness lama yang dicatat v0.1.4; bukan hasil audit layout terbaru dan tidak membuktikan cover-loading stability.
+- **Koreksi status baseline:** audit independen Lora setelahnya pada snapshot baseline menemukan K1–K3 dan K5 lulus pada kedua varian, tetapi K4 gagal karena cover memindahkan anchor hero teks/tombol sebesar 425.328 px. Karena itu baseline tidak boleh diringkas sebagai K4 lulus.
 - K6 (kartu WhatsApp aktual) **belum terverifikasi** untuk kedua varian — POC tidak membuktikan kartu WhatsApp tampil.
 
 #### Perbandingan yang adil dengan React Router SSR
@@ -287,7 +288,7 @@ Kita Invite membutuhkan satu renderer untuk undangan publik dinamis: HTML awal h
 | Aspek | Hono + React (varian A, direkomendasikan) | React Router SSR framework-less (varian B) |
 |---|---|---|
 | Akurasi metadata crawler | Seri — keduanya menyajikan meta lengkap dan identik per slug (K1 19/19) | Seri — sama |
-| Kesamaan renderer preview vs undangan nyata | HTML awal hanya shell + OG + JSON; konten dirender React setelah JS | Lebih dekat di HTML awal — konten lengkap dikirim lewat SSR; seri setelah JS aktif (K4 50/50) |
+| Kesamaan renderer preview vs undangan nyata | HTML awal hanya shell + OG + JSON; konten dirender React setelah JS (hasil K4 terbaru baseline gagal) | Lebih dekat di HTML awal — konten lengkap dikirim lewat SSR (hasil K4 terbaru baseline gagal) |
 | Kompleksitas route/data | Satu file Hono untuk halaman, API, gambar, aset, favicon; data dibaca dari fixture, tanpa state | Definisi route sekali (bagus), tetapi dua config Vite + build kustom, API harus keluar dari router (keterbatasan `StaticHandler.query()`), client di-inline gzip+base64 dengan `DecompressionStream` saat runtime |
 | Hydration | Tidak ada kelas masalah ini — React CSR biasa mount ke shell | Rapuh di luar framework-mode — `HydratedRouter` hanya untuk framework-mode; POC menemukan bug nyata (React meng-unmount seluruh konten SSR) yang diperbaiki dengan `createBrowserRouter` + `parseHydrationData()` implisit |
 | Kecocokan dengan Workers | Hono dirancang untuk runtime seperti Workers; bundle 431.881 byte dengan React 19/Vite 7 tanpa kompromi | Butuh React 18 (bundle SSR React 19 1.211 KB, di atas target 800 KB) + Vite 6 + inlining gzip+base64 agar muat |
@@ -298,7 +299,7 @@ Kita Invite membutuhkan satu renderer untuk undangan publik dinamis: HTML awal h
 #### Yang TIDAK direkomendasikan
 
 - **Jangan menambah React Router SSR sebagai server kedua di atas Hono tanpa kebutuhan yang terukur.** Satu renderer untuk Kita Invite adalah tujuan yang dinyatakan POC; dua lapisan server berarti dua pola routing, dua jalur data, dan dua kelas bug yang harus dipelihara.
-- Jangan mengklaim Hono menang atas React Router secara umum. Kedua varian memenuhi semua kriteria K1–K5; rekomendasi ini soal kesederhanaan dan beban maintenance untuk kasus ini, bukan kemenangan mutlak.
+- Jangan mengklaim Hono menang atas React Router secara umum. Laporan harness lama memang mencatat kedua varian lulus K1–K5, tetapi audit layout terbaru menemukan K4 gagal pada baseline kedua varian; rekomendasi ini soal kesederhanaan dan beban maintenance untuk kasus ini, bukan kemenangan mutlak.
 
 #### Trade-off rekomendasi ini
 
@@ -341,15 +342,19 @@ Slot pencatatan review/verdict peninjau arsitektur (diisi setelah review peninja
 
 Ketentuan: bila review/verdict peninjau arsitektur belum diterima saat gerbang dinilai, kriteria masuk gerbang tidak terpenuhi dan gerbang dinyatakan **tidak lolos**. Laporan input POC di atas tidak menggantikan review itu. Review peninjau arsitektur adalah prasyarat Gerbang Arsitektur, bukan formalitas.
 
-### 4.2 Status POC Open Graph — K1–K5 dilaporkan lulus, K6 OPEN / UNVERIFIED
+### 4.2 Status POC Open Graph dan audit layout — K6 OPEN / UNVERIFIED
 
 **Fakta (dari laporan POC lokal, dengan provenance di bawah):**
 
 - POC membandingkan dua arsitektur dengan konten, aset, CSS, dan data fixture sintetis yang sama, di branch `poc/og-arch`, commit `93df620d016562235c79238299c0f5491a8ca538`.
 - Varian A (Hono + React + Vite + TypeScript): https://ki-og-poc-a.xdirgawa.workers.dev — bundle 431.881 byte.
 - Varian B (React Router SSR + Vite + TypeScript): https://ki-og-poc-b.xdirgawa.workers.dev — bundle 664.078 byte.
-- Kriteria K1–K5 **dilaporkan lulus** untuk kedua varian di 8 run harness (125 cek per run), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Angka 8 run, smoke, dan rebuild ini berasal dari laporan POC awal dan berbeda provenance dari audit independen di bawah.
-- **Audit independen K1–K5 (dalam laporan review POC yang diterima 12 November 2026):** Varian A dan Varian B masing-masing **125/125, exit 0**. Satu run langsung per varian berhasil direproduksi secara independen. Salinan harness sementara untuk audit menghapus hanya konfigurasi proxy lokal `127.0.0.1:8888` yang tidak tersedia; URL target, fixtures, assertions, serta metode GET/browser dipertahankan. Hasil ini adalah bukti run independen terpisah, bukan hasil dari delapan run yang dilaporkan lingkungan pembuat.
+- **Laporan harness lama (HISTORIS):** K1–K5 dilaporkan lulus untuk kedua varian di 8 run harness (125 cek per run), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Ini riwayat yang dicatat v0.1.4; tidak membuktikan cover-loading stability dan tidak menggantikan dua audit berikutnya.
+- **Audit GET publik baseline:** `/workspace/kita-invite-og-audit-20261112/results.json` mencatat K1–K3 dan K5 pass pada Worker publik baseline A/B. Targeted layout probe di `/workspace/kita-invite-og-audit-20261112/layout-probe-results.json` mencatat K4 fail: semua anchor bergeser **425.328 px**; CLS publik A **0.160626** (Aisha dan Citra), B **0.305777** (Aisha) dan **0.307385** (Citra). Sumber ini adalah audit GET publik baseline, bukan run loopback lokal dan bukan patch-public test.
+- **Before/after loopback lokal:** `/workspace/kita-invite-layoutshift-poc-20261112/evidence/before/results.json` mencatat baseline agregat **124/128** checks (A **62/64**, B **62/64**); `/workspace/kita-invite-layoutshift-poc-20261112/evidence/after/results.json` mencatat kandidat **128/128** (A **64/64**, B **64/64**). Pada slug lokal Aisha/Citra, baseline A CLS **0.160626**, B CLS **0.305777/0.307385**, semuanya anchor **425.328 px**; sesudahnya CLS **0** dan anchor **0**. Fixture cover **900×1100**, delay **2.4 s**, Chromium **390×844**, GET-only `127.0.0.1`; K5 **320/360/375/390/430/820/1024 px**; build/typecheck A/B pass. Ini sumber berbeda dari audit publik.
+- **Kandidat layout reserve lokal:** satu deklarasi CSS ditambahkan pada `poc/shared/shared.css`: `aspect-ratio: 9 / 11;`. Patch tersedia di `/workspace/kita-invite-layoutshift-poc-20261112/evidence/minimal-fix.patch`. Evidence lokal-only ini (termasuk `RESULTS.md` dan JSON before/after) tidak diarsipkan di GitHub.
+- **Promosi patch yang disetujui owner:** branch [`poc/og-arch-layout-reserve-20261112-1627`](https://github.com/marko1kiro/kita-invite/tree/poc/og-arch-layout-reserve-20261112-1627), commit [`ade04bd69f329a10ed3592d77f00af4b59a85198`](https://github.com/marko1kiro/kita-invite/commit/ade04bd69f329a10ed3592d77f00af4b59a85198), parent tepat baseline `93df620d016562235c79238299c0f5491a8ca538`; diff satu file `poc/shared/shared.css` dengan **+1**. Preview Pages otomatis [`https://ab9221c7.kita-invite.pages.dev`](https://ab9221c7.kita-invite.pages.dev) pada root tidak memuat `poc/shared/shared.css`, sehingga **tidak menguji atau memvalidasi patch**. Worker publik A dan B tetap baseline, belum diubah/deploy, dan tidak ada tes publik patch.
+- **Batas solusi:** rasio tetap `9 / 11` hanya tepat untuk fixture cover POC 900×1100; ini bukan solusi generik untuk semua gambar. Implementasi produk perlu dimensi intrinsik atau metadata rasio per aset bila rasio gambar dapat berbeda.
 - Bukti perbandingan hanya berlaku untuk Varian A dan Varian B yang benar-benar diuji. Varian B adalah React Router 7.18.5 framework-less SSR, bukan integrasi resmi React Router v8 + Cloudflare Vite plugin; perbedaan versi/setup membatasi kesetaraan. Hasil A-vs-tested-B ini **bukan bukti umum bahwa Hono lebih unggul daripada React Router**.
 - **K6 (kartu preview WhatsApp aktual) tetap OPEN / UNVERIFIED** sesuai keputusan owner (lihat §0 dan §2.12). Kartu WhatsApp aktual **tidak diuji** dan tidak ada klaim kartu tampil. OG HTML yang benar hanya prasyarat crawler, bukan bukti kartu tampil.
 
@@ -362,7 +367,7 @@ Ketentuan: bila review/verdict peninjau arsitektur belum diterima saat gerbang d
   - Varian B (entry server SSR): https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-b/src/entry.server.tsx
   - Harness tes: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/run-tests.mjs
   - Server lokal untuk harness: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/local-server.mjs
-- Provenance hasil dibedakan: angka delapan run, smoke, dan rebuild berasal dari laporan POC awal yang hanya lokal; angka 125/125 per varian berasal dari audit independen yang dicatat dalam laporan review POC yang diterima. Audit independen adalah bukti run terpisah, bukan artefak source/harness yang terkomit. Laporan POC awal lengkap, raw HTML, screenshots, dan `results.json` **tidak committed ke GitHub**; source dan harness POC yang ditautkan di atas ada di branch, tetapi bukan pengganti bukti hasil run tersebut. Langkah reproduksi terperinci laporan awal tidak ditulis ulang di sini.
+- Provenance hasil dibedakan tiga lapis: laporan lama 8×125 dan smoke/rebuild adalah riwayat lokal v0.1.4; audit GET publik baseline berada di `/workspace/kita-invite-og-audit-20261112/results.json` dan `layout-probe-results.json`; before/after **124/128** → **128/128** berasal dari audit layout-shift loopback lokal di `/workspace/kita-invite-layoutshift-poc-20261112/evidence/`. Angka publik tidak disamakan dengan jumlah lokal. Evidence run lokal, laporan POC awal lengkap, raw HTML, screenshots, `RESULTS.md`, JSON before/after, dan `minimal-fix.patch` tidak committed ke GitHub; source dan harness POC yang ditautkan di atas bukan pengganti bukti hasil run tersebut.
 - Dua Worker POC (`ki-og-poc-a` dan `ki-og-poc-b`) dipertahankan sebagai demo atas permintaan owner. Dokumen ini tidak memerintahkan penghapusan atau perubahan terhadap keduanya.
 
 **Kriteria acceptance HTML OG/crawler untuk Fase 0 (ditulis agar dapat diuji ulang):**
@@ -459,6 +464,23 @@ Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.4 → v0.1.5
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.4 (branch `docs/phase0-planning-v0.1.4`, commit `a7d56fa91241b7abe28abf1e9ac0d28febac7b4a`) |
+| Versi ini | v0.1.5 (12 November 2026) — revisi dokumentasi-only dari v0.1.4 |
+| Pemicu revisi | Audit independen Lora atas baseline POC dan bukti lokal kandidat layout reserve; promosi patch sudah disetujui owner |
+
+Perubahan pada revisi ini (hanya metadata §0, klaim bukti §3–§4, dan riwayat §8; checklist §6 dipertahankan):
+
+1. **Pemisahan provenance:** laporan harness lama yang melaporkan K1–K5 lulus tetap dicatat sebagai laporan historis, tetapi tidak lagi dipakai untuk menyatakan K4 lulus pada baseline. Audit independen Lora dicatat terpisah: K1–K3 dan K5 lulus, K4 gagal karena anchor hero teks/tombol bergeser 425.328 px; baseline agregat 124/128 checks (A/B masing-masing 62/64).
+2. **Kandidat layout reserve:** dicatat kandidat satu baris `aspect-ratio: 9 / 11;` pada `poc/shared/shared.css` beserta bukti before/after lokal. Candidate agregat 128/128 checks (A/B masing-masing 64/64), CLS 0 dan anchor delta 0 px pada fixture sintetis cover 900×1100. Provenance loopback GET-only, Chromium headless 390×844, delay gambar 2.4 s, build/typecheck A/B, dan lebar K5 dicatat; batas non-production/real-device/multi-browser ditegaskan.
+3. **Promosi dan batas validasi publik:** branch [`poc/og-arch-layout-reserve-20261112-1627`](https://github.com/marko1kiro/kita-invite/tree/poc/og-arch-layout-reserve-20261112-1627) dan commit [`ade04bd69f329a10ed3592d77f00af4b59a85198`](https://github.com/marko1kiro/kita-invite/commit/ade04bd69f329a10ed3592d77f00af4b59a85198) dicatat dengan parent baseline tepat dan diff satu file +1. Preview Pages root tidak memuat stylesheet POC, Worker publik A/B tetap baseline, dan tidak ada tes publik patch.
+4. **Status tetap:** K6 tetap OPEN / UNVERIFIED; identitas/verdict reviewer Architecture Review tidak diubah; ADR stack tetap PROVISIONAL/DRAFT; Fase 0 tetap **SEDANG BERJALAN**, Gerbang Arsitektur belum lulus, Fase 1 belum disetujui, dan ketujuh exit criteria §6 tetap `[ ] BELUM`.
+
+Pernyataan penutup revisi: revisi ini dokumentasi-only; tidak ada perubahan pada source POC/main/Workers, konfigurasi Pages/Cloudflare/production, dan tidak ada deploy manual. Push docs dapat memicu preview Pages otomatis; preview docs itu tidak memvalidasi aplikasi atau patch. Bukti run layout reserve yang dirujuk berada lokal dan tidak dinyatakan terarsip di GitHub. Revisi ini bukan persetujuan implementasi, bukan kelulusan Gerbang Arsitektur, bukan penyelesaian Fase 0, dan bukan izin Fase 1.
 
 ### v0.1.3 → v0.1.4
 

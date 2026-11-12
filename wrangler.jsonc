@@ -1,0 +1,57 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kita-invite-phase1",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-10",
+  "workers_dev": false,
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/health", "/api/*"]
+  },
+  "env": {
+    "dev": {
+      "name": "kita-invite-phase1-dev",
+      "workers_dev": false,
+      "vars": {
+        "APP_ENV": "dev"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kita-invite-phase1-dev-db",
+          "database_id": "a77f8cde-9136-4310-9627-47a011dc4240",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "kita-invite-phase1-dev-media"
+        }
+      ]
+    },
+    "staging": {
+      "name": "kita-invite-phase1-staging",
+      "workers_dev": false,
+      "vars": {
+        "APP_ENV": "staging"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "kita-invite-phase1-staging-db",
+          "database_id": "863dfd1c-ccbe-448a-b6fa-7aba442d44ed",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "kita-invite-phase1-staging-media"
+        }
+      ]
+    }
+  }
+}

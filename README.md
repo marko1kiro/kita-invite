@@ -35,3 +35,15 @@ protected by Cloudflare Access — only dummy/demo data lives here.
 - The Cloudflare Full Stack production target remains a separate decision
   (see the plan document, not this repo).
 - Do not declare the Stage 2 audit passed just because a build succeeds.
+
+
+## Fase 1 — fondasi dev/staging
+
+Fondasi baru menggunakan React, TypeScript, Vite, Hono, dan Wrangler. Aplikasi scaffold berada di `web/`; Worker berada di `src/worker/`. File prototype root `index.html` sengaja dibiarkan terpisah dan tidak diubah.
+
+Jalankan `npm ci`, kemudian `npm run dev` untuk Vite. `npm run ci` menjalankan typecheck, unit tests, build, Wrangler dry-run dev/staging, dan backup/restore SQLite lokal sintetis. `npm run worker:local:dev` menjalankan Worker lokal pada `127.0.0.1:8787`; perintah ini memakai emulator lokal, bukan deployment.
+
+Cloudflare D1/R2 dev dan staging sudah disiapkan terpisah. Worker belum dibuat atau di-deploy, tidak ada custom domain/DNS yang diaktifkan, dan CI tidak melakukan deployment otomatis karena status plan/usage Workers belum dapat dipastikan. Rincian ada di [catatan Fase 1](docs/phase1-dev-staging.md).
+
+
+**Klarifikasi scope:** perubahan resource pada branch terisolasi ini hanya mencakup D1/R2 baru dev dan staging yang disetujui owner; aturan baseline di atas tetap berlaku untuk Pages, POC, Worker/route yang sudah ada, production, dan account lain.

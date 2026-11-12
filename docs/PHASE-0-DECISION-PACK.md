@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.7 (dokumen perencanaan Fase 0; revisi dari v0.1.6 — riwayat revisi di §8) |
+| Versi | v0.1.8 (dokumen perencanaan Fase 0; revisi dari v0.1.7 — riwayat revisi di §8) |
 | Tanggal | 12 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
@@ -17,6 +17,7 @@
 1. **Owner menyetujui MULAI Fase 0 saja** — sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman (instruksi Lora yang diteruskan owner, 11 November 2026 pukul 16:34 WIB).
 2. **Owner memilih K6 (kartu preview WhatsApp aktual) TETAP TERBUKA sampai ada cara uji yang aman.** Status K6: **OPEN / UNVERIFIED**. Jangan mengklaim K6 lulus. Bila nanti ada metode uji nyata yang aman, dokumen ini menyatakan perlu persetujuan terpisah sebelum mengirim atau menampilkan URL melalui kanal eksternal.
 3. **Owner menyetujui scope MVP M1–M8 seperti tertulis di §1.1.** Keputusan owner 11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos". M1–M8 ditandai **DECIDED BY OWNER — MVP scope accepted**. Scope ini tidak perlu ditanyakan kembali, tidak diganti dengan Revenue MVP, pilot M1–M4, atau scope yang lebih sempit. Keputusan M1–M8 tidak menghapus exit gates keamanan, privasi, aksesibilitas, responsive layout, backup/restore, monitoring, dan rollback yang diperlukan sebelum peluncuran.
+4. **Owner menyetujui kriteria acceptance OG K1–K5 dan bukti komparatif lokal yang dapat diulang** sebagai masukan perencanaan Fase 0, pada 12 November 2026 pukul 21:30 WIB. Persetujuan ini hanya mencakup K1–K5 dan bukti lokal yang dicatat di §4.2; **K6 tetap OPEN / UNVERIFIED** dan tidak termasuk persetujuan. Ini bukan keputusan stack final, kelulusan Gerbang Arsitektur atau Fase 0, persetujuan Fase 1 atau coding/implementasi, maupun izin provisioning/deployment production.
 
 ### Batas otorisasi Fase 0 (baca dulu)
 
@@ -358,7 +359,7 @@ Dokumentasi resmi yang menjadi rujukan setup/status: [Hono on Workers](https://d
 
 #### Kriteria acceptance HTML OG/crawler Fase 0
 
-Kriteria ini menilai HTML dan metadata crawler, bukan kartu WhatsApp aktual. Hasil baru di atas adalah bukti komparatif lokal; pencatatan hasil tidak sama dengan approval owner atas acceptance criteria atau kelulusan gate.
+Kriteria ini menilai HTML dan metadata crawler, bukan kartu WhatsApp aktual. Pada 12 November 2026 pukul 21:30 WIB, owner menyetujui kriteria K1–K5 dan bukti komparatif lokal yang dapat diulang di atas sebagai masukan perencanaan Fase 0. Persetujuan terbatas pada K1–K5; **K6 tidak termasuk dan tetap OPEN / UNVERIFIED**. Persetujuan ini bukan keputusan stack final, kelulusan Gerbang Arsitektur atau Fase 0, persetujuan Fase 1 atau coding/implementasi, maupun izin provisioning/deployment production.
 
 1. `GET` tanpa JavaScript menghasilkan HTML awal dengan `<title>`, canonical URL, `og:title`, `og:description`, `og:type`, `og:url`, dan `og:image` absolut yang cocok dengan undangan/slug; body menampilkan fallback hero inti (cover, nama, tanggal, venue, tombol) dan pemberitahuan JavaScript.
 2. `og:image` dapat diambil dengan HTTP 200 dan content type gambar yang benar.
@@ -415,17 +416,17 @@ Semua asumsi di bawah ini ditandai dengan label `[ASUMSI]`. Asumsi bukan fakta. 
 
 ## 6. Checklist exit Fase 0
 
-**Status Fase 0: SEDANG BERJALAN.** Exit criterion #3 (reviewer formal, review, verdict, dan tindak lanjut tercatat) telah dipenuhi. Kriteria #1, #2, #4, #5, #6, dan #7 tetap **[ ] BELUM** sampai bukti atau approval masing-masing tersedia. Penutupan #3 tidak meluluskan Gerbang Arsitektur; jangan lanjut Fase 1 atau memulai implementasi tanpa persetujuan terpisah owner.
+**Status Fase 0: SEDANG BERJALAN.** Exit criteria #3 (reviewer formal, review, verdict, dan tindak lanjut tercatat) dan #5 (kriteria OG K1–K5 serta bukti lokal yang dapat diulang didokumentasikan dan disetujui owner sebagai masukan perencanaan) telah dipenuhi. Kriteria #1, #2, #4, #6, dan #7 tetap **[ ] BELUM**. Persetujuan untuk #5 tidak meluluskan Gerbang Arsitektur; jangan lanjut Fase 1 atau memulai implementasi tanpa persetujuan terpisah owner.
 
-Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — verifikasi pencatatan tetap menunggu owner); **(B) ratifikasi status dan penundaan register** (butir 2); **(C) keputusan turunan D1–D10** yang boleh mengikuti fase masing-masing sesuai register; serta **(D) syarat gate yang masih menunggu**, terutama keputusan stack final owner dan persetujuan/konfirmasi acceptance OG. Reviewer formal telah ditunjuk dan review/verdict/follow-up dicatat, sehingga butir 3 selesai; itu tidak otomatis menutup butir lain.
+Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — verifikasi pencatatan tetap menunggu owner); **(B) ratifikasi status dan penundaan register** (butir 2); **(C) keputusan turunan D1–D10** yang boleh mengikuti fase masing-masing sesuai register; serta **(D) syarat gate yang masih menunggu**, terutama keputusan stack final owner. Kriteria #3 dan #5 selesai: persetujuan owner atas K1–K5 dan bukti lokal hanya menutup butir #5 sebagai masukan perencanaan, bukan Gerbang Arsitektur atau Fase 0; K6 tetap terpisah dan **OPEN / UNVERIFIED**. Kriteria lain tetap memerlukan tindak lanjutnya masing-masing.
 
 | # | Exit criterion | Status | Yang kurang | Yang perlu bertindak |
 |---|---|---|---|---|
 | 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final) yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang masih kurang untuk butir ini hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Keputusan turunan D1–D10 di §1.4 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8. | Owner (verifikasi pencatatan keputusan M1–M8; meratifikasi status/penundaan keputusan turunan D1–D10 di Fase 0; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
 | 2 | Semua baris register (§2) sudah memiliki status (2 DECIDED BY OWNER, 10 MENUNGGU beserta metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris sudah tercatat: §2.1 DECIDED BY OWNER — M1–M8 dan §2.12 DECIDED BY OWNER (status K6 tetap terbuka); 10 baris lainnya (§2.2–§2.11) masih MENUNGGU beserta metode uji aman K6. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang sudah dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus sudah dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
 | 3 | Reviewer formal Architecture Gate ditunjuk owner, lalu review diterima dan dicatat dengan verdict serta tindak lanjut | [x] SELESAI — review tercatat | Tidak ada yang kurang untuk kriteria pencatatan ini: Lora ditunjuk 12 November 2026 pukul 18:49 WIB; review tanggal 12 November, verdict **APPROVED WITH MINOR NOTES**, batas verdict, dan tindak lanjut tercatat di §4.1–§4.2. Ini bukan kelulusan Gerbang Arsitektur atau keputusan stack final | Tidak ada tindak lanjut pencatatan; owner tetap pemutus stack final dan syarat gate lainnya tetap harus dipenuhi |
-| 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | Review formal Lora sudah tercatat dengan verdict **APPROVED WITH MINOR NOTES**, tetapi ADR masih **DRAFT** dan Hono tetap rekomendasi provisional. Belum ada keputusan stack final owner; acceptance OG/gerbang dan syarat lain belum ditutup. Gerbang belum lulus | Owner (memutuskan stack final setelah bukti dan seluruh syarat gate ditinjau); tim (menyediakan bukti yang diperlukan) |
-| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [ ] BELUM | Hasil POC komparatif lokal (87/87 pemeriksaan per varian, packet/JSON/runner) dan batas K6 kini dicatat di §4.2, tetapi status ini belum berarti owner menyetujui acceptance criteria atau hasil tersebut cukup untuk menutup gate. Masih diperlukan persetujuan/konfirmasi owner atas kriteria dan bukti yang diminta gate; K6 tetap terpisah dan tidak diuji | Owner (menyetujui/meratifikasi kriteria §4.2 dan kecukupan bukti); tim (melengkapi bukti bila diminta) |
+| 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | Review formal Lora sudah tercatat dengan verdict **APPROVED WITH MINOR NOTES**, tetapi ADR masih **DRAFT** dan Hono tetap rekomendasi provisional. Belum ada keputusan stack final owner. K1–K5 dan bukti lokal disetujui hanya sebagai masukan perencanaan (§4.2); persetujuan itu tidak meluluskan Gerbang Arsitektur, dan syarat gate lainnya tetap berlaku. Gerbang belum lulus | Owner (memutuskan stack final setelah bukti dan seluruh syarat gate ditinjau); tim (menyediakan bukti yang diperlukan) |
+| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [x] SELESAI — K1–K5 dan bukti lokal disetujui sebagai masukan Fase 0 | Tidak ada yang kurang untuk exit criterion #5: kriteria K1–K5 dan bukti komparatif lokal yang dapat diulang (87/87 pemeriksaan per varian) terdokumentasi di §4.2 dan disetujui owner pada 12 November 2026 pukul 21:30 WIB. Persetujuan hanya mencakup K1–K5 dan bukti sebagai masukan perencanaan; **K6 tidak termasuk dan tetap OPEN / UNVERIFIED**. Ini tidak memilih stack final, tidak meluluskan Gerbang Arsitektur atau Fase 0, dan tidak menyetujui Fase 1, coding/implementasi, atau provisioning/deployment production | Tidak ada tindak lanjut untuk pencatatan exit criterion #5; owner tetap pemutus stack final setelah seluruh bukti dan syarat gate ditinjau, dan K6 tetap terbuka |
 | 6 | Pilihan owner K6 OPEN / UNVERIFIED sudah dicatat (§0, §2.12, §4.2); K6 bukan syarat yang dianggap lulus. Bila owner kemudian memilih K6 wajib dibuktikan sebelum final stack, gerbang menunggu metode uji aman | [ ] BELUM | Pilihan owner sudah dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — bukan pengulangan pilihan. Kartu WhatsApp aktual **belum diuji dan belum lulus**; dokumen ini tidak mengklaim kartu sudah diuji atau lulus | Owner (verifikasi pencatatan sudah benar saat meninjau revisi dokumen ini) |
 | 7 | Izin perencanaan Fase 0 sudah diberikan owner dan dicatat (§0); izin ini tidak membuka coding produk, perubahan production, provisioning resource, deploy production, Gerbang Arsitektur, atau Fase 1 — semua itu membutuhkan persetujuan terpisah | [ ] BELUM | Izin perencanaan Fase 0 sudah diberikan dan dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — dibedakan dari permintaan persetujuan baru; ini bukan persetujuan baru dan bukan persetujuan Fase 0 selesai. Pemberian izin ini tidak berarti checklist lain atau Gerbang Arsitektur otomatis lulus | Owner (verifikasi pencatatan batas otorisasi saat meninjau revisi dokumen ini) |
 
@@ -437,17 +438,34 @@ Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat
 
 Dokumen ini adalah paket keputusan Fase 0 untuk ditinjau owner. Dokumen ini bukan persetujuan implementasi, bukan persetujuan production deploy, bukan kelulusan Gerbang Arsitektur, dan bukan izin Fase 1. Fase 0 berstatus **SEDANG BERJALAN** dan Gerbang Arsitektur **belum lulus**.
 
-Keputusan yang sudah dibuat owner dan tidak perlu diulang: (1) mulai Fase 0 saja, sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman; (2) K6 tetap terbuka sampai ada cara uji yang aman — status K6 **OPEN / UNVERIFIED**; (3) scope MVP M1–M8 diterima owner (11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos").
+Keputusan yang sudah dibuat owner dan tidak perlu diulang: (1) mulai Fase 0 saja, sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman; (2) K6 tetap terbuka sampai ada cara uji yang aman — status K6 **OPEN / UNVERIFIED**; (3) scope MVP M1–M8 diterima owner (11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos"); (4) kriteria acceptance OG K1–K5 dan bukti lokal yang dapat diulang disetujui sebagai masukan perencanaan Fase 0 pada 12 November 2026 pukul 21:30 WIB, tanpa mengubah status K6 atau memberi persetujuan stack/gate/Fase 1/implementasi/production.
 
 Keputusan M1–M8 tidak menghapus exit gates keamanan, privasi, aksesibilitas, responsive layout, backup/restore, monitoring, dan rollback yang diperlukan sebelum peluncuran.
 
-Review formal Lora dan tindak lanjutnya sudah dicatat; yang masih perlu owner tinjau dan putuskan antara lain keputusan turunan di §1.4, isi register (§2) beserta status yang masih MENUNGGU, pilihan stack final pada ADR draft (§3), kriteria acceptance OG (§4.2), serta exit criterion #1, #2, #4, #5, #6, dan #7 di §6.
+Review formal Lora dan tindak lanjutnya sudah dicatat, dan exit criterion #5 (persetujuan owner atas K1–K5 serta bukti lokal sebagai masukan perencanaan) telah selesai. Yang masih perlu owner tinjau dan putuskan antara lain keputusan turunan di §1.4, isi register (§2) beserta status yang masih MENUNGGU, pilihan stack final pada ADR draft (§3), serta exit criterion #1, #2, #4, #6, dan #7 di §6. Persetujuan K1–K5 tidak meluluskan Gerbang Arsitektur atau Fase 0; K6 tetap **OPEN / UNVERIFIED** dan Fase 1 belum disetujui.
 
 Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1, keputusan terkunci yang berlaku.
 
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.7 → v0.1.8
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.7 (branch `docs/phase0-planning-v0.1.7`, commit `85f220d4ad446da53c77c16b8bd57a15ef22b13a`) |
+| Versi ini | v0.1.8 (12 November 2026) — revisi dokumentasi-only dari parent tepat v0.1.7 |
+| Branch revisi | `docs/phase0-planning-v0.1.8` |
+| Pemicu revisi | Owner menyetujui kriteria OG K1–K5 dan bukti komparatif lokal yang dapat diulang sebagai masukan perencanaan Fase 0 pada 12 November 2026 pukul 21:30 WIB |
+
+Perubahan dokumentasi pada revisi ini:
+
+1. **Persetujuan owner (§0, §4.2):** persetujuan dicatat hanya untuk kriteria K1–K5 dan bukti lokal yang dapat diulang. K6 secara eksplisit dikecualikan dan tetap **OPEN / UNVERIFIED**.
+2. **Checklist §6:** exit criterion #5 ditandai selesai karena kriteria dan bukti lokal telah didokumentasikan serta disetujui owner; exit criterion #3 tetap selesai. Kriteria #1, #2, #4, #6, dan #7 tetap **[ ] BELUM**.
+3. **Batas dan status yang tidak berubah:** Architecture Gate belum lulus; Fase 0 tetap **SEDANG BERJALAN**; ADR tetap **DRAFT**; keputusan stack final owner masih tertunda; Fase 1 belum disetujui; M1–M8 dan D1–D10 tidak berubah. Tidak ada perubahan source code/POC, branch lain, konfigurasi atau resource Cloudflare, Worker, production, maupun deployment.
+
+Revisi ini bukan keputusan stack final, bukan kelulusan Gerbang Arsitektur, bukan penyelesaian Fase 0, bukan persetujuan Fase 1 atau implementasi, dan bukan izin provisioning/deployment production.
 
 ### v0.1.6 → v0.1.7
 

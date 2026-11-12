@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.6 (dokumen perencanaan Fase 0; revisi dari v0.1.5 — riwayat revisi di §8) |
+| Versi | v0.1.7 (dokumen perencanaan Fase 0; revisi dari v0.1.6 — riwayat revisi di §8) |
 | Tanggal | 12 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
@@ -31,12 +31,11 @@ Persetujuan memulai Fase 0 **HANYA** mengizinkan perencanaan, pencatatan keputus
 
 Semua hal di atas membutuhkan persetujuan terpisah dari owner. Otorisasi untuk memulai Fase 0 (perencanaan saja) **SUDAH diberikan owner** dan dicatat di atas — pemberian otorisasi itu tidak berarti checklist exit lain atau Gerbang Arsitektur otomatis lulus. Dokumen ini adalah bahan tinjauan, bukan persetujuan implementasi. **Jangan pernah menandai gerbang lulus atau Fase 0 selesai di dokumen ini.**
 
-### Klarifikasi status peran (v0.1.6)
+### Penunjukan reviewer formal (v0.1.7)
 
-- Agent Muse/Meta sudah **retired**. Atribusi “Rekomendasi Muse” yang masih ada di dokumen dipertahankan sebagai catatan historis, bukan peran aktif.
-- **Harley** adalah executor teknis/coding agent pengganti Muse/Meta. **Lora** memeriksa hasil Harley sebagai Lead Agent.
-- Pemeriksaan Lora atas hasil Harley tidak otomatis menjadikannya reviewer formal Architecture Gate. Penunjukan reviewer formal Architecture Gate masih **MENUNGGU KEJELASAN owner**; tidak ada keputusan owner yang jelas dalam catatan ini yang menunjuk Lora sebagai reviewer formal.
-- Revisi ini tidak membuat atau mencatat verdict review arsitektur. Status gerbang tetap ditentukan setelah reviewer formal diperjelas/ditunjuk owner dan seluruh syarat gerbang dipenuhi.
+- Agent Muse/Meta sudah **retired**. **Harley** adalah executor teknis; **Lora** memeriksa secara independen dan tidak menjadi executor untuk review ini.
+- Owner menunjuk **Lora sebagai reviewer formal Architecture Gate pada 12 November 2026 pukul 18:49 WIB**. Review formal atas packet komparasi lokal dan verdict-nya dicatat di §4.1–§4.2.
+- Verdict review yang tercatat **bukan** keputusan stack final dan **bukan** kelulusan Gerbang Arsitektur. Owner tetap pemutus stack; seluruh syarat gerbang lainnya tetap berlaku.
 
 ### Cara membaca dokumen ini
 
@@ -82,7 +81,7 @@ P1–P8 adalah daftar fitur kandidat yang tidak termasuk scope MVP saat ini dan 
 | P5 | Otomasi notifikasi lanjutan di luar template notifikasi yang disetujui di Fase 7 | Notifikasi hanya mengikuti template yang disetujui; tidak ada alur notifikasi otomatis lanjutan sampai pekerjaan itu dijadwalkan |
 | P6 | Laporan dan analitik lanjutan di luar activity log dan observability dasar | Tidak ada dasbor laporan lanjutan saat peluncuran; wawasan bisnis dibatasi pada activity log dan observability dasar |
 | P7 | Migrasi data prototype yang luas | Draft prototype tetap tersimpan lokal per perangkat/pengguna dan tidak berpindah otomatis; bila owner menginginkan pemindahan, itu pekerjaan ekspor-impor terbatas di Fase 8 yang membutuhkan persetujuan tersendiri |
-| P8 | Integrasi resmi React Router v8 plus Cloudflare Vite plugin | Keputusan stack dibuat berdasarkan bukti POC (React Router 7.18.5 framework-less SSR), bukan berdasarkan integrasi resmi tersebut; bila integrasi resmi dipertimbangkan di kemudian hari, ia harus dinilai tersendiri sebagai pekerjaan baru, bukan sebagai kesimpulan dari POC ini |
+| P8 | Integrasi resmi React Router v8 plus Cloudflare Vite plugin sebagai opsi arsitektur | Opsi ini sudah dinilai dalam POC komparatif lokal yang direview Lora (§3–§4.2), tetapi tidak dipilih sebagai stack final dan tidak berarti integrasi produk disetujui atau dibangun |
 
 **Aturan pemisahan (dari roadmap v0.1.1 §7):** bila satu fitur kandidat ternyata dibutuhkan untuk menutup risiko keamanan, aksesibilitas, backup, atau rollback, fitur itu tidak lagi diperlakukan sebagai pasca-MVP. Owner memutuskan perpindahan itu secara tertulis di fase terkait.
 
@@ -137,8 +136,8 @@ Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP
 ### 2.2 (b) Stack produksi final serta pilihan renderer/SSR
 
 - **Pilihan yang harus dibuat:** stack produksi final dan renderer/SSR yang dipakai untuk undangan publik dan API.
-- **Opsi yang layak:** (i) Hono + React + TypeScript + Vite — Hono di Worker untuk API `/api/v1` dan HTML awal route undangan dengan OG dinamis, React untuk interaksi (rekomendasi kerja POC, varian A); (ii) React Router SSR framework-less 7.18.5 (varian B POC); (iii) integrasi resmi React Router v8 plus Cloudflare Vite plugin — opsi ini TIDAK diuji di POC dan harus dinilai tersendiri sebagai pekerjaan baru bila dipertimbangkan.
-- **Rekomendasi Muse:** `REKOMENDASI` — Hono + React + TypeScript + Vite sebagai arah kerja awal (lihat ADR draft di §3). Trade-off: satu lapisan routing eksplisit, tanpa kelas bug hydration, bundle lebih kecil dengan versi terkini; harganya HTML awal hanya shell plus OG plus JSON sehingga tanpa JS undangan tidak terbaca. Rekomendasi ini tetap PROVISIONAL sampai acceptance test OG dan syarat Gerbang Arsitektur selesai; status penunjukan reviewer formal dijelaskan di §4.1.
+- **Opsi yang layak:** (i) Hono + React + TypeScript + Vite — Hono Worker untuk API `/api/v1` dan route undangan publik `/:slug` dengan OG dinamis, React untuk UI interaktif (varian A POC); (ii) React Router v8 framework mode dengan Cloudflare Vite plugin resmi v1 (varian B POC, versi yang diuji tercatat di §4.2). Keduanya diuji secara lokal pada cakupan komparasi yang dicatat; belum ada pilihan stack final.
+- **Rekomendasi provisional:** pertahankan Hono + React + TypeScript + Vite sebagai arah yang diutamakan sementara untuk pola API-first, dengan Hono Worker untuk `/api/v1` dan route publik `/:slug` ber-OG dinamis serta React untuk UI interaktif. HTML awal POC menampilkan fallback hero yang terbaca, bukan seluruh isi undangan tanpa JavaScript. Bukti tidak menunjukkan pemenang bundle/performa yang jelas. D1, R2, dan provider tetap keputusan terpisah. Hasil review dan batas rekomendasi dicatat di §3–§4.2; ini bukan keputusan final owner.
 - **Pemutus:** Owner, setelah masukan reviewer Architecture Gate yang ditunjuk owner dan acceptance test OG ditinjau.
 - **Paling lambat:** Fase 0, di Gerbang Arsitektur.
 - **Blocker:** YA — tanpa ini gerbang tidak lolos dan tidak ada coding production yang dimulai.
@@ -264,137 +263,111 @@ Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP
 
 | | |
 |---|---|
-| Status | **DRAFT** — rekomendasi provisional, bukan keputusan final |
-| Tanggal | 11 November 2026 |
-| Diputuskan oleh | Belum diputuskan — pemutus adalah owner, setelah reviewer formal Architecture Gate diperjelas/ditunjuk owner, masukan review ditinjau, dan syarat Gerbang Arsitektur selesai |
-| Dasar bukti | POC Open Graph, branch `poc/og-arch`, commit `93df620d016562235c79238299c0f5491a8ca538` (laporan lengkap hanya tersedia lokal dan TIDAK terarsip di GitHub; kode dan harness yang terkomit ditautkan di §4.2) |
+| Status | **DRAFT** — rekomendasi provisional, bukan keputusan final owner |
+| Tanggal | 12 November 2026 |
+| Diputuskan oleh | Belum diputuskan — owner tetap pemutus stack final setelah meninjau bukti dan seluruh syarat Gerbang Arsitektur |
+| Reviewer formal | Lora, ditunjuk owner 12 November 2026 pukul 18:49 WIB; verdict review dan tindak lanjut dicatat di §4.1 |
+| Dasar bukti | Perbandingan POC lokal Hono vs React Router v8 resmi + Cloudflare Vite plugin, packet `/workspace/kita-invite-architecture-comparison-20261112/reviewer-packet.md`, JSON hasil dan runner di §4.2. Bukti ini lokal/non-production dan tidak di-commit ke repository produk. |
 
-#### Konteks
+#### Konteks dan rekomendasi provisional
 
-Kita Invite membutuhkan satu renderer untuk undangan publik dinamis: HTML awal harus memuat metadata Open Graph yang benar untuk crawler, dan pengalaman interaktif harus dimuat setelahnya. POC membandingkan dua arsitektur dengan konten, aset, CSS, dan data fixture sintetis yang sama (dua pasangan fiktif; gambar dibuat sendiri; tanpa data pelanggan).
+Kita Invite membutuhkan route undangan publik dengan metadata Open Graph yang sesuai per slug serta UI interaktif. Owner belum memilih stack final. Untuk pola **API-first**, rekomendasi kerja tetap **Hono + React + TypeScript + Vite**: Hono Worker menangani API `/api/v1` dan route publik `/:slug` dengan HTML awal serta OG dinamis; React menangani UI interaktif. Cloudflare Vite plugin merupakan jalur build/runtime yang didukung dokumentasi Cloudflare untuk Workers. Ini rekomendasi provisional, bukan keputusan implementasi atau production.
 
-#### Keputusan yang direkomendasikan (REKOMENDASI — provisional)
+Pilihan D1, R2, auth/provider, dan konfigurasi produksi **tidak** ditetapkan oleh perbandingan ini; masing-masing tetap keputusan terpisah di register §2. React Router v8 framework mode dengan Cloudflare Vite plugin resmi tetap alternatif yang kredibel bila owner memprioritaskan routing framework dan SSR terpusat. Jangan menambah framework/server kedua di atas Hono tanpa kebutuhan terukur.
 
-- **React + TypeScript + Vite** untuk antarmuka dan interaksi.
-- **Hono di Cloudflare Worker** untuk API di jalur `/api/v1` dan untuk HTML awal route undangan `/:slug` dengan metadata OG dinamis.
-- **D1** untuk data relasional.
-- **R2** untuk media.
-- **Tanpa KV, Queues, atau Durable Objects** sampai kebutuhan nyata terbukti dan dicatat.
-- Migrasi SQL terkontrol; ORM seperti Drizzle hanya rekomendasi opsional, bukan keputusan wajib.
+#### Bukti komparatif yang ditinjau Lora
 
-#### Bukti POC yang mendasari rekomendasi
+Dua varian POC lokal menggunakan fixture sintetis yang sama. Hono memakai Hono 4.13.17, React 19.3.1, dan Vite 7.3.8. Varian pembanding adalah React Router **v8 framework mode** (`react-router`/`@react-router/dev` 8.5.1) dengan Cloudflare Vite plugin 1.69.1, React 19.3.1, dan Vite 8.3.8. Plugin v1 adalah jalur stable yang diuji; plugin v2 masih beta. Keduanya lulus K1–K5, masing-masing **87/87 pemeriksaan** lokal; build dan typecheck lulus. Rincian hitungan, cakupan, dan provenance ada di §4.2.
 
-- Varian A (Hono + React 19.3.1 + Vite 7.3.8): bundle `dist/worker.mjs` 431.881 byte, SHA-256 `013cc380f800b89e6827f9885d94df986b025388e22ab885f70b855819b96e08`; preview https://ki-og-poc-a.xdirgawa.workers.dev.
-- Varian B (React Router 7.18.5 framework-less SSR, React 18.3.1 + Vite 6.4.6): bundle 664.078 byte, SHA-256 `c91c01cf817e26190584056fa2f1da9394a6a8a74f2538b1fc1968f4f82ff699`; preview https://ki-og-poc-b.xdirgawa.workers.dev.
-- **Laporan harness lama (HISTORIS):** kedua varian dilaporkan lulus kriteria K1–K5 di 8 run harness (125 cek per run: K1 19, K2 6, K3 6, K4 50, K5 44), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Angka/kelulusan ini adalah hasil historis harness lama yang dicatat v0.1.4; bukan hasil audit layout terbaru dan tidak membuktikan cover-loading stability.
-- **Koreksi status baseline:** audit independen Lora setelahnya pada snapshot baseline menemukan K1–K3 dan K5 lulus pada kedua varian, tetapi K4 gagal karena cover memindahkan anchor hero teks/tombol sebesar 425.328 px. Karena itu baseline tidak boleh diringkas sebagai K4 lulus.
-- K6 (kartu WhatsApp aktual) **belum terverifikasi** untuk kedua varian — POC tidak membuktikan kartu WhatsApp tampil.
+Pada respons tanpa JavaScript, kedua varian menampilkan fallback hero yang terbaca: cover, nama, tanggal, venue, tombol, dan pemberitahuan bahwa konten interaktif memerlukan JavaScript; head HTML memuat title, canonical, dan metadata Open Graph. **Deskripsi/teks isi, detail acara, countdown, galeri, dan footer tidak tampak di body tanpa JavaScript**; elemen interaktif tersebut hadir setelah JavaScript dan interaksi buka undangan. Jadi POC membuktikan fallback inti, bukan seluruh isi undangan tanpa JS.
 
-#### Perbandingan yang adil dengan React Router SSR
+Cover sintetis ditunda 2,4 detik. Pengukuran setelah stylesheet siap menghasilkan CLS **0** dan perpindahan anchor hero maksimum **0 px** pada kedua varian. Semua tujuh lebar yang diuji (320, 360, 375, 390, 430, 820, 1024 px) lulus pemeriksaan responsif yang dicatat.
 
-| Aspek | Hono + React (varian A, direkomendasikan) | React Router SSR framework-less (varian B) |
-|---|---|---|
-| Akurasi metadata crawler | Seri — keduanya menyajikan meta lengkap dan identik per slug (K1 19/19) | Seri — sama |
-| Kesamaan renderer preview vs undangan nyata | HTML awal hanya shell + OG + JSON; konten dirender React setelah JS (hasil K4 terbaru baseline gagal) | Lebih dekat di HTML awal — konten lengkap dikirim lewat SSR (hasil K4 terbaru baseline gagal) |
-| Kompleksitas route/data | Satu file Hono untuk halaman, API, gambar, aset, favicon; data dibaca dari fixture, tanpa state | Definisi route sekali (bagus), tetapi dua config Vite + build kustom, API harus keluar dari router (keterbatasan `StaticHandler.query()`), client di-inline gzip+base64 dengan `DecompressionStream` saat runtime |
-| Hydration | Tidak ada kelas masalah ini — React CSR biasa mount ke shell | Rapuh di luar framework-mode — `HydratedRouter` hanya untuk framework-mode; POC menemukan bug nyata (React meng-unmount seluruh konten SSR) yang diperbaiki dengan `createBrowserRouter` + `parseHydrationData()` implisit |
-| Kecocokan dengan Workers | Hono dirancang untuk runtime seperti Workers; bundle 431.881 byte dengan React 19/Vite 7 tanpa kompromi | Butuh React 18 (bundle SSR React 19 1.211 KB, di atas target 800 KB) + Vite 6 + inlining gzip+base64 agar muat |
-| Beban maintenance | Dependensi lebih sedikit, satu pola untuk semua endpoint, satu perintah build yang transparan | React Router SSR framework-less + dua config Vite + build kustom + dua workaround tercatat; setiap upgrade berisiko menggeser seam itu |
+Markup hero awal Hono di server dan markup hero React client saat ini paralel/terpisah. Catatan minor review: bila arah ini berlanjut ke implementasi produk, gunakan view-model bersama untuk mengurangi risiko drift. Ini tindak lanjut desain, bukan persetujuan coding produk.
 
-**Penegasan penting:** varian B yang dibandingkan di POC adalah **React Router 7.18.5 framework-less SSR, BUKAN integrasi resmi React Router v8 plus Cloudflare Vite plugin**. Perbandingan POC tidak boleh dibaca sebagai penilaian atas integrasi resmi tersebut. Bila integrasi resmi dipertimbangkan di kemudian hari, ia harus dinilai tersendiri sebagai pekerjaan baru.
+#### Bundle dan batas kesimpulan
 
-#### Yang TIDAK direkomendasikan
+Angka output build **tidak apples-to-apples** dan tidak mendukung klaim pemenang bundle/performa:
 
-- **Jangan menambah React Router SSR sebagai server kedua di atas Hono tanpa kebutuhan yang terukur.** Satu renderer untuk Kita Invite adalah tujuan yang dinyatakan POC; dua lapisan server berarti dua pola routing, dua jalur data, dan dua kelas bug yang harus dipelihara.
-- Jangan mengklaim Hono menang atas React Router secara umum. Laporan harness lama memang mencatat kedua varian lulus K1–K5, tetapi audit layout terbaru menemukan K4 gagal pada baseline kedua varian; rekomendasi ini soal kesederhanaan dan beban maintenance untuk kasus ini, bukan kemenangan mutlak.
+| Metrik output | Hono | React Router v8 |
+|---|---:|---:|
+| Worker/server JS | 431,905 byte (gzip 165,522) — Worker self-contained | 784,713 byte (gzip 164,373) — output JS server/SSR terpecah |
+| Client JS | 225,302 byte (gzip 69,791) | 367,047 byte (gzip 114,712) — seluruh chunk client |
 
-#### Trade-off rekomendasi ini
+Cakupan output server berbeda; gzip Worker Hono mencakup bundle mandiri, sedangkan output RR8 terpecah; angka client RR8 menjumlah semua chunk, bukan jalur kritis satu halaman. Jangan gunakan tabel ini untuk menyimpulkan keunggulan performa atau ukuran yang setara.
 
-1. HTML awal varian A hanya shell + OG + JSON — pengunjung tanpa JS tidak melihat isi undangan. Bila konten tanpa-JS menjadi syarat keras (mis. aksesibilitas/SEO), varian B perlu ditinjau ulang.
-2. Hono menambah satu dependensi server ke dalam codebase (kecil, mapan, dirancang untuk Workers).
-3. Bila nanti butuh SSR penuh (mis. pratinjau tautan yang menampilkan isi, bukan hanya kartu OG), arsitektur perlu ditambah — bukan diganti dari nol, karena client React-nya sama.
-4. Rekomendasi ini dibuat berdasarkan POC yang memakai React 19/Vite 7 untuk varian A dan React 18/Vite 6 untuk varian B (varian B di-downgrade demi ukuran bundle). Perbedaan versi ini dicatat, bukan disembunyikan.
+POC ini tidak menguji konten undangan lengkap tanpa JavaScript, alur auth/data produksi, kebutuhan bisnis, operasi deployment, atau K6. Jika owner menetapkan seluruh isi undangan harus terbaca tanpa JS, kedua POC perlu diubah dan acceptance criteria ditinjau ulang; syarat tersebut **bukan** bagian acceptance test saat ini. K6 tetap **OPEN / UNVERIFIED**.
 
-#### Yang dapat mengubah keputusan ini
+#### Status ADR dan tindak lanjut
 
-- Masukan reviewer formal Architecture Gate yang ditunjuk owner, bila menemukan keberatan atas arah ini yang belum dijawab.
-- Acceptance test OG yang gagal untuk varian yang direkomendasikan.
-- Keputusan owner bahwa konten tanpa-JS menjadi syarat keras.
-- Evaluasi tersendiri yang membuktikan integrasi resmi React Router v8 plus Cloudflare Vite plugin lebih sesuai — evaluasi itu adalah pekerjaan baru, bukan kesimpulan dari POC ini.
+Verdict Lora adalah **APPROVED WITH MINOR NOTES** untuk bukti POC komparatif dan mempertahankan Hono sebagai arah provisional yang diutamakan. Verdict tersebut tidak menetapkan stack final, tidak menutup keberatan owner, dan tidak meluluskan Architecture Gate. Tindak lanjut yang dicatat: (1) jangan membandingkan metrik bundle sebagai ukuran sepadan; (2) pertimbangkan view-model hero bersama sebelum implementasi produk bila kelak disetujui; (3) pastikan kebutuhan konten tanpa-JS diputuskan/ditinjau bila menjadi persyaratan produk; (4) pertahankan D1/R2/provider sebagai keputusan terpisah. Tidak ada implementasi yang disetujui oleh catatan ini.
 
-#### Status ADR ini
-
-ADR ini tetap **DRAFT** sampai owner menyetujui pilihan final setelah bukti dan masukan gerbang ditinjau (exit criterion 4). Stack final **BELUM** ditetapkan sampai masukan reviewer formal Architecture Gate yang ditunjuk owner, acceptance OG, dan syarat Gerbang Arsitektur selesai.
-
-**Tindak lanjut terbuka dari laporan review POC yang diterima 12 November 2026:** laporan merekomendasikan agar pilihan stack Hono/React/Vite dipisahkan dari pilihan D1/R2 dan provider. Ini adalah rekomendasi untuk dipertimbangkan dalam revisi ADR-001, bukan keputusan atau perubahan arsitektur yang sudah disetujui. ADR tetap DRAFT/provisional; keputusan arsitektur tetap milik owner setelah masukan peninjau ditinjau.
-
----
+ADR tetap **DRAFT** sampai owner membuat keputusan stack eksplisit setelah seluruh bukti dan persyaratan gate ditinjau. Sumber dokumentasi resmi yang dirujuk: [Cloudflare — Hono](https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/), [Cloudflare — React Router](https://developers.cloudflare.com/workers/framework-guides/web-apps/react-router/), [Cloudflare — Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/), [React Router — installation](https://reactrouter.com/start/framework/installation), dan [React Router — changelog](https://reactrouter.com/changelog).
 
 ## 4. Status peninjauan arsitektur dan POC OG
 
-### 4.1 Penunjukan reviewer Architecture Gate dan verdict — MENUNGGU KEJELASAN
+### 4.1 Reviewer formal Architecture Gate dan verdict — review tercatat, gate belum lulus
 
-**Klarifikasi peran v0.1.6:** Agent Muse/Meta sudah retired. Harley adalah executor teknis/coding agent pengganti Muse/Meta. Lora memeriksa hasil Harley sebagai Lead Agent; pemeriksaan itu bukan penunjukan Lora sebagai reviewer formal Architecture Gate dan bukan verdict gerbang.
+**Penunjukan owner:** Lora ditunjuk sebagai **reviewer formal Architecture Gate pada 12 November 2026 pukul 18:49 WIB**. Harley adalah executor; Lora melakukan review secara independen.
 
-**Status penunjukan:** penunjukan formal reviewer Architecture Gate masih **MENUNGGU KEJELASAN owner**; belum ada keputusan owner yang jelas menunjuk Lora sebagai pengganti reviewer sebelumnya. Laporan review POC yang diterima pada 12 November 2026 adalah input/evidence bagi peninjau, bukan review formal Architecture Gate atau verdict. Tugas dokumentasi ini tidak membuat atau mencatat verdict review arsitektur.
-
-Tanpa kejelasan/penunjukan reviewer formal dan review yang sebenarnya, gerbang belum lengkap — jangan menandainya lulus.
-
-Slot pencatatan review/verdict peninjau arsitektur (diisi setelah review peninjau tersedia; laporan input di atas bukan verdict):
+**Review formal:** pada 12 November 2026, Lora meninjau packet perbandingan POC lokal Hono vs React Router v8 resmi + Cloudflare Vite plugin. Review mencakup bukti komparatif yang dicatat pada §4.2; ini bukan review atas readiness produksi.
 
 | Field | Isi |
 |---|---|
-| Reviewer | (menunggu kejelasan/penunjukan owner) |
-| Tanggal diterima | (menunggu — tanggal penerimaan review formal Architecture Gate) |
-| Verdict | (menunggu) |
-| Keberatan yang harus dijawab | (menunggu) |
-| Jawaban owner/tim atas tiap keberatan | (menunggu) |
-| Status tindak lanjut | (menunggu) |
+| Reviewer formal | Lora |
+| Tanggal penunjukan owner | 12 November 2026, 18:49 WIB |
+| Tanggal review | 12 November 2026 |
+| Executor | Harley; terpisah dari reviewer |
+| Bukti yang ditinjau | `/workspace/kita-invite-architecture-comparison-20261112/reviewer-packet.md`, `evidence/comparison-results.json`, dan `tools/run_local_comparison.py` |
+| Verdict | **APPROVED WITH MINOR NOTES** untuk bukti POC komparatif dan mempertahankan Hono sebagai arah provisional yang diutamakan |
+| Batas verdict | Bukan keputusan stack final; **tidak** meluluskan Architecture Gate, tidak menyelesaikan Fase 0, dan tidak mengizinkan Fase 1 |
+| Keberatan/follow-up | Minor notes dan tindak lanjut perencanaan dicatat di bawah dan di §3; tidak ada daftar keberatan terpisah dalam ringkasan review yang diberikan. |
 
-Ketentuan: bila reviewer formal belum diperjelas/ditunjuk owner atau review formal belum diterima saat gerbang dinilai, kriteria masuk gerbang tidak terpenuhi dan gerbang dinyatakan **tidak lolos**. Laporan input POC di atas tidak menggantikan review itu. Review formal Architecture Gate adalah prasyarat gerbang, bukan formalitas.
+**Minor notes dan tindak lanjut yang dicatat:**
 
-### 4.2 Status POC Open Graph dan audit layout — K6 OPEN / UNVERIFIED
+1. Jangan mengklaim pemenang bundle/performa: angka server dan client berbeda cakupan dan tidak apples-to-apples.
+2. Hero fallback Hono di server dan React client memakai markup paralel; bila implementasi kelak disetujui, pertimbangkan view-model bersama agar tidak drift.
+3. Tanpa JavaScript, kedua POC hanya menampilkan fallback hero dan OG head metadata; konten undangan lengkap belum terlihat. Jika konten lengkap tanpa-JS menjadi syarat produk, kedua POC perlu perubahan. Acceptance saat ini tidak menetapkan syarat itu.
+4. D1, R2, provider, alur produksi, dan operasi deployment tidak diuji atau diputuskan oleh POC ini; keputusan terkait tetap terpisah dan milik owner.
+5. K6 (kartu preview WhatsApp aktual) tidak diuji dan tetap **OPEN / UNVERIFIED**.
 
-**Fakta (dari laporan POC lokal, dengan provenance di bawah):**
+**Kriteria exit §6 butir 3** (reviewer formal ditunjuk, review diterima, verdict dan tindak lanjut dicatat) kini terpenuhi dan ditandai selesai. Ini menutup pencatatan reviewer/review saja; seluruh syarat gate lain dan keputusan final owner tetap berlaku. Gerbang Arsitektur **belum lulus**.
 
-- POC membandingkan dua arsitektur dengan konten, aset, CSS, dan data fixture sintetis yang sama, di branch `poc/og-arch`, commit `93df620d016562235c79238299c0f5491a8ca538`.
-- Varian A (Hono + React + Vite + TypeScript): https://ki-og-poc-a.xdirgawa.workers.dev — bundle 431.881 byte.
-- Varian B (React Router SSR + Vite + TypeScript): https://ki-og-poc-b.xdirgawa.workers.dev — bundle 664.078 byte.
-- **Laporan harness lama (HISTORIS):** K1–K5 dilaporkan lulus untuk kedua varian di 8 run harness (125 cek per run), exit 0 di semua run; smoke A 59/59, B 62/62; rebuild dari clone bersih menghasilkan byte yang identik. Ini riwayat yang dicatat v0.1.4; tidak membuktikan cover-loading stability dan tidak menggantikan dua audit berikutnya.
-- **Audit GET publik baseline:** `/workspace/kita-invite-og-audit-20261112/results.json` mencatat K1–K3 dan K5 pass pada Worker publik baseline A/B. Targeted layout probe di `/workspace/kita-invite-og-audit-20261112/layout-probe-results.json` mencatat K4 fail: semua anchor bergeser **425.328 px**; CLS publik A **0.160626** (Aisha dan Citra), B **0.305777** (Aisha) dan **0.307385** (Citra). Sumber ini adalah audit GET publik baseline, bukan run loopback lokal dan bukan patch-public test.
-- **Before/after loopback lokal:** `/workspace/kita-invite-layoutshift-poc-20261112/evidence/before/results.json` mencatat baseline agregat **124/128** checks (A **62/64**, B **62/64**); `/workspace/kita-invite-layoutshift-poc-20261112/evidence/after/results.json` mencatat kandidat **128/128** (A **64/64**, B **64/64**). Pada slug lokal Aisha/Citra, baseline A CLS **0.160626**, B CLS **0.305777/0.307385**, semuanya anchor **425.328 px**; sesudahnya CLS **0** dan anchor **0**. Fixture cover **900×1100**, delay **2.4 s**, Chromium **390×844**, GET-only `127.0.0.1`; K5 **320/360/375/390/430/820/1024 px**; build/typecheck A/B pass. Ini sumber berbeda dari audit publik.
-- **Kandidat layout reserve lokal:** satu deklarasi CSS ditambahkan pada `poc/shared/shared.css`: `aspect-ratio: 9 / 11;`. Patch tersedia di `/workspace/kita-invite-layoutshift-poc-20261112/evidence/minimal-fix.patch`. Evidence lokal-only ini (termasuk `RESULTS.md` dan JSON before/after) tidak diarsipkan di GitHub.
-- **Promosi patch yang disetujui owner:** branch [`poc/og-arch-layout-reserve-20261112-1627`](https://github.com/marko1kiro/kita-invite/tree/poc/og-arch-layout-reserve-20261112-1627), commit [`ade04bd69f329a10ed3592d77f00af4b59a85198`](https://github.com/marko1kiro/kita-invite/commit/ade04bd69f329a10ed3592d77f00af4b59a85198), parent tepat baseline `93df620d016562235c79238299c0f5491a8ca538`; diff satu file `poc/shared/shared.css` dengan **+1**. Preview Pages otomatis [`https://ab9221c7.kita-invite.pages.dev`](https://ab9221c7.kita-invite.pages.dev) pada root tidak memuat `poc/shared/shared.css`, sehingga **tidak menguji atau memvalidasi patch**. Worker publik A dan B tetap baseline, belum diubah/deploy, dan tidak ada tes publik patch.
-- **Batas solusi:** rasio tetap `9 / 11` hanya tepat untuk fixture cover POC 900×1100; ini bukan solusi generik untuk semua gambar. Implementasi produk perlu dimensi intrinsik atau metadata rasio per aset bila rasio gambar dapat berbeda.
-- Bukti perbandingan hanya berlaku untuk Varian A dan Varian B yang benar-benar diuji. Varian B adalah React Router 7.18.5 framework-less SSR, bukan integrasi resmi React Router v8 + Cloudflare Vite plugin; perbedaan versi/setup membatasi kesetaraan. Hasil A-vs-tested-B ini **bukan bukti umum bahwa Hono lebih unggul daripada React Router**.
-- **K6 (kartu preview WhatsApp aktual) tetap OPEN / UNVERIFIED** sesuai keputusan owner (lihat §0 dan §2.12). Kartu WhatsApp aktual **tidak diuji** dan tidak ada klaim kartu tampil. OG HTML yang benar hanya prasyarat crawler, bukan bukti kartu tampil.
+### 4.2 Bukti POC Open Graph dan audit layout — K6 OPEN / UNVERIFIED
 
-**Provenance bukti — baca dengan teliti:**
+#### Perbandingan lokal yang ditinjau Lora (bukti terkini dalam revisi ini)
 
-- Laporan lengkap POC (`REPORT-poc-og.md`) **HANYA tersedia lokal** di `~/workspace/kita-invite-refactor/REPORT-poc-og.md` dan **TIDAK terarsip di GitHub** (diverifikasi via GitHub API: tidak ada di tree branch `poc/og-arch` commit `93df620d` yang berisi 66 blob, tidak ada di tree `main` commit `70bb0641`, dan `poc/tests/evidence/` tidak terkomit). Bukti run (HTML mentah, screenshot, `results.json`) juga tidak terkomit.
-- Karena itu, dokumen ini hanya menautkan kode dan harness POC yang **benar-benar ada** di GitHub (sudah diverifikasi di roadmap v0.1.1):
-  - Fixture (dua pasangan fiktif): https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/shared/fixture.json
-  - Varian A (Hono Worker): https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-a/src/worker.ts
-  - Varian B (entry server SSR): https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-b/src/entry.server.tsx
-  - Harness tes: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/run-tests.mjs
-  - Server lokal untuk harness: https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/local-server.mjs
-- Provenance hasil dibedakan tiga lapis: laporan lama 8×125 dan smoke/rebuild adalah riwayat lokal v0.1.4; audit GET publik baseline berada di `/workspace/kita-invite-og-audit-20261112/results.json` dan `layout-probe-results.json`; before/after **124/128** → **128/128** berasal dari audit layout-shift loopback lokal di `/workspace/kita-invite-layoutshift-poc-20261112/evidence/`. Angka publik tidak disamakan dengan jumlah lokal. Evidence run lokal, laporan POC awal lengkap, raw HTML, screenshots, `RESULTS.md`, JSON before/after, dan `minimal-fix.patch` tidak committed ke GitHub; source dan harness POC yang ditautkan di atas bukan pengganti bukti hasil run tersebut.
-- Dua Worker POC (`ki-og-poc-a` dan `ki-og-poc-b`) dipertahankan sebagai demo atas permintaan owner. Dokumen ini tidak memerintahkan penghapusan atau perubahan terhadap keduanya.
+Packet formal berada di `/workspace/kita-invite-architecture-comparison-20261112/reviewer-packet.md`; hasil JSON di `evidence/comparison-results.json` dan runner di `tools/run_local_comparison.py` dalam direktori yang sama. Packet, source POC pembanding, dan hasil rinci berada **lokal** dan tidak ditambahkan ke repository produk pada branch ini.
 
-**Kriteria acceptance HTML OG/crawler untuk Fase 0 (ditulis agar dapat diuji ulang):**
+- **Varian A — Hono:** Hono 4.13.17, React 19.3.1, Vite 7.3.8; source adalah subset lokal dari kandidat branch `poc/og-arch-layout-reserve-20261112-1627`, commit `ade04bd69f329a10ed3592d77f00af4b59a85198`.
+- **Varian B — React Router v8 resmi:** scaffold Cloudflare Create Cloudflare v2.74.11 untuk React Router framework mode, React Router/`@react-router/dev` 8.5.1, Cloudflare Vite plugin 1.69.1, Vite 8.3.8; dibuat dan diadaptasi di salinan lokal disposable. Plugin v1 stable; plugin v2 beta menurut dokumentasi yang dirujuk.
+- Kedua varian memakai dua fixture sintetis dan lulus **87/87 pemeriksaan masing-masing**: K1 23/23, K2 4/4, K3 6/6, K4 12/12, K5 42/42. Build/typecheck lulus. Ini hasil lokal, bukan uji publik atau production.
+- Delayed-cover test menahan cover 2,4 detik; snapshot diambil setelah stylesheet siap ketika gambar masih pending, lalu setelah decode. Pada kedua varian CLS **0** dan perpindahan anchor hero maksimum **0 px**. K5 menguji lebar 320, 360, 375, 390, 430, 820, dan 1024 px.
+- Pada HTML awal tanpa JS, yang tampak di body ialah cover, nama, tanggal, venue, tombol “Buka Undangan”, dan pemberitahuan bahwa konten interaktif memerlukan JavaScript. Title, canonical, dan metadata OG tersedia di head. Deskripsi/teks isi undangan, detail acara, countdown, galeri, dan footer **tidak** tampak di body sampai JavaScript aktif dan interaksi buka undangan dijalankan. Dengan demikian, jangan menulis bahwa tanpa-JS “tidak ada hero yang terbaca”, atau bahwa seluruh undangan sudah server-rendered.
+- Build metrics tidak sebanding: Hono Worker self-contained 431,905 byte / gzip 165,522; RR8 total output server JS 784,713 / gzip 164,373; Hono client JS 225,302 / gzip 69,791; seluruh RR8 client chunks 367,047 / gzip 114,712. Cakupan berbeda, sehingga tidak membuktikan pemenang ukuran/performa.
+- Tidak ada akun/resource Cloudflare, binding remote, provisioning, atau deployment; semua HTTP/browser test hanya loopback. Tidak ada URL dikirim ke WhatsApp atau kontak/kanal eksternal. K6 **tidak diuji**.
 
-Kriteria ini membedakan bukti prasyarat crawler dari bukti kartu WhatsApp aktual. Lolosnya kriteria ini **bukan** bukti kartu WhatsApp tampil.
+Dokumentasi resmi yang menjadi rujukan setup/status: [Hono on Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/), [React Router on Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/react-router/), [Cloudflare Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/), [React Router installation](https://reactrouter.com/start/framework/installation), [React Router changelog](https://reactrouter.com/changelog). Hasil POC berlaku untuk dua varian dan konfigurasi yang benar-benar diuji, bukan klaim umum keunggulan suatu framework.
 
-1. `GET` tanpa JavaScript menghasilkan HTML awal berstatus benar dengan `<title>`, canonical URL, `og:title`, `og:description`, `og:type`, `og:url`, dan `og:image` absolut; nama pasangan, deskripsi, slug, dan gambar sesuai undangan itu.
-2. `og:image` dapat diambil publik dengan HTTP 200 dan content type gambar yang benar.
-3. Dua slug berbeda tidak berbagi metadata/cache secara keliru; slug tak dikenal menghasilkan 404 yang jelas, tanpa menampilkan fallback pasangan lain.
-4. Setelah JavaScript aktif, tampilan pasangan tetap sama dengan metadata server dan undangan tetap interaktif; tidak ada hydration error atau lompatan konten yang merusak tampilan.
-5. Halaman diuji di lebar 320, 360, 375, 390, 430, 820, dan 1024 px; overflow, clipping, dan urutan konten dicatat.
-6. K6 (kartu WhatsApp aktual) dicatat terpisah sebagai **OPEN / UNVERIFIED**; tidak ada klaim kartu tampil tanpa bukti kartu yang benar-benar terlihat.
+#### Catatan bukti terdahulu — tetap historis dan terpisah
 
-**Batasan pengujian WhatsApp (mengikat):** tidak ada pengiriman URL lewat WhatsApp atau kanal lain ke kontak nyata. Bila nanti ada metode uji nyata yang aman, perlu persetujuan terpisah sebelum mengirim atau menampilkan URL melalui kanal eksternal.
+- POC lama membandingkan Hono dengan React Router **7.18.5 framework-less SSR**. Hasil lama itu bukan pembanding RR8 resmi. Catatan v0.1.6 tentang laporan harness lama, audit baseline, dan patch `aspect-ratio: 9 / 11` tetap merupakan provenance historis; jangan gabungkan angka atau kesimpulannya dengan perbandingan lokal baru di atas.
+- Audit layout baseline sebelumnya menemukan K4 gagal dengan perpindahan anchor 425.328 px; bukti loopback before/after untuk kandidat CSS mencatat 124/128 → 128/128 checks serta CLS/anchor 0 setelah perbaikan pada fixture cover 900×1100. Rasio tetap 9:11 hanya sesuai fixture tersebut, bukan solusi generik semua aset.
+- Patch layout yang dipromosikan owner tercatat di branch [`poc/og-arch-layout-reserve-20261112-1627`](https://github.com/marko1kiro/kita-invite/tree/poc/og-arch-layout-reserve-20261112-1627), commit [`ade04bd69f329a10ed3592d77f00af4b59a85198`](https://github.com/marko1kiro/kita-invite/commit/ade04bd69f329a10ed3592d77f00af4b59a85198), dengan perubahan satu file CSS. Audit/perbandingan baru di atas tidak mengubah atau menguji deployment Worker/Cloudflare publik. Pages, bila dipakai untuk branch dokumentasi ini, hanya preview dokumen.
+- Kode/harness POC lama yang memang terkomit tetap dapat ditinjau: [fixture](https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/shared/fixture.json), [Hono Worker](https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-a/src/worker.ts), [React Router lama](https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/og-b/src/entry.server.tsx), dan [harness lama](https://github.com/marko1kiro/kita-invite/blob/poc/og-arch/poc/tests/run-tests.mjs). Sumber tersebut bukan pengganti packet/JSON hasil terbaru yang masih lokal.
 
----
+#### Kriteria acceptance HTML OG/crawler Fase 0
+
+Kriteria ini menilai HTML dan metadata crawler, bukan kartu WhatsApp aktual. Hasil baru di atas adalah bukti komparatif lokal; pencatatan hasil tidak sama dengan approval owner atas acceptance criteria atau kelulusan gate.
+
+1. `GET` tanpa JavaScript menghasilkan HTML awal dengan `<title>`, canonical URL, `og:title`, `og:description`, `og:type`, `og:url`, dan `og:image` absolut yang cocok dengan undangan/slug; body menampilkan fallback hero inti (cover, nama, tanggal, venue, tombol) dan pemberitahuan JavaScript.
+2. `og:image` dapat diambil dengan HTTP 200 dan content type gambar yang benar.
+3. Dua slug berbeda tidak berbagi metadata/cache secara keliru; slug tidak dikenal menghasilkan 404 yang jelas tanpa menampilkan pasangan lain.
+4. Setelah JavaScript aktif, tampilan hero tetap sesuai dengan metadata server dan undangan interaktif; tidak ada hydration error atau lompatan konten yang merusak tampilan.
+5. Halaman diuji di lebar 320, 360, 375, 390, 430, 820, dan 1024 px; overflow, clipping, serta urutan konten dicatat.
+6. K6 (kartu WhatsApp aktual) dicatat terpisah sebagai **OPEN / UNVERIFIED**; jangan menyatakan kartu tampil tanpa bukti aktual.
+
+Acceptance saat ini **tidak** mensyaratkan semua isi undangan tampil tanpa JavaScript. Bila owner menetapkan persyaratan tersebut, kedua POC harus diubah dan kriterianya ditinjau ulang sebelum gate dinilai. Pengujian WhatsApp tetap memerlukan metode aman dan persetujuan terpisah sebelum URL dikirim atau ditampilkan melalui kanal eksternal.
 
 ## 5. Kunci produk yang tidak boleh diubah
 
@@ -427,7 +400,7 @@ Aturan penulisan yang berlaku untuk dokumen ini: JANGAN menyatakan V25 sendiri m
 Semua asumsi di bawah ini ditandai dengan label `[ASUMSI]`. Asumsi bukan fakta. Bila asumsi terbukti salah, bagian terkait harus ditinjau ulang dan owner harus memutuskan langkah berikutnya.
 
 1. [ASUMSI] Baseline V25 dan bukti POC yang dirujuk di dokumen ini adalah acuan perencanaan yang benar dan lengkap. Laporan lengkap POC hanya tersedia lokal dan ditandai tidak terarsip di GitHub (§4.2).
-2. [ASUMSI] Owner akan memperjelas/menunjuk reviewer formal Architecture Gate sebelum gerbang dinilai; penunjukan formal tersebut masih menunggu kejelasan.
+2. [ASUMSI] Hasil komparatif POC lokal dapat menjadi salah satu bukti acceptance OG bila owner menyetujuinya; hasil ini tidak membuktikan kesiapan production dan tidak menggantikan syarat gate lainnya.
 3. [ASUMSI] Lingkungan dev, staging, dan production dapat dipisahkan sepenuhnya di Cloudflare sesuai rencana Fase 1 roadmap.
 4a. [ASUMSI] Payment gateway yang akan dipilih owner mendukung signature verification dan event verification untuk webhook — asumsi ini perlu diuji terhadap gateway terpilih setelah provider dipilih, dan BUKAN fakta sebelum provider dipilih. Tidak ada fitur gateway tertentu yang dinyatakan sebagai fakta di dokumen ini.
 4b. [ASUMSI] Pemrosesan webhook di aplikasi bersifat idempotent, yaitu pengiriman ulang webhook tidak membuat order ganda — ini asumsi tentang perilaku aplikasi, terpisah dari verifikasi signature/event pada 4a, dan harus dibuktikan dengan pengujian di Fase 6.
@@ -442,17 +415,17 @@ Semua asumsi di bawah ini ditandai dengan label `[ASUMSI]`. Asumsi bukan fakta. 
 
 ## 6. Checklist exit Fase 0
 
-**Status Fase 0: SEDANG BERJALAN.** Semua checklist di bawah ini **BELUM dicentang** sampai ada bukti atau approval yang disyaratkan. Jangan menyatakan Gerbang Arsitektur lulus, jangan lanjut Fase 1, dan jangan memulai implementasi sebelum checklist ini terpenuhi dan owner menyatakannya secara eksplisit.
+**Status Fase 0: SEDANG BERJALAN.** Exit criterion #3 (reviewer formal, review, verdict, dan tindak lanjut tercatat) telah dipenuhi. Kriteria #1, #2, #4, #5, #6, dan #7 tetap **[ ] BELUM** sampai bukti atau approval masing-masing tersedia. Penutupan #3 tidak meluluskan Gerbang Arsitektur; jangan lanjut Fase 1 atau memulai implementasi tanpa persetujuan terpisah owner.
 
-Checklist ini membedakan empat hal yang berbeda: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — yang menunggu hanyalah verifikasi pencatatan oleh owner saat meninjau revisi dokumen ini, bukan pengulangan keputusan); **(B) ratifikasi status dan penundaan yang sudah tercatat** (butir 2 — yang dibutuhkan adalah owner meratifikasi status serta penundaan di register, bukan memutuskan seluruh keputusan turunan D1–D10 sekarang); **(C) keputusan yang boleh ditunda** sesuai fase dan blocker di register (keputusan turunan D1–D10 — bukan syarat menutup Fase 0, kecuali kunci MVP, pilihan stack final, dan keputusan status K6 yang wajib final di Fase 0); **(D) syarat gerbang yang masih menunggu bukti atau keputusan eksternal** (butir 3, 4, 5 — kejelasan/penunjukan reviewer formal dan review Architecture Gate, bukti OG, dan keputusan stack final yang sungguh belum ada).
+Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — verifikasi pencatatan tetap menunggu owner); **(B) ratifikasi status dan penundaan register** (butir 2); **(C) keputusan turunan D1–D10** yang boleh mengikuti fase masing-masing sesuai register; serta **(D) syarat gate yang masih menunggu**, terutama keputusan stack final owner dan persetujuan/konfirmasi acceptance OG. Reviewer formal telah ditunjuk dan review/verdict/follow-up dicatat, sehingga butir 3 selesai; itu tidak otomatis menutup butir lain.
 
 | # | Exit criterion | Status | Yang kurang | Yang perlu bertindak |
 |---|---|---|---|---|
 | 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final) yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang masih kurang untuk butir ini hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Keputusan turunan D1–D10 di §1.4 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8. | Owner (verifikasi pencatatan keputusan M1–M8; meratifikasi status/penundaan keputusan turunan D1–D10 di Fase 0; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
 | 2 | Semua baris register (§2) sudah memiliki status (2 DECIDED BY OWNER, 10 MENUNGGU beserta metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris sudah tercatat: §2.1 DECIDED BY OWNER — M1–M8 dan §2.12 DECIDED BY OWNER (status K6 tetap terbuka); 10 baris lainnya (§2.2–§2.11) masih MENUNGGU beserta metode uji aman K6. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang sudah dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus sudah dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
-| 3 | Reviewer formal Architecture Gate diperjelas/ditunjuk owner, lalu review diterima dan dicatat dengan verdict serta keberatan/tindak lanjut; jika belum tersedia, gerbang arsitektur masih tertahan | [ ] BELUM | Penunjukan reviewer formal masih **MENUNGGU KEJELASAN owner** dan review/verdict Architecture Gate belum diterima (§4.1). Laporan review POC yang diterima 12 November 2026 tetap hanya input/evidence, bukan review formal atau verdict gerbang. Tanpa review peninjau ini kriteria masuk gerbang tidak terpenuhi, dan stack final belum dipilih | Owner (mengklarifikasi/menunjuk reviewer formal); reviewer yang ditunjuk owner (memberi review); owner/tim (mencatat identitas, verdict, keberatan, dan jawaban setelah review diterima) |
-| 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | ADR di §3 masih berstatus **DRAFT** (rekomendasi provisional Hono + React + TypeScript + Vite, D1, R2). Finalisasi menunggu penunjukan reviewer formal dan review Architecture Gate (§4.1), acceptance OG (§4.2), dan keputusan eksplisit owner atas pilihan final. Gerbang Arsitektur belum lulus | Owner (menyetujui pilihan final setelah bukti gerbang ditinjau); tim (menyiapkan bukti gerbang) |
-| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [ ] BELUM | Kriteria **tertulis belum berarti disetujui owner atau tes ulang sudah terdokumentasi**. Bukti atau persetujuan yang masih diperlukan sebelum gerbang dinilai: (a) persetujuan owner atas kriteria §4.2; (b) pencatatan run ulang yang terdokumentasi dan dapat diulang (hasil harness beserta bukti run yang dapat diverifikasi). Pemisahan dari bukti kartu WhatsApp sudah dinyatakan tetapi belum dikonfirmasi owner | Owner (menyetujui kriteria §4.2); tim (menjalankan dan mendokumentasikan run ulang bila diminta) |
+| 3 | Reviewer formal Architecture Gate ditunjuk owner, lalu review diterima dan dicatat dengan verdict serta tindak lanjut | [x] SELESAI — review tercatat | Tidak ada yang kurang untuk kriteria pencatatan ini: Lora ditunjuk 12 November 2026 pukul 18:49 WIB; review tanggal 12 November, verdict **APPROVED WITH MINOR NOTES**, batas verdict, dan tindak lanjut tercatat di §4.1–§4.2. Ini bukan kelulusan Gerbang Arsitektur atau keputusan stack final | Tidak ada tindak lanjut pencatatan; owner tetap pemutus stack final dan syarat gate lainnya tetap harus dipenuhi |
+| 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | Review formal Lora sudah tercatat dengan verdict **APPROVED WITH MINOR NOTES**, tetapi ADR masih **DRAFT** dan Hono tetap rekomendasi provisional. Belum ada keputusan stack final owner; acceptance OG/gerbang dan syarat lain belum ditutup. Gerbang belum lulus | Owner (memutuskan stack final setelah bukti dan seluruh syarat gate ditinjau); tim (menyediakan bukti yang diperlukan) |
+| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [ ] BELUM | Hasil POC komparatif lokal (87/87 pemeriksaan per varian, packet/JSON/runner) dan batas K6 kini dicatat di §4.2, tetapi status ini belum berarti owner menyetujui acceptance criteria atau hasil tersebut cukup untuk menutup gate. Masih diperlukan persetujuan/konfirmasi owner atas kriteria dan bukti yang diminta gate; K6 tetap terpisah dan tidak diuji | Owner (menyetujui/meratifikasi kriteria §4.2 dan kecukupan bukti); tim (melengkapi bukti bila diminta) |
 | 6 | Pilihan owner K6 OPEN / UNVERIFIED sudah dicatat (§0, §2.12, §4.2); K6 bukan syarat yang dianggap lulus. Bila owner kemudian memilih K6 wajib dibuktikan sebelum final stack, gerbang menunggu metode uji aman | [ ] BELUM | Pilihan owner sudah dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — bukan pengulangan pilihan. Kartu WhatsApp aktual **belum diuji dan belum lulus**; dokumen ini tidak mengklaim kartu sudah diuji atau lulus | Owner (verifikasi pencatatan sudah benar saat meninjau revisi dokumen ini) |
 | 7 | Izin perencanaan Fase 0 sudah diberikan owner dan dicatat (§0); izin ini tidak membuka coding produk, perubahan production, provisioning resource, deploy production, Gerbang Arsitektur, atau Fase 1 — semua itu membutuhkan persetujuan terpisah | [ ] BELUM | Izin perencanaan Fase 0 sudah diberikan dan dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — dibedakan dari permintaan persetujuan baru; ini bukan persetujuan baru dan bukan persetujuan Fase 0 selesai. Pemberian izin ini tidak berarti checklist lain atau Gerbang Arsitektur otomatis lulus | Owner (verifikasi pencatatan batas otorisasi saat meninjau revisi dokumen ini) |
 
@@ -468,13 +441,32 @@ Keputusan yang sudah dibuat owner dan tidak perlu diulang: (1) mulai Fase 0 saja
 
 Keputusan M1–M8 tidak menghapus exit gates keamanan, privasi, aksesibilitas, responsive layout, backup/restore, monitoring, dan rollback yang diperlukan sebelum peluncuran.
 
-Yang masih perlu owner tinjau dan putuskan: keputusan turunan di §1.4; isi register keputusan (§2) beserta status tiap baris yang masih MENUNGGU; ADR stack draft (§3); kriteria acceptance OG (§4.2); dan ketujuh exit criterion di §6.
+Review formal Lora dan tindak lanjutnya sudah dicatat; yang masih perlu owner tinjau dan putuskan antara lain keputusan turunan di §1.4, isi register (§2) beserta status yang masih MENUNGGU, pilihan stack final pada ADR draft (§3), kriteria acceptance OG (§4.2), serta exit criterion #1, #2, #4, #5, #6, dan #7 di §6.
 
 Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1, keputusan terkunci yang berlaku.
 
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.6 → v0.1.7
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.6 (branch `docs/phase0-planning-v0.1.6`, commit `9010c885b7fbc0d321fbf76aefbfbf47034b22f5`) |
+| Versi ini | v0.1.7 (12 November 2026) — revisi dokumentasi-only dari parent tepat v0.1.6 |
+| Branch revisi | `docs/phase0-planning-v0.1.7` |
+| Pemicu revisi | Owner menunjuk Lora sebagai reviewer formal Architecture Gate pada 12 November 2026 pukul 18:49 WIB; review komparasi POC lokal selesai dan mencatat verdict serta minor notes |
+
+Perubahan dokumentasi pada revisi ini:
+
+1. **Penunjukan dan review formal (§0, §4.1):** Lora dicatat sebagai reviewer formal yang ditunjuk owner; Harley tetap executor dan Lora meninjau secara independen. Verdict **APPROVED WITH MINOR NOTES** dan tindak lanjut dicatat, tanpa mengklaim Architecture Gate lulus.
+2. **Perbandingan resmi RR8 (§2.2–§4.2):** bukti pembanding diperbarui dari POC lama React Router 7.18.5 framework-less ke POC lokal React Router v8 framework mode dengan Cloudflare Vite plugin resmi v1.69.1. Kedua varian lulus K1–K5, 87/87 checks per varian, secara lokal. RR8 tetap alternatif kredibel; Hono tetap hanya rekomendasi provisional.
+3. **Koreksi no-JS dan metrik (§3–§4.2):** kedua varian menampilkan fallback hero dan OG head tanpa JS, tetapi bukan seluruh body undangan; rincian acara, countdown, galeri, deskripsi/teks isi, dan footer belum tampak sebelum JavaScript/interaksi. Metrics bundle dicatat tidak apples-to-apples, tanpa klaim pemenang.
+4. **Checklist §6:** hanya exit criterion #3 ditandai selesai setelah identitas reviewer, tanggal, verdict, batas review, dan tindak lanjut dicatat. Kriteria #1, #2, #4, #5, #6, dan #7 tetap `[ ] BELUM`; Fase 0 tetap **SEDANG BERJALAN**, Gerbang Arsitektur belum lulus, ADR tetap DRAFT, K6 **OPEN / UNVERIFIED**, dan Fase 1 belum disetujui.
+5. **Batas perubahan:** hanya `docs/PHASE-0-DECISION-PACK.md` yang diubah. Scope M1–M8 dan register keputusan dipertahankan. Tidak ada source POC/produk, branch lain, konfigurasi atau resource Cloudflare, Worker, production, maupun deployment yang diubah. Push branch dokumentasi dapat memicu Pages preview; perlakukan sebagai preview dokumen saja.
+
+Revisi ini bukan keputusan stack final, bukan persetujuan implementasi/Phase 1, bukan kelulusan Gerbang Arsitektur, dan bukan penyelesaian Fase 0.
 
 ### v0.1.5 → v0.1.6
 

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | Judul | Kita Invite — Paket Keputusan Fase 0 |
-| Versi | v0.1.8 (dokumen perencanaan Fase 0; revisi dari v0.1.7 — riwayat revisi di §8) |
+| Versi | v0.1.9 (dokumen perencanaan Fase 0; revisi dokumentasi-only dari v0.1.8 — riwayat revisi di §8) |
 | Tanggal | 12 November 2026 |
 | Status Fase 0 | **SEDANG BERJALAN** — belum selesai, Gerbang Arsitektur belum lulus |
 | Acuan rencana | Roadmap v0.1.1, `docs/ROADMAP-v0.1.1.md`, branch `docs/roadmap-v0.1.1`, commit `c7b4e36fe900e0a47a927f20dd6ab477eeed013f` — https://github.com/marko1kiro/kita-invite/blob/docs/roadmap-v0.1.1/docs/ROADMAP-v0.1.1.md |
@@ -17,7 +17,8 @@
 1. **Owner menyetujui MULAI Fase 0 saja** — sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman (instruksi Lora yang diteruskan owner, 11 November 2026 pukul 16:34 WIB).
 2. **Owner memilih K6 (kartu preview WhatsApp aktual) TETAP TERBUKA sampai ada cara uji yang aman.** Status K6: **OPEN / UNVERIFIED**. Jangan mengklaim K6 lulus. Bila nanti ada metode uji nyata yang aman, dokumen ini menyatakan perlu persetujuan terpisah sebelum mengirim atau menampilkan URL melalui kanal eksternal.
 3. **Owner menyetujui scope MVP M1–M8 seperti tertulis di §1.1.** Keputusan owner 11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos". M1–M8 ditandai **DECIDED BY OWNER — MVP scope accepted**. Scope ini tidak perlu ditanyakan kembali, tidak diganti dengan Revenue MVP, pilot M1–M4, atau scope yang lebih sempit. Keputusan M1–M8 tidak menghapus exit gates keamanan, privasi, aksesibilitas, responsive layout, backup/restore, monitoring, dan rollback yang diperlukan sebelum peluncuran.
-4. **Owner menyetujui kriteria acceptance OG K1–K5 dan bukti komparatif lokal yang dapat diulang** sebagai masukan perencanaan Fase 0, pada 12 November 2026 pukul 21:30 WIB. Persetujuan ini hanya mencakup K1–K5 dan bukti lokal yang dicatat di §4.2; **K6 tetap OPEN / UNVERIFIED** dan tidak termasuk persetujuan. Ini bukan keputusan stack final, kelulusan Gerbang Arsitektur atau Fase 0, persetujuan Fase 1 atau coding/implementasi, maupun izin provisioning/deployment production.
+4. **Owner menyetujui kriteria acceptance OG K1–K5 dan bukti komparatif lokal yang dapat diulang** sebagai masukan perencanaan Fase 0, pada 12 November 2026 pukul 21:30 WIB. Persetujuan ini hanya mencakup K1–K5 dan bukti lokal yang dicatat di §4.2; **K6 tetap OPEN / UNVERIFIED** dan tidak termasuk persetujuan. Persetujuan K1–K5 itu sendiri bukan keputusan stack final, kelulusan Gerbang Arsitektur atau Fase 0, persetujuan Fase 1 atau coding/implementasi, maupun izin provisioning/deployment production.
+5. **Owner menetapkan stack arsitektur final Hono + React + TypeScript + Vite** pada 12 November 2026 pukul 21:48 WIB. Ini adalah keputusan arsitektur stack saja; **bukan** kelulusan Architecture Gate/Fase 0, persetujuan Fase 1, izin coding/scaffolding/implementasi, provisioning resource Cloudflare, atau deployment production. Keputusan turunan D1–D10 di register (D1 auth/session, D2 payment, dan seterusnya) tetap terbuka/menunggu; layanan Cloudflare D1/R2 dan pilihan provider juga tetap terpisah dari keputusan stack ini.
 
 ### Batas otorisasi Fase 0 (baca dulu)
 
@@ -36,7 +37,7 @@ Semua hal di atas membutuhkan persetujuan terpisah dari owner. Otorisasi untuk m
 
 - Agent Muse/Meta sudah **retired**. **Harley** adalah executor teknis; **Lora** memeriksa secara independen dan tidak menjadi executor untuk review ini.
 - Owner menunjuk **Lora sebagai reviewer formal Architecture Gate pada 12 November 2026 pukul 18:49 WIB**. Review formal atas packet komparasi lokal dan verdict-nya dicatat di §4.1–§4.2.
-- Verdict review yang tercatat **bukan** keputusan stack final dan **bukan** kelulusan Gerbang Arsitektur. Owner tetap pemutus stack; seluruh syarat gerbang lainnya tetap berlaku.
+- Verdict review yang tercatat **bukan** keputusan stack final dan **bukan** kelulusan Gerbang Arsitektur. Owner kemudian menetapkan stack final pada 12 November 2026 pukul 21:48 WIB (§0, §2.2, §3); keputusan itu tidak mengubah verdict review dan tidak meluluskan gate. Seluruh syarat gerbang lainnya tetap berlaku.
 
 ### Cara membaca dokumen ini
 
@@ -123,6 +124,8 @@ Aturan yang mengikat register ini (dari roadmap v0.1.1 §3.2): (1) TIDAK semua k
 
 Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP (§2.1 — M1–M8, keputusan owner 11 November 2026 pukul 18:34 WIB) dan status K6 (§2.12 — tetap terbuka). Sepuluh baris lainnya (§2.2–§2.11) tetap MENUNGGU, beserta metode uji aman K6.
 
+**Status pada v0.1.9:** tiga keputusan berstatus **DECIDED BY OWNER**: §2.1 M1–M8, §2.2 stack arsitektur final, dan §2.12 status K6 tetap terbuka. Keputusan turunan D1–D10 tetap terbuka/menunggu sesuai fase dan blocker masing-masing; metode uji aman K6 juga tetap MENUNGGU.
+
 ### 2.1 (a) Batas MVP dan fitur pasca-MVP
 
 - **Pilihan yang sudah dibuat (DECIDED BY OWNER):** scope MVP M1–M8 seperti tertulis di §1.1, dengan P1–P8 sebagai daftar kandidat pasca-MVP (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final). Scope M1–M8 tidak perlu ditanyakan kembali.
@@ -136,14 +139,15 @@ Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP
 
 ### 2.2 (b) Stack produksi final serta pilihan renderer/SSR
 
-- **Pilihan yang harus dibuat:** stack produksi final dan renderer/SSR yang dipakai untuk undangan publik dan API.
-- **Opsi yang layak:** (i) Hono + React + TypeScript + Vite — Hono Worker untuk API `/api/v1` dan route undangan publik `/:slug` dengan OG dinamis, React untuk UI interaktif (varian A POC); (ii) React Router v8 framework mode dengan Cloudflare Vite plugin resmi v1 (varian B POC, versi yang diuji tercatat di §4.2). Keduanya diuji secara lokal pada cakupan komparasi yang dicatat; belum ada pilihan stack final.
-- **Rekomendasi provisional:** pertahankan Hono + React + TypeScript + Vite sebagai arah yang diutamakan sementara untuk pola API-first, dengan Hono Worker untuk `/api/v1` dan route publik `/:slug` ber-OG dinamis serta React untuk UI interaktif. HTML awal POC menampilkan fallback hero yang terbaca, bukan seluruh isi undangan tanpa JavaScript. Bukti tidak menunjukkan pemenang bundle/performa yang jelas. D1, R2, dan provider tetap keputusan terpisah. Hasil review dan batas rekomendasi dicatat di §3–§4.2; ini bukan keputusan final owner.
-- **Pemutus:** Owner, setelah masukan reviewer Architecture Gate yang ditunjuk owner dan acceptance test OG ditinjau.
-- **Paling lambat:** Fase 0, di Gerbang Arsitektur.
-- **Blocker:** YA — tanpa ini gerbang tidak lolos dan tidak ada coding production yang dimulai.
-- **Status:** MENUNGGU.
-- **Konsekuensi bila ditunda:** Gerbang tidak lolos; tidak ada coding production yang dimulai; pekerjaan berhenti pada perencanaan.
+- **Keputusan final (DECIDED BY OWNER):** Hono + React + TypeScript + Vite, diputuskan owner pada 12 November 2026 pukul 21:48 WIB. Dalam arah arsitektur yang dicatat di paket ini, Hono menangani API `/api/v1` dan route undangan publik `/:slug` dengan OG dinamis; React menangani UI interaktif. Pilihan ini menetapkan stack arsitektur saja.
+- **Opsi yang ditinjau:** (i) Hono + React + TypeScript + Vite — terpilih; (ii) React Router v8 framework mode dengan Cloudflare Vite plugin resmi v1 — tidak dipilih. Keduanya diuji secara lokal pada cakupan komparasi yang dicatat di §4.2.
+- **Trade-off dan batas keputusan:** pilihan Hono mempertahankan arah API-first dan pemisahan eksplisit antara route server dan UI React. POC mencatat markup hero server Hono dan markup hero React client paralel/terpisah, sehingga bila implementasi kelak disetujui, view-model bersama patut dipertimbangkan untuk mengurangi risiko drift. Bukti bundle tidak apples-to-apples dan tidak membuktikan pemenang performa. Layanan Cloudflare D1/R2 serta pilihan auth/payment/email provider tetap keputusan terpisah; keputusan ini tidak memilihnya.
+- **Pemutus:** Owner.
+- **Tanggal keputusan:** 12 November 2026, 21:48 WIB.
+- **Paling lambat:** Fase 0, di Gerbang Arsitektur — keputusan stack kini tercatat, tetapi syarat gate lainnya tetap berlaku.
+- **Blocker:** keputusan stack sebagai prasyarat gerbang telah dipenuhi; Architecture Gate tetap **NOT PASSED** sampai seluruh kriterianya dipenuhi. Keputusan ini tidak membuka coding production atau Phase 1.
+- **Status:** **DECIDED BY OWNER — stack arsitektur final**.
+- **Konsekuensi:** arah stack untuk perencanaan arsitektur sudah ditetapkan. Ini bukan persetujuan implementasi, coding/scaffolding, provisioning Cloudflare, atau deployment production; Fase 1 tetap **NOT APPROVED** sampai persetujuan owner terpisah.
 
 ### 2.3 (c) Auth provider dan model session
 
@@ -252,29 +256,29 @@ Pada revisi v0.1.1, dua baris register berstatus **DECIDED BY OWNER**: batas MVP
 - **Rekomendasi Muse:** `REKOMENDASI` — pertahankan opsi (iii) sebagai posisi yang berlaku; opsi (i) atau (ii) hanya bila metode yang aman benar-benar tersedia DAN persetujuan terpisah sudah diperoleh. Jangan mengklaim K6 lulus; OG HTML yang benar hanya prasyarat crawler, bukan bukti kartu tampil.
 - **Pemutus:** Owner (untuk metode uji; status "tetap terbuka" sudah diputuskan owner).
 - **Paling lambat:** terbuka — tidak ada tenggat yang ditetapkan; metode uji diputuskan bila dan hanya bila pengujian nyata dipertimbangkan.
-- **Blocker:** TIDAK untuk keputusan stack (sesuai keputusan owner bahwa K6 tetap terbuka). YA untuk gerbang hanya bila owner kemudian memilih bahwa kartu wajib dibuktikan sebelum final stack — dalam hal itu gerbang menunggu metode uji yang aman.
+- **Blocker:** TIDAK untuk keputusan stack (status K6 tetap terbuka dan stack telah diputuskan terpisah). Untuk Gerbang Arsitektur, metode uji aman menjadi blocker hanya bila owner kelak menetapkan bahwa bukti kartu aktual wajib dipenuhi sebelum gate lulus.
 - **Status:** DIPUTUSKAN (status K6: tetap terbuka); metode uji aman: MENUNGGU.
 - **Konsekuensi bila ditunda:** untuk metode uji — tidak ada. K6 tetap tercatat terbuka dan keputusan stack dibuat berdasarkan bukti K1 sampai K5 saja.
 
 ---
 
-## 3. ADR stack — rekomendasi provisional (DRAFT)
+## 3. ADR stack — keputusan owner tercatat (Architecture Gate belum lulus)
 
-### ADR-001 (DRAFT): Arah stack kerja — Hono + React + TypeScript + Vite di Cloudflare Workers
+### ADR-001 (DECIDED BY OWNER): Stack arsitektur final — Hono + React + TypeScript + Vite
 
 | | |
 |---|---|
-| Status | **DRAFT** — rekomendasi provisional, bukan keputusan final owner |
-| Tanggal | 12 November 2026 |
-| Diputuskan oleh | Belum diputuskan — owner tetap pemutus stack final setelah meninjau bukti dan seluruh syarat Gerbang Arsitektur |
+| Status | **DECIDED BY OWNER** — keputusan final stack arsitektur tercatat; bukan kelulusan Architecture Gate atau persetujuan implementasi |
+| Tanggal | 12 November 2026; keputusan owner pukul 21:48 WIB |
+| Diputuskan oleh | Owner, pada 12 November 2026 pukul 21:48 WIB |
 | Reviewer formal | Lora, ditunjuk owner 12 November 2026 pukul 18:49 WIB; verdict review dan tindak lanjut dicatat di §4.1 |
 | Dasar bukti | Perbandingan POC lokal Hono vs React Router v8 resmi + Cloudflare Vite plugin, packet `/workspace/kita-invite-architecture-comparison-20261112/reviewer-packet.md`, JSON hasil dan runner di §4.2. Bukti ini lokal/non-production dan tidak di-commit ke repository produk. |
 
-#### Konteks dan rekomendasi provisional
+#### Keputusan owner dan batasnya
 
-Kita Invite membutuhkan route undangan publik dengan metadata Open Graph yang sesuai per slug serta UI interaktif. Owner belum memilih stack final. Untuk pola **API-first**, rekomendasi kerja tetap **Hono + React + TypeScript + Vite**: Hono Worker menangani API `/api/v1` dan route publik `/:slug` dengan HTML awal serta OG dinamis; React menangani UI interaktif. Cloudflare Vite plugin merupakan jalur build/runtime yang didukung dokumentasi Cloudflare untuk Workers. Ini rekomendasi provisional, bukan keputusan implementasi atau production.
+Pada 12 November 2026 pukul 21:48 WIB, owner menetapkan **Hono + React + TypeScript + Vite** sebagai stack arsitektur final. Dalam arah arsitektur yang dicatat di sini, Hono menangani API `/api/v1` dan route undangan publik `/:slug` dengan HTML awal serta OG dinamis; React menangani UI interaktif. Keputusan ini mencatat pilihan arsitektur saja dan **tidak** memberi izin coding, scaffolding, implementasi produk, provisioning Cloudflare, atau deployment production. Fase 0 tetap perencanaan; Fase 1 belum disetujui.
 
-Pilihan D1, R2, auth/provider, dan konfigurasi produksi **tidak** ditetapkan oleh perbandingan ini; masing-masing tetap keputusan terpisah di register §2. React Router v8 framework mode dengan Cloudflare Vite plugin resmi tetap alternatif yang kredibel bila owner memprioritaskan routing framework dan SSR terpusat. Jangan menambah framework/server kedua di atas Hono tanpa kebutuhan terukur.
+Layanan Cloudflare D1/R2, pilihan auth/payment/email provider, Cloudflare plan, dan konfigurasi/resource produksi **tidak** ditetapkan oleh keputusan stack ini; setiap keputusan tetap terpisah di register §2. React Router v8 framework mode dengan Cloudflare Vite plugin resmi adalah opsi yang ditinjau tetapi tidak dipilih. Jangan menambah framework/server kedua di atas Hono tanpa kebutuhan terukur.
 
 #### Bukti komparatif yang ditinjau Lora
 
@@ -301,9 +305,9 @@ POC ini tidak menguji konten undangan lengkap tanpa JavaScript, alur auth/data p
 
 #### Status ADR dan tindak lanjut
 
-Verdict Lora adalah **APPROVED WITH MINOR NOTES** untuk bukti POC komparatif dan mempertahankan Hono sebagai arah provisional yang diutamakan. Verdict tersebut tidak menetapkan stack final, tidak menutup keberatan owner, dan tidak meluluskan Architecture Gate. Tindak lanjut yang dicatat: (1) jangan membandingkan metrik bundle sebagai ukuran sepadan; (2) pertimbangkan view-model hero bersama sebelum implementasi produk bila kelak disetujui; (3) pastikan kebutuhan konten tanpa-JS diputuskan/ditinjau bila menjadi persyaratan produk; (4) pertahankan D1/R2/provider sebagai keputusan terpisah. Tidak ada implementasi yang disetujui oleh catatan ini.
+Verdict Lora adalah **APPROVED WITH MINOR NOTES** untuk bukti POC komparatif dan mempertahankan Hono sebagai arah provisional yang diutamakan. Verdict review tersebut sendiri tidak menetapkan stack final dan tidak meluluskan Architecture Gate; keputusan stack owner yang terpisah kini tercatat di §0, §2.2, dan ADR ini. Tindak lanjut yang dicatat: (1) jangan membandingkan metrik bundle sebagai ukuran sepadan; (2) pertimbangkan view-model hero bersama sebelum implementasi produk bila kelak disetujui; (3) tinjau kebutuhan konten tanpa-JS bila menjadi persyaratan produk; (4) pertahankan layanan Cloudflare D1/R2 dan pilihan provider sebagai keputusan terpisah. Tidak ada implementasi yang disetujui oleh catatan ini.
 
-ADR tetap **DRAFT** sampai owner membuat keputusan stack eksplisit setelah seluruh bukti dan persyaratan gate ditinjau. Sumber dokumentasi resmi yang dirujuk: [Cloudflare — Hono](https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/), [Cloudflare — React Router](https://developers.cloudflare.com/workers/framework-guides/web-apps/react-router/), [Cloudflare — Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/), [React Router — installation](https://reactrouter.com/start/framework/installation), dan [React Router — changelog](https://reactrouter.com/changelog).
+Keputusan ADR-001 **DECIDED BY OWNER** tidak berarti Architecture Gate lulus, Fase 0 selesai, atau coding/implementasi diizinkan. Sumber dokumentasi resmi yang dirujuk: [Cloudflare — Hono](https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/hono/), [Cloudflare — React Router](https://developers.cloudflare.com/workers/framework-guides/web-apps/react-router/), [Cloudflare — Vite plugin](https://developers.cloudflare.com/workers/vite-plugin/), [React Router — installation](https://reactrouter.com/start/framework/installation), dan [React Router — changelog](https://reactrouter.com/changelog).
 
 ## 4. Status peninjauan arsitektur dan POC OG
 
@@ -416,18 +420,18 @@ Semua asumsi di bawah ini ditandai dengan label `[ASUMSI]`. Asumsi bukan fakta. 
 
 ## 6. Checklist exit Fase 0
 
-**Status Fase 0: SEDANG BERJALAN.** Exit criteria #3 (reviewer formal, review, verdict, dan tindak lanjut tercatat) dan #5 (kriteria OG K1–K5 serta bukti lokal yang dapat diulang didokumentasikan dan disetujui owner sebagai masukan perencanaan) telah dipenuhi. Kriteria #1, #2, #4, #6, dan #7 tetap **[ ] BELUM**. Persetujuan untuk #5 tidak meluluskan Gerbang Arsitektur; jangan lanjut Fase 1 atau memulai implementasi tanpa persetujuan terpisah owner.
+**Status Fase 0: SEDANG BERJALAN.** Exit criteria #3 (reviewer formal, review, verdict, dan tindak lanjut tercatat), #4 (keputusan stack final owner dan pencatatannya di ADR), dan #5 (kriteria OG K1–K5 serta bukti lokal yang dapat diulang didokumentasikan dan disetujui owner sebagai masukan perencanaan) telah dipenuhi. Kriteria #1, #2, #6, dan #7 tetap **[ ] BELUM**. Keputusan stack dan persetujuan untuk #5 tidak meluluskan Gerbang Arsitektur; jangan lanjut Fase 1 atau memulai implementasi tanpa persetujuan terpisah owner.
 
-Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — verifikasi pencatatan tetap menunggu owner); **(B) ratifikasi status dan penundaan register** (butir 2); **(C) keputusan turunan D1–D10** yang boleh mengikuti fase masing-masing sesuai register; serta **(D) syarat gate yang masih menunggu**, terutama keputusan stack final owner. Kriteria #3 dan #5 selesai: persetujuan owner atas K1–K5 dan bukti lokal hanya menutup butir #5 sebagai masukan perencanaan, bukan Gerbang Arsitektur atau Fase 0; K6 tetap terpisah dan **OPEN / UNVERIFIED**. Kriteria lain tetap memerlukan tindak lanjutnya masing-masing.
+Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat** (butir 1, 6, 7 — verifikasi pencatatan tetap menunggu owner); **(B) ratifikasi status dan penundaan register** (butir 2); **(C) keputusan turunan D1–D10** yang boleh mengikuti fase masing-masing sesuai register; serta **(D) syarat gate lain yang masih menunggu**. Kriteria #3, #4, dan #5 selesai: keputusan stack final dicatat di §0/§2.2/§3, sedangkan persetujuan owner atas K1–K5 dan bukti lokal hanya menutup butir #5 sebagai masukan perencanaan, bukan Gerbang Arsitektur atau Fase 0. K6 tetap terpisah dan **OPEN / UNVERIFIED**. Kriteria lain tetap memerlukan tindak lanjutnya masing-masing.
 
 | # | Exit criterion | Status | Yang kurang | Yang perlu bertindak |
 |---|---|---|---|---|
 | 1 | Scope MVP M1–M8 sudah diputuskan owner dan dicatat (§0, §1.1, §2.1 — keputusan owner 11 November 2026 pukul 18:34 WIB); bagian pasca-MVP P1–P8 dicatat sebagai daftar kandidat (rekomendasi, belum disetujui owner sebagai roadmap pasca-MVP final) yang ditunda beserta konsekuensinya (§1.2). Pilihan MVP tidak lagi menunggu | [ ] BELUM | Keputusan cakupan M1–M8 sudah diputuskan dan dicatat; yang masih kurang untuk butir ini hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini. Keputusan turunan D1–D10 di §1.4 sudah tercatat di register (§2) — masing-masing dengan status, fase pemutus, blocker, dan konsekuensinya — dan owner boleh meratifikasi status/penundaannya di Fase 0; keputusan finalnya mengikuti fase masing-masing dan TIDAK semuanya harus diputuskan atau difinalisasi untuk menutup Fase 0. Masing-masing keputusan harus selesai paling lambat sebelum fase atau modul yang bergantung padanya dimulai, sesuai register §2: D1 auth provider dan model session (sebelum Fase 2 dimulai); D2 payment gateway termasuk pengujian asumsi webhook 4a/4b (sebelum integrasi webhook Fase 6); D3 domain dan D4 Cloudflare plan (sebelum provisioning production Fase 1); D5 email transaksional (sebelum Fase 7 membangun notifikasi); D6 jumlah maksimum draft Free serta TTL/retensi draft (sebelum batas atau TTL apa pun diterapkan di Fase 4); D7 aturan order sudah dibayar tetapi belum dipublikasi dan D8 harga komersial final (sebelum checkout dibuka di Fase 6); D9 kebijakan migrasi draft prototype (sebelum migrasi atau UAT di Fase 8); D10 syarat dan metode yang aman untuk menguji kartu WhatsApp nyata (bila pengujian nyata dipertimbangkan). Keputusan turunan itu tidak membatalkan scope M1–M8. | Owner (verifikasi pencatatan keputusan M1–M8; meratifikasi status/penundaan keputusan turunan D1–D10 di Fase 0; memutuskan keputusan turunan di §1.4 sesuai fasenya masing-masing — bukan sekarang sekaligus); tim (mencatat keputusan turunan beserta konsekuensinya) |
-| 2 | Semua baris register (§2) sudah memiliki status (2 DECIDED BY OWNER, 10 MENUNGGU beserta metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris sudah tercatat: §2.1 DECIDED BY OWNER — M1–M8 dan §2.12 DECIDED BY OWNER (status K6 tetap terbuka); 10 baris lainnya (§2.2–§2.11) masih MENUNGGU beserta metode uji aman K6. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang sudah dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus sudah dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
-| 3 | Reviewer formal Architecture Gate ditunjuk owner, lalu review diterima dan dicatat dengan verdict serta tindak lanjut | [x] SELESAI — review tercatat | Tidak ada yang kurang untuk kriteria pencatatan ini: Lora ditunjuk 12 November 2026 pukul 18:49 WIB; review tanggal 12 November, verdict **APPROVED WITH MINOR NOTES**, batas verdict, dan tindak lanjut tercatat di §4.1–§4.2. Ini bukan kelulusan Gerbang Arsitektur atau keputusan stack final | Tidak ada tindak lanjut pencatatan; owner tetap pemutus stack final dan syarat gate lainnya tetap harus dipenuhi |
-| 4 | ADR stack tetap DRAFT sampai owner menyetujui pilihan final setelah bukti/masukan gerbang ditinjau | [ ] BELUM | Review formal Lora sudah tercatat dengan verdict **APPROVED WITH MINOR NOTES**, tetapi ADR masih **DRAFT** dan Hono tetap rekomendasi provisional. Belum ada keputusan stack final owner. K1–K5 dan bukti lokal disetujui hanya sebagai masukan perencanaan (§4.2); persetujuan itu tidak meluluskan Gerbang Arsitektur, dan syarat gate lainnya tetap berlaku. Gerbang belum lulus | Owner (memutuskan stack final setelah bukti dan seluruh syarat gate ditinjau); tim (menyediakan bukti yang diperlukan) |
-| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [x] SELESAI — K1–K5 dan bukti lokal disetujui sebagai masukan Fase 0 | Tidak ada yang kurang untuk exit criterion #5: kriteria K1–K5 dan bukti komparatif lokal yang dapat diulang (87/87 pemeriksaan per varian) terdokumentasi di §4.2 dan disetujui owner pada 12 November 2026 pukul 21:30 WIB. Persetujuan hanya mencakup K1–K5 dan bukti sebagai masukan perencanaan; **K6 tidak termasuk dan tetap OPEN / UNVERIFIED**. Ini tidak memilih stack final, tidak meluluskan Gerbang Arsitektur atau Fase 0, dan tidak menyetujui Fase 1, coding/implementasi, atau provisioning/deployment production | Tidak ada tindak lanjut untuk pencatatan exit criterion #5; owner tetap pemutus stack final setelah seluruh bukti dan syarat gate ditinjau, dan K6 tetap terbuka |
-| 6 | Pilihan owner K6 OPEN / UNVERIFIED sudah dicatat (§0, §2.12, §4.2); K6 bukan syarat yang dianggap lulus. Bila owner kemudian memilih K6 wajib dibuktikan sebelum final stack, gerbang menunggu metode uji aman | [ ] BELUM | Pilihan owner sudah dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — bukan pengulangan pilihan. Kartu WhatsApp aktual **belum diuji dan belum lulus**; dokumen ini tidak mengklaim kartu sudah diuji atau lulus | Owner (verifikasi pencatatan sudah benar saat meninjau revisi dokumen ini) |
+| 2 | Semua baris register (§2) sudah memiliki status (3 DECIDED BY OWNER; D1–D10 tetap terbuka/menunggu, termasuk metode uji aman K6); tidak ada keputusan yang dikarang atau dianggap otomatis disetujui | [ ] BELUM | Status semua baris tercatat: §2.1 M1–M8, §2.2 stack arsitektur final, dan §2.12 status K6 tetap terbuka berstatus DECIDED BY OWNER; D1–D10 tetap terbuka/menunggu sesuai fase dan blocker masing-masing, dan metode uji aman K6 masih MENUNGGU. Yang masih diperlukan adalah owner **meninjau dan meratifikasi status serta penundaan yang dicatat** — BUKAN memutuskan seluruh D1–D10 sekarang. Keputusan turunan tetap dapat ditunda sesuai fase dan blocker di register (§2); keputusan yang menjadi prasyarat coding suatu modul harus dibuat sebelum coding modul itu dimulai | Owner (meratifikasi status dan penundaan yang tercatat); tim (memperbarui register sesuai catatan owner) |
+| 3 | Reviewer formal Architecture Gate ditunjuk owner, lalu review diterima dan dicatat dengan verdict serta tindak lanjut | [x] SELESAI — review tercatat | Tidak ada yang kurang untuk kriteria pencatatan ini: Lora ditunjuk 12 November 2026 pukul 18:49 WIB; review tanggal 12 November, verdict **APPROVED WITH MINOR NOTES**, batas verdict, dan tindak lanjut tercatat di §4.1–§4.2. Verdict review bukan kelulusan Gerbang Arsitektur; keputusan stack owner dicatat terpisah di §0/§2.2/§3 | Tidak ada tindak lanjut pencatatan review; syarat gate lainnya tetap harus dipenuhi |
+| 4 | Keputusan stack final owner dicatat di ADR setelah bukti/masukan yang tersedia ditinjau; keputusan ini terpisah dari kelulusan Gerbang Arsitektur | [x] SELESAI — keputusan stack owner tercatat | Owner menetapkan Hono + React + TypeScript + Vite pada 12 November 2026 pukul 21:48 WIB; keputusan final tercatat di §0, §2.2, dan ADR-001 (§3). Ini hanya keputusan arsitektur stack, bukan kelulusan Gerbang Arsitektur/Fase 0 atau persetujuan Fase 1/implementasi. Kriteria lain masih berlaku dan Gerbang **belum lulus** | Tidak ada tindak lanjut untuk pencatatan keputusan #4; syarat gate lain di §6 tetap harus dipenuhi sebelum gate dapat dinilai lulus |
+| 5 | Kriteria HTML OG/crawler tertulis (§4.2) dan hasil POC yang dapat diulang dibedakan dari bukti kartu WhatsApp aktual | [x] SELESAI — K1–K5 dan bukti lokal disetujui sebagai masukan Fase 0 | Tidak ada yang kurang untuk exit criterion #5: kriteria K1–K5 dan bukti komparatif lokal yang dapat diulang (87/87 pemeriksaan per varian) terdokumentasi di §4.2 dan disetujui owner pada 12 November 2026 pukul 21:30 WIB. Persetujuan itu hanya mencakup K1–K5 dan bukti sebagai masukan perencanaan; **K6 tidak termasuk dan tetap OPEN / UNVERIFIED**. Persetujuan #5 itu sendiri tidak memilih stack final atau meluluskan Gerbang Arsitektur/Fase 0; keputusan stack owner dicatat terpisah di #4/§0/§2.2/§3. Tidak ada persetujuan Fase 1, coding/implementasi, atau provisioning/deployment production | Tidak ada tindak lanjut untuk pencatatan exit criterion #5; K6 tetap terbuka dan syarat gate lainnya tetap berlaku |
+| 6 | Pilihan owner K6 OPEN / UNVERIFIED sudah dicatat (§0, §2.12, §4.2); K6 bukan syarat yang dianggap lulus. Bila owner kelak menetapkan bahwa K6 wajib dibuktikan untuk kelulusan Gerbang Arsitektur, gate menunggu metode uji aman; keputusan stack yang sudah dicatat tetap terpisah | [ ] BELUM | Pilihan owner sudah dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — bukan pengulangan pilihan. Kartu WhatsApp aktual **belum diuji dan belum lulus**; dokumen ini tidak mengklaim kartu sudah diuji atau lulus | Owner (verifikasi pencatatan sudah benar saat meninjau revisi dokumen ini) |
 | 7 | Izin perencanaan Fase 0 sudah diberikan owner dan dicatat (§0); izin ini tidak membuka coding produk, perubahan production, provisioning resource, deploy production, Gerbang Arsitektur, atau Fase 1 — semua itu membutuhkan persetujuan terpisah | [ ] BELUM | Izin perencanaan Fase 0 sudah diberikan dan dicatat; yang menunggu hanyalah **verifikasi pencatatan** oleh owner saat meninjau revisi dokumen ini — dibedakan dari permintaan persetujuan baru; ini bukan persetujuan baru dan bukan persetujuan Fase 0 selesai. Pemberian izin ini tidak berarti checklist lain atau Gerbang Arsitektur otomatis lulus | Owner (verifikasi pencatatan batas otorisasi saat meninjau revisi dokumen ini) |
 
 **Bila ada exit criterion yang tertahan, pekerjaan berhenti pada perencanaan.** Tidak ada criterion yang dilewati diam-diam dan tidak ada Fase 1 yang dimulai secara otomatis. Setiap pencentangan membutuhkan bukti atau approval yang dicatat — bukan asumsi.
@@ -438,17 +442,35 @@ Checklist ini membedakan: **(A) keputusan owner yang sudah diberikan dan dicatat
 
 Dokumen ini adalah paket keputusan Fase 0 untuk ditinjau owner. Dokumen ini bukan persetujuan implementasi, bukan persetujuan production deploy, bukan kelulusan Gerbang Arsitektur, dan bukan izin Fase 1. Fase 0 berstatus **SEDANG BERJALAN** dan Gerbang Arsitektur **belum lulus**.
 
-Keputusan yang sudah dibuat owner dan tidak perlu diulang: (1) mulai Fase 0 saja, sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman; (2) K6 tetap terbuka sampai ada cara uji yang aman — status K6 **OPEN / UNVERIFIED**; (3) scope MVP M1–M8 diterima owner (11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos"); (4) kriteria acceptance OG K1–K5 dan bukti lokal yang dapat diulang disetujui sebagai masukan perencanaan Fase 0 pada 12 November 2026 pukul 21:30 WIB, tanpa mengubah status K6 atau memberi persetujuan stack/gate/Fase 1/implementasi/production.
+Keputusan yang sudah dibuat owner dan tidak perlu diulang: (1) mulai Fase 0 saja, sebatas perencanaan, pencatatan keputusan, ADR, dan POC non-production yang aman; (2) K6 tetap terbuka sampai ada cara uji yang aman — status K6 **OPEN / UNVERIFIED**; (3) scope MVP M1–M8 diterima owner (11 November 2026 pukul 18:34 WIB; pesan owner: "gapapa M1-M8 juga bos"); (4) kriteria acceptance OG K1–K5 dan bukti lokal yang dapat diulang disetujui sebagai masukan perencanaan Fase 0 pada 12 November 2026 pukul 21:30 WIB, tanpa mengubah status K6 atau memberi persetujuan gate/Fase 1/implementasi/production; (5) stack arsitektur final Hono + React + TypeScript + Vite diputuskan owner pada 12 November 2026 pukul 21:48 WIB. Keputusan #5 hanya menetapkan stack, bukan persetujuan coding/scaffolding/implementasi, provisioning Cloudflare, deployment production, atau kelulusan gate.
 
 Keputusan M1–M8 tidak menghapus exit gates keamanan, privasi, aksesibilitas, responsive layout, backup/restore, monitoring, dan rollback yang diperlukan sebelum peluncuran.
 
-Review formal Lora dan tindak lanjutnya sudah dicatat, dan exit criterion #5 (persetujuan owner atas K1–K5 serta bukti lokal sebagai masukan perencanaan) telah selesai. Yang masih perlu owner tinjau dan putuskan antara lain keputusan turunan di §1.4, isi register (§2) beserta status yang masih MENUNGGU, pilihan stack final pada ADR draft (§3), serta exit criterion #1, #2, #4, #6, dan #7 di §6. Persetujuan K1–K5 tidak meluluskan Gerbang Arsitektur atau Fase 0; K6 tetap **OPEN / UNVERIFIED** dan Fase 1 belum disetujui.
+Review formal Lora dan tindak lanjutnya sudah dicatat; exit criteria #3, #4 (keputusan stack final owner tercatat), dan #5 telah selesai. Yang masih perlu ditinjau/diratifikasi ialah keputusan turunan D1–D10 di §1.4/§2 beserta status dan penundaannya, serta exit criteria #1, #2, #6, dan #7 di §6. Fase 0 tetap **SEDANG BERJALAN** dan Architecture Gate **NOT PASSED**; keputusan stack dan persetujuan K1–K5 tidak meluluskan gate. K6 tetap **OPEN / UNVERIFIED**, Fase 1 **NOT APPROVED**, dan tidak ada izin coding/scaffolding/implementasi.
 
 Bila ada bagian dokumen ini yang bertentangan dengan keputusan terkunci di §5.1, keputusan terkunci yang berlaku.
 
 ---
 
 ## 8. Riwayat revisi
+
+### v0.1.8 → v0.1.9
+
+| | |
+|---|---|
+| Versi sebelumnya | v0.1.8 (branch `docs/phase0-planning-v0.1.8`, commit `aec6cf4fce3e3434f5f3f43df13cc0b53257d441`) |
+| Versi ini | v0.1.9 (12 November 2026) — dokumentasi-only dari parent tepat v0.1.8 |
+| Branch revisi | `docs/phase0-planning-v0.1.9` |
+| Pemicu revisi | Keputusan final owner atas stack arsitektur pada 12 November 2026 pukul 21:48 WIB |
+
+Perubahan dokumentasi pada revisi ini:
+
+1. **Keputusan stack owner (§0, §2.2, §3):** Hono + React + TypeScript + Vite dicatat sebagai stack arsitektur final. D1, R2, auth/payment/email provider, dan keputusan turunan D1–D10 tetap terpisah dan terbuka/menunggu sebagaimana register.
+2. **Checklist dan penutup (§6–§7):** exit criterion #4 ditandai selesai karena keputusan stack tercatat; #3 dan #5 juga tetap selesai. Kriteria #1, #2, #6, dan #7 tetap **[ ] BELUM**. K6 tetap **OPEN / UNVERIFIED**.
+3. **Batas otorisasi yang tidak berubah:** Fase 0 tetap **SEDANG BERJALAN**; Architecture Gate **NOT PASSED**; Phase 1 **NOT APPROVED**. Keputusan stack bukan persetujuan coding, scaffolding, implementasi, provisioning Cloudflare, atau deployment production. Scope MVP M1–M8 dipertahankan.
+4. **Batas perubahan:** hanya `docs/PHASE-0-DECISION-PACK.md` berubah. Tidak ada source code/POC, branch produk/lain, Cloudflare config/resource, Worker, atau production yang diubah; tidak ada deployment.
+
+Revisi ini bukan kelulusan Gerbang Arsitektur atau Fase 0, bukan persetujuan Fase 1/implementasi, dan bukan izin provisioning/deployment production.
 
 ### v0.1.7 → v0.1.8
 

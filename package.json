@@ -11,11 +11,16 @@
     "build": "vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:dev": "npm run deploy -- dev",
+    "deploy:staging": "npm run deploy -- staging",
     "worker:local:dev": "wrangler dev --local --env dev --ip 127.0.0.1 --port 8787",
     "worker:dry-run:dev": "wrangler deploy --dry-run --env dev",
     "worker:dry-run:staging": "wrangler deploy --dry-run --env staging",
+    "smoke:dev-api": "node scripts/dev-api-smoke.mjs",
+    "smoke:r2:local": "node scripts/r2-emulator-smoke.mjs",
     "backup:restore:local": "python3 scripts/backup-restore-smoke.py",
-    "ci": "npm run typecheck && npm test && npm run build && npm run worker:dry-run:dev && npm run worker:dry-run:staging && npm run backup:restore:local"
+    "ci": "npm run typecheck && npm test && npm run build && npm run worker:dry-run:dev && npm run worker:dry-run:staging && npm run smoke:dev-api && npm run backup:restore:local && npm run smoke:r2:local"
   },
   "dependencies": {
     "hono": "4.13.18",

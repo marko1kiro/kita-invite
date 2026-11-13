@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "kita-invite-phase1",
+  "name": "kita-invite-phase1-unconfigured",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-10",
   "workers_dev": false,

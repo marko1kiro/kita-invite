@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/phase1-dev-staging-foundation
+      - fix/phase1-dev-staging-foundation-repairs
   pull_request:
     branches:
       - main
@@ -32,5 +33,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run typecheck, tests, build, Worker dry-runs, and local backup/restore smoke test
+      - name: Run typecheck, tests, build, dev API smoke, Worker dry-runs, and local backup/R2 smokes
         run: npm run ci
+
+      - name: Audit locked dependencies for high-severity vulnerabilities
+        run: npm audit --audit-level=high

@@ -5,6 +5,10 @@ export function createApp() {
   const app = new Hono<{ Bindings: Env }>();
 
   app.use("*", async (context, next) => {
+    if (context.env.APP_ENV !== "dev" && context.env.APP_ENV !== "staging") {
+      return context.json({ error: "environment_not_configured" }, 503);
+    }
+
     const startedAt = Date.now();
     await next();
 

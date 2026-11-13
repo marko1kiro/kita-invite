@@ -4,22 +4,32 @@
 
 Branch ini menambahkan fondasi React + TypeScript + Vite di `web/`, API Hono minimal di `src/worker/`, migrasi metadata operasional, dan workflow CI. Prototype yang ada di root `index.html` tidak diubah. Belum ada alur undangan, daftar tamu, RSVP, pembayaran, autentikasi, atau data pengguna.
 
-Cloudflare memiliki dua D1 terpisah, `kita-invite-phase1-dev-db` dan `kita-invite-phase1-staging-db`, serta dua bucket R2 terpisah, `kita-invite-phase1-dev-media` dan `kita-invite-phase1-staging-media`. Skema aplikasi di kedua D1 hanya memiliki `foundation_metadata` dengan batas environment `dev`/`staging`; Cloudflare juga menampilkan tabel sistem internal `_cf_KV`. Binding dan database IDs yang dibutuhkan Wrangler tercantum di `wrangler.jsonc`; tidak ada account ID, token, atau secret di repository. Belum ada object test yang diunggah ke bucket remote.
+Cloudflare memiliki D1 dan bucket R2 dev/staging yang terpisah. Berdasarkan pemeriksaan Lora yang disertakan dalam tugas ini, tabel `foundation_metadata` ada dan kosong pada kedua D1; belum ada tabel ledger migrasi Wrangler. Binding untuk `kita-invite-phase1-dev-db` / `kita-invite-phase1-dev-media` dan `kita-invite-phase1-staging-db` / `kita-invite-phase1-staging-media` tetap didefinisikan di `wrangler.jsonc`. Pemeriksaan lokal pada perbaikan ini tidak mengakses Cloudflare dan tidak mengubah resource remote.
 
-## Batas deployment
+## Batas deployment dan target Wrangler
 
-Worker belum dibuat atau di-deploy. Custom domain dan DNS juga belum diaktifkan. Status Workers plan dan aggregate usage akun tidak dapat dibaca dengan izin yang tersedia, sehingga biaya/risiko usage Worker tidak dapat dipastikan. Karena itu CI tidak memiliki langkah deploy atau secret Cloudflare; `workers_dev` dimatikan dan tidak ada route publik. Langkah ini sengaja dibatasi sampai status tersebut dapat diverifikasi.
+Worker belum dibuat atau di-deploy. Custom domain dan DNS belum diaktifkan. Status Workers plan dan aggregate usage akun tidak dapat dipastikan, sehingga CI tidak memiliki langkah deployment atau secret Cloudflare. `workers_dev` tetap dimatikan pada target.
+
+Gunakan hanya `npm run deploy:dev` atau `npm run deploy:staging` setelah ada otorisasi deployment tersendiri. `npm run deploy` tanpa argumen, dengan environment tidak valid, atau dengan argumen tambahan berhenti sebelum Wrangler dijalankan. Target dasar `wrangler.jsonc` bernama `kita-invite-phase1-unconfigured`, tidak memiliki `APP_ENV` atau binding D1/R2, dan Worker mengembalikan `503 environment_not_configured` bila environment bukan `dev` atau `staging`.
+
+Batas ini tidak mencegah pemanggilan langsung `wrangler deploy` dari shell. Pemanggilan raw Wrangler yang tidak memakai wrapper npm tetap tidak diblokir oleh guard npm; jangan menyebutnya sebagai pencegahan teknis. Perintah deployment tidak dipanggil selama tugas perbaikan ini.
 
 Worker mengeluarkan structured console logs tanpa path, query, body, atau PII; Cloudflare Workers Observability/log persistence tidak diaktifkan.
 
-## Migrasi dan pemulihan
+## Pengembangan lokal dan CI
 
-`migrations/0001_foundation_metadata.sql` diterapkan langsung via D1 API ke dev dan staging. Operasinya idempotent (`CREATE TABLE IF NOT EXISTS`); tidak ada data aplikasi. Karena DDL awal diterapkan lewat API, migration ledger Wrangler belum dibuat/diisi; sebelum migrasi remote berikutnya, jalankan migrasi idempotent ini melalui Wrangler agar ledger mencatatnya.
+Jalankan `npm ci`. Untuk alur interaktif, mulai `npm run worker:local:dev` di satu terminal lalu `npm run dev` di terminal lain. Vite meneruskan `/api/*` ke Worker lokal di `127.0.0.1:8787`; `/api/v1/health` seharusnya mengembalikan JSON `{"status":"ok","environment":"dev"}`.
 
-`scripts/backup-restore-smoke.py` menguji backup/restore SQLite lokal dengan satu fixture sintetis dalam direktori sementara yang dibuang otomatis. Satu object sintetis juga berhasil melalui upload-download-delete pada emulator R2 lokal. Uji D1 remote export/restore dengan satu baris sintetis sempat dijalankan; URL unduhan export mengembalikan HTTP 403, sehingga pemulihan remote tidak selesai dan tidak dicoba ulang. Baris sintetis sumber berhasil dihapus dan D1 sementara untuk restore berhasil dihapus; verifikasi cleanup melaporkan tidak ada sisa database atau baris uji. Karena itu belum ada bukti remote D1 export/import yang berhasil.
+`npm run smoke:dev-api` menguji Worker lokal dan alur Vite-proxy secara integrasi, lalu menghentikan kedua server dan menghapus state lokal sementara. `npm run smoke:r2:local` menjalankan upload, download byte-for-byte, delete, dan pemeriksaan object sudah tidak ada pada emulator R2 Wrangler; smoke memakai bucket tiruan, payload sintetis, storage sementara, `--local`, dan subprocess tanpa kredensial Cloudflare. `npm run backup:restore:local` tetap menguji backup/restore SQLite lokal sintetis.
 
-## Pemeriksaan lokal
+`npm run ci` menjalankan typecheck, test Vitest, build Vite, dry-run Wrangler eksplisit untuk dev dan staging, API smoke Vite/Worker lokal, backup/restore SQLite lokal, dan R2 emulator smoke. GitHub Actions menjalankan `npm ci`, `npm run ci`, lalu `npm audit --audit-level=high`. Tidak ada langkah deploy pada workflow. Dry-run hanya melakukan build/validasi konfigurasi; bukan deployment.
 
-`npm run ci` menjalankan strict typecheck, 3 unit tests, Vite build, Wrangler dry-run untuk dev dan staging, lalu backup/restore sintetis lokal. Worker juga berjalan pada emulator lokal: `/api/v1/health` mengembalikan status `ok` dengan environment `dev`, dan root menyajikan app shell Vite. Workflow GitHub Actions menjalankan perintah yang sama dan tidak melakukan deploy.
+## Rekonsiliasi migrasi D1
 
-Untuk rollback kode, gunakan parent baseline `70bb0641eb4fa1280463ce8cfe20816b0676778c` atau revert commit fondasi. Migrasi tidak dihapus otomatis; jika perlu mengubah skema, tambahkan migrasi maju. Resource dev/staging tidak menyentuh Pages, Workers POC, production, atau account Cloudflare lain.
+`migrations/0001_foundation_metadata.sql` adalah DDL awal yang sebelumnya diterapkan langsung melalui D1 API. Catatan Lora untuk kedua D1 menyatakan tabel aplikasi sudah ada dan kosong, sementara ledger migrasi Wrangler belum ada. File migrasi tetap berada di repository, tetapi keberadaan tabel tidak berarti Wrangler telah mencatat migrasi tersebut.
+
+Perbaikan ini tidak menjalankan pemeriksaan langsung terhadap D1 dan tidak membuat, menerapkan, memutar ulang, mengubah, atau menghapus migrasi maupun data remote. Jangan menjalankan remote migration sebagai bagian dari CI atau smoke test lokal. Sebelum langkah migrasi remote berikutnya, diperlukan persetujuan terpisah serta pemeriksaan ulang schema, isi tabel, dan status ledger per database; setelah itu, tentukan langkah baseline/reconciliation yang aman dan verifikasi hasil ledger. DDL `CREATE TABLE IF NOT EXISTS` bersifat idempotent, tetapi hal itu sendiri bukan bukti bahwa remote migration sudah direkonsiliasi dan bukan izin untuk menerapkannya.
+
+## Rollback dan batas yang belum diverifikasi
+
+Rollback perubahan kode dilakukan dengan revert commit perbaikan baru; jangan mengubah atau mengamend commit fondasi sebelumnya. Resource D1/R2 remote, Pages, Worker POC, DNS, domain, dan production tidak disentuh. Smoke lokal membuktikan alur emulator saja, bukan upload/download remote, pemulihan D1 remote, deployment Worker, DNS, billing/usage, atau perilaku webhook/provider.

@@ -16,7 +16,7 @@ a digital invitation platform prototype. It is NOT production.
 
 ## Branches
 
-- `main` — baseline snapshot (this commit).
+- `main` — baseline snapshot.
 - `muse-preview` — preview branch, auto-deployed to Cloudflare Pages
   (preview deployments only; production deployments disabled).
 
@@ -36,14 +36,14 @@ protected by Cloudflare Access — only dummy/demo data lives here.
   (see the plan document, not this repo).
 - Do not declare the Stage 2 audit passed just because a build succeeds.
 
-
 ## Fase 1 — fondasi dev/staging
 
-Fondasi baru menggunakan React, TypeScript, Vite, Hono, dan Wrangler. Aplikasi scaffold berada di `web/`; Worker berada di `src/worker/`. File prototype root `index.html` sengaja dibiarkan terpisah dan tidak diubah.
+Fondasi menggunakan React, TypeScript, Vite, Hono, dan Wrangler. Aplikasi scaffold berada di `web/`; Worker berada di `src/worker/`. File prototype root `index.html` sengaja dibiarkan terpisah dan tidak diubah.
 
-Jalankan `npm ci`, kemudian `npm run dev` untuk Vite. `npm run ci` menjalankan typecheck, unit tests, build, Wrangler dry-run dev/staging, dan backup/restore SQLite lokal sintetis. `npm run worker:local:dev` menjalankan Worker lokal pada `127.0.0.1:8787`; perintah ini memakai emulator lokal, bukan deployment.
+Jalankan `npm ci`. Untuk pengembangan lokal, mulai `npm run worker:local:dev` dan `npm run dev` di dua terminal; Vite mem-proxy `/api/*` ke Worker lokal pada `127.0.0.1:8787`. `npm run smoke:dev-api` membuktikan respons JSON health melalui alur itu. `npm run smoke:r2:local` menjalankan upload/download/delete sintetis hanya pada emulator lokal yang disposable. `npm run ci` menjalankan kedua smoke tersebut, backup/restore SQLite lokal, typecheck, tests, build, dan dry-run dev/staging. GitHub Actions juga menjalankan `npm audit --audit-level=high`.
 
-Cloudflare D1/R2 dev dan staging sudah disiapkan terpisah. Worker belum dibuat atau di-deploy, tidak ada custom domain/DNS yang diaktifkan, dan CI tidak melakukan deployment otomatis karena status plan/usage Workers belum dapat dipastikan. Rincian ada di [catatan Fase 1](docs/phase1-dev-staging.md).
+Deployment tidak berjalan otomatis. Setelah otorisasi deployment terpisah, gunakan `npm run deploy:dev` atau `npm run deploy:staging`; default `npm run deploy` menolak environment yang hilang atau tidak valid. Target dasar Wrangler diberi nama `kita-invite-phase1-unconfigured` dan Worker menolak environment yang tidak dikonfigurasi, tetapi pemanggilan raw `wrangler deploy` tidak secara teknis diblokir oleh wrapper npm.
 
+Cloudflare D1/R2 dev dan staging dipisahkan. Menurut pemeriksaan Lora yang dicatat di [catatan Fase 1](docs/phase1-dev-staging.md), tabel `foundation_metadata` sudah ada dan kosong pada kedua D1, tetapi ledger migrasi Wrangler belum ada. Tidak ada pemeriksaan atau perubahan Cloudflare resource, DNS, domain, atau migrasi remote dalam perbaikan kode/workflow ini.
 
-**Klarifikasi scope:** perubahan resource pada branch terisolasi ini hanya mencakup D1/R2 baru dev dan staging yang disetujui owner; aturan baseline di atas tetap berlaku untuk Pages, POC, Worker/route yang sudah ada, production, dan account lain.
+**Klarifikasi scope:** baseline di atas tetap berlaku untuk Pages, POC, Worker/route yang sudah ada, production, dan account lain. Lihat [catatan Fase 1](docs/phase1-dev-staging.md) untuk batas deployment, migrasi, dan rollback.

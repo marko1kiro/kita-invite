@@ -7,6 +7,15 @@ afterEach(() => {
 });
 
 describe("foundation Worker", () => {
+  it.each([undefined, "local"] as const)("rejects an unconfigured deployment environment (%s)", async (APP_ENV) => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const response = await app.request("/api/v1/health", {}, { APP_ENV });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "environment_not_configured" });
+  });
+
   it("returns health and environment without exposing bindings", async () => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
     const env: Env = { APP_ENV: "dev" };
